@@ -1,0 +1,18 @@
+resources:
+  - ../../base
+namespace: nexabudget
+
+patches:
+  - path: deployment-patch.yaml
+
+configMapGenerator:
+  - name: nexabudget-be-config
+    literals:
+      - spring.profiles.active=prod
+      - spring.datasource.url=jdbc:postgresql://nexabudget-db:5432/nexabudget
+      - spring.datasource.username=${DB_USERNAME}
+
+secretGenerator:
+  - name: nexabudget-be-secrets
+    literals:
+      - spring.datasource.password=${DB_PASSWORD}

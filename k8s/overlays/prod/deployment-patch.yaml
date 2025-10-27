@@ -1,0 +1,17 @@
+# k8s/overlays/prod/deployment-patch.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: nexabudget-be
+spec:
+  template:
+    spec:
+      containers:
+        - name: nexabudget-be
+          resources:
+            limits:
+              cpu: "1"
+              memory: "512Mi"
+            requests:
+              cpu: "500m"
+              memory: "256Mi"

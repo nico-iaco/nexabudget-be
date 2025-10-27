@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: nexabudget-db-svc
+spec:
+  type: ExternalName
+  externalName: ${TAILSCALE_DB_DNS_NAME}
