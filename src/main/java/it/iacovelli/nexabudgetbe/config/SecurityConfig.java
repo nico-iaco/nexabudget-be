@@ -1,7 +1,14 @@
 package it.iacovelli.nexabudgetbe.config;
 
+import io.jsonwebtoken.impl.DefaultClaimsBuilder;
+import io.jsonwebtoken.impl.DefaultJwtBuilder;
+import io.jsonwebtoken.impl.DefaultJwtHeaderBuilder;
+import io.jsonwebtoken.impl.DefaultJwtParserBuilder;
+import io.jsonwebtoken.impl.io.StandardCompressionAlgorithms;
+import io.jsonwebtoken.impl.security.*;
 import it.iacovelli.nexabudgetbe.security.JwtAuthenticationFilter;
 import it.iacovelli.nexabudgetbe.service.UserDetailsServiceImpl;
+import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -21,6 +28,26 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @Configuration
 @EnableWebSecurity
 @EnableMethodSecurity
+@RegisterReflectionForBinding(classes = {
+        KeysBridge.class,
+        StandardEncryptionAlgorithms.class,
+        StandardKeyAlgorithms.class,
+        StandardSecureDigestAlgorithms.class,
+        StandardCompressionAlgorithms.class,
+        StandardKeyOperations.class,
+        JwksBridge.class,
+        DefaultJwtBuilder.Supplier.class,
+        DefaultJwtParserBuilder.Supplier.class,
+        DefaultJwtHeaderBuilder.Supplier.class,
+        DefaultClaimsBuilder.Supplier.class,
+        DefaultDynamicJwkBuilder.Supplier.class,
+        DefaultJwkParserBuilder.Supplier.class,
+        DefaultJwkSetBuilder.Supplier.class,
+        DefaultJwkSetParserBuilder.Supplier.class,
+        DefaultKeyOperationBuilder.Supplier.class,
+        DefaultKeyOperationPolicyBuilder.Supplier.class
+})
+
 public class SecurityConfig {
 
     private final UserDetailsServiceImpl userDetailsService;

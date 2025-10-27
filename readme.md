@@ -38,36 +38,85 @@ The application uses a relational database to persist data. The main entities ar
   - `category_id` (Foreign Key to Category)
   - `user_id` (Foreign Key to User)
 ## Getting Started
+
 To get a local copy up and running, follow these simple steps.
+
 ### Prerequisites
+
 - JDK 17 or newer
 - Maven
-- A running instance of a postgres database.
-### Local Development Setup
-1. **Clone the repository**
-    ```shell
-    git clone <your-repository-url>
-    cd nexaBudget-be
-    ```
-2. **Configure the database**
-    Open the `src/main/resources/application.properties` file and update the database connection properties. For example, for PostgreSQL:
-    ```properties
-    spring.datasource.url=jdbc:postgresql://localhost:5432/nexabudget
-    spring.datasource.username=your_username
-    spring.datasource.password=your_password
-    spring.datasource.driver-class-name=org.postgresql.Driver
-    
-    # Instruct Hibernate to generate the database schema
-    spring.jpa.hibernate.ddl-auto=update
-    ```
-3. **Build the project**
-    Use Maven to build the project and download dependencies.
-    ```shell
-    ./mvnw clean install
-    ```
-4. **Run the application**
-    You can run the application using the Spring Boot Maven plugin.
-    ```shell
-    ./mvnw spring-boot:run
-    ```
-    The application will start on http://localhost:8080.
+- Docker and Docker Compose
+
+### 1. Clone the repository
+```shell
+git clone <your-repository-url>
+cd nexaBudget-be
+```
+
+### 2. Running the Application
+You can run the application either locally using Maven or with Docker.
+
+#### Running Locally with Maven
+This method is ideal for development and debugging.
+
+**1. Database Setup**
+
+You need a running instance of PostgreSQL. Open the `src/main/resources/application.properties` file and update the database connection properties:
+
+```properties
+spring.datasource.url=jdbc:postgresql://localhost:5432/nexabudget
+spring.datasource.username=your_username
+spring.datasource.password=your_password
+spring.datasource.driver-class-name=org.postgresql.Driver
+
+# Instruct Hibernate to generate the database schema
+spring.jpa.hibernate.ddl-auto=update
+```
+
+**2. Build the project**
+
+Use Maven to build the project and download dependencies.
+
+```shell
+./mvnw clean install
+```
+
+**3. Run the application**
+
+You can run the application using the Spring Boot Maven plugin.
+
+```shell
+./mvnw spring-boot:run
+```
+
+The application will start on http://localhost:8080.
+
+#### Running with Docker
+This is the recommended way to run the application in a production-like environment. The following commands will start both the application and a PostgreSQL database.
+
+**1. Run the JVM-based image**
+
+This command builds the JVM image and starts the services in detached mode.
+
+```shell
+docker-compose up --build -d
+```
+
+**2. Run the Native image**
+
+For better performance and a smaller memory footprint, you can run the native-compiled version.
+
+```shell
+docker-compose -f docker-compose.native.yml up --build -d
+```
+
+In both cases, the application will be available at http://localhost:8080.
+
+To stop and remove the containers, use:
+```shell
+# For JVM
+docker-compose down
+
+# For Native
+docker-compose -f docker-compose.native.yml down
+```

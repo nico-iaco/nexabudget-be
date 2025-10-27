@@ -1,12 +1,13 @@
 package it.iacovelli.nexabudgetbe.security;
 
 import io.jsonwebtoken.Jwts;
-import io.jsonwebtoken.security.Keys;
 import it.iacovelli.nexabudgetbe.model.User;
+import org.apache.logging.log4j.LogManager;
+import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
-import javax.crypto.SecretKey; // Importa SecretKey
+import javax.crypto.SecretKey;
 import java.util.Date;
 
 @Component
@@ -15,12 +16,9 @@ public class JwtTokenProvider {
     @Value("${app.jwtExpirationInMs}")
     private int jwtExpirationInMs;
 
-    private final SecretKey key;
+    private final SecretKey key = Jwts.SIG.HS512.key().build();
 
-
-    public JwtTokenProvider(@Value("${app.jwtSecret}") String jwtSecret) {
-        this.key = Keys.hmacShaKeyFor(jwtSecret.getBytes()); // Restituisce SecretKey
-    }
+    private final Logger logger = LogManager.getLogger(JwtTokenProvider.class);
 
     public String generateToken(User user) {
         Date now = new Date();
@@ -35,25 +33,7 @@ public class JwtTokenProvider {
                 .compact();
     }
 
-    public String generateToken(Long userId, String username) {
-        Date now = new Date();
-        Date expiryDate = new Date(now.getTime() + jwtExpirationInMs);
-
-        return Jwts.builder()
-                .subject(userId.toString())
-                .claim("username", username)
-                .issuedAt(new Date())
-                .expiration(expiryDate)
-                .signWith(key)
-                .compact();
-    }
-
-    public Long getUserIdFromJWT(String token) {
-        return Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload().getSubject() != null ?
-                Long.parseLong(Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload().getSubject()) : null;
-    }
-
-    public String getUsernameFromJWT(String token) { // Nuovo metodo
+    public String getUsernameFromJWT(String token) {
         return Jwts.parser().verifyWith(key).build().parseSignedClaims(token).getPayload().get("username", String.class);
     }
 
@@ -64,7 +44,7 @@ public class JwtTokenProvider {
         } catch (Exception ex) {
             // Log dell'eccezione (MalformedJwtException, ExpiredJwtException, UnsupportedJwtException, IllegalArgumentException)
             // È buona pratica loggare l'eccezione qui
-            // logger.error("Invalid JWT token: {}", ex.getMessage());
+            logger.error("Invalid JWT token: {}", ex.getMessage());
         }
         return false;
     }
