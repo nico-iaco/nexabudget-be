@@ -3,6 +3,7 @@ package it.iacovelli.nexabudgetbe.service;
 import it.iacovelli.nexabudgetbe.dto.TransactionDto;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
+import it.iacovelli.nexabudgetbe.repository.UserRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -17,11 +18,11 @@ import java.util.stream.Collectors;
 @Service
 public class TransactionService {
     private final TransactionRepository transactionRepository;
-    private final AccountService accountService;
+    private final UserRepository userRepository;
 
-    public TransactionService(TransactionRepository transactionRepository, AccountService accountService) {
+    public TransactionService(TransactionRepository transactionRepository, UserRepository userRepository) {
         this.transactionRepository = transactionRepository;
-        this.accountService = accountService;
+        this.userRepository = userRepository;
     }
 
     @Transactional
@@ -38,7 +39,9 @@ public class TransactionService {
         }
 
         String transferId = UUID.randomUUID().toString();
-        User user = sourceAccount.getUser();
+        // Ricarica l'utente per assicurarti che sia gestito dalla sessione corrente
+        User user = userRepository.findById(sourceAccount.getUser().getId())
+                .orElseThrow(() -> new IllegalStateException("Utente non trovato per il conto di origine"));
 
         Transaction outTransaction = Transaction.builder()
                 .user(user)
