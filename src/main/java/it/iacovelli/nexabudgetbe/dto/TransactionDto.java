@@ -68,6 +68,20 @@ public class TransactionDto {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    public static class ConvertToTransferRequest {
+
+        @NotNull(message = "L'ID della transazione sorgente è obbligatorio")
+        private Long sourceTransactionId;
+
+        @NotNull(message = "L'ID della transazione destinazione è obbligatorio")
+        private Long destinationTransactionId;
+    }
+
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class TransactionResponse {
         private Long id;
         private Long accountId;

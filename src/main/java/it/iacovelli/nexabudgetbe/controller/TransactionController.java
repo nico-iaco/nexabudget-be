@@ -99,6 +99,26 @@ public class TransactionController {
         return ResponseEntity.status(HttpStatus.CREATED).body(responses);
     }
 
+    @PostMapping("/convert-to-transfer")
+    @Operation(summary = "Converte due transazioni in un trasferimento", description = "Converte due transazioni singole esistenti in un trasferimento, collegandole.")
+    public ResponseEntity<List<TransactionDto.TransactionResponse>> convertToTransfer(
+            @Valid @RequestBody TransactionDto.ConvertToTransferRequest request,
+            @AuthenticationPrincipal User currentUser) {
+
+        Transaction firstTransaction = transactionService.getTransactionByIdAndUser(request.getSourceTransactionId(), currentUser)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Prima transazione non trovata"));
+
+        Transaction secondTransaction = transactionService.getTransactionByIdAndUser(request.getDestinationTransactionId(), currentUser)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Seconda transazione non trovata"));
+
+        try {
+            List<TransactionDto.TransactionResponse> responses = transactionService.convertTransactionsToTransfer(firstTransaction, secondTransaction);
+            return ResponseEntity.ok(responses);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
     @GetMapping
     @Operation(summary = "Transazioni utente", description = "Lista di tutte le transazioni dell'utente")
     public ResponseEntity<List<TransactionDto.TransactionResponse>> getTransactionsByUserId(@AuthenticationPrincipal User currentUser) {
@@ -225,14 +245,13 @@ public class TransactionController {
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Aggiorna transazione", description = "Aggiorna una transazione esistente")
+    @Operation(summary = "Aggiorna transazione", description = "Aggiorna una transazione esistente. Se fa parte di un trasferimento, aggiorna anche la transazione collegata.")
     public ResponseEntity<TransactionDto.TransactionResponse> updateTransaction(@PathVariable Long id,
                                                                                 @Valid @RequestBody TransactionDto.TransactionRequest transactionRequest,
                                                                                 @AuthenticationPrincipal User currentUser) {
         Transaction oldTransaction = transactionService.getTransactionByIdAndUser(id, currentUser)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transazione non trovata"));
 
-        // Usa il nuovo metodo per ottenere l'entità Account
         Account account = accountService.getAccountEntityByIdAndUser(transactionRequest.getAccountId(), currentUser)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
 
@@ -257,14 +276,11 @@ public class TransactionController {
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "Elimina transazione", description = "Elimina una transazione per ID")
+    @Operation(summary = "Elimina transazione", description = "Elimina una transazione per ID. Se fa parte di un trasferimento, elimina anche la transazione collegata.")
     public ResponseEntity<Void> deleteTransaction(@Parameter(description = "ID transazione") @PathVariable Long id,
                                                   @AuthenticationPrincipal User currentUser) {
 
-        User user = userService.getUserById(currentUser.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
-
-        Transaction transaction = transactionService.getTransactionByIdAndUser(id, user)
+        Transaction transaction = transactionService.getTransactionByIdAndUser(id, currentUser)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transazione non trovata"));
 
         transactionService.deleteTransaction(transaction);

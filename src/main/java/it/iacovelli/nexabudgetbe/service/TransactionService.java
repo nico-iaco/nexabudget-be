@@ -71,6 +71,49 @@ public class TransactionService {
         return List.of(mapTransactionToResponse(savedOut), mapTransactionToResponse(savedIn));
     }
 
+    @Transactional
+    public List<TransactionDto.TransactionResponse> convertTransactionsToTransfer(Transaction firstTransaction, Transaction secondTransaction) {
+        if (firstTransaction.getTransferId() != null || secondTransaction.getTransferId() != null) {
+            throw new IllegalStateException("Una delle transazioni fa già parte di un trasferimento.");
+        }
+        if (firstTransaction.getAccount().getId().equals(secondTransaction.getAccount().getId())) {
+            throw new IllegalArgumentException("Le transazioni non possono appartenere allo stesso conto.");
+        }
+        if (firstTransaction.getType() == secondTransaction.getType()) {
+            throw new IllegalArgumentException("Le transazioni devono essere di tipo opposto (una IN e una OUT).");
+        }
+
+        String transferId = UUID.randomUUID().toString();
+
+        // Determina quale transazione è IN e quale è OUT
+        Transaction inTransaction = (firstTransaction.getType() == TransactionType.IN) ? firstTransaction : secondTransaction;
+        Transaction outTransaction = (firstTransaction.getType() == TransactionType.OUT) ? firstTransaction : secondTransaction;
+
+        // Normalizza importo, data e note basandosi sulla prima transazione
+        BigDecimal amount = firstTransaction.getImporto();
+        LocalDate date = firstTransaction.getData();
+        String notes = firstTransaction.getNote();
+
+        inTransaction.setImporto(amount);
+        inTransaction.setData(date);
+        inTransaction.setNote(notes);
+        inTransaction.setTransferId(transferId);
+        inTransaction.setDescrizione("Trasferimento da " + outTransaction.getAccount().getName() + ": " + inTransaction.getDescrizione());
+        inTransaction.setCategory(null); // I trasferimenti non hanno categoria
+
+        outTransaction.setImporto(amount);
+        outTransaction.setData(date);
+        outTransaction.setNote(notes);
+        outTransaction.setTransferId(transferId);
+        outTransaction.setDescrizione("Trasferimento a " + inTransaction.getAccount().getName() + ": " + outTransaction.getDescrizione());
+        outTransaction.setCategory(null); // I trasferimenti non hanno categoria
+
+        Transaction savedIn = transactionRepository.save(inTransaction);
+        Transaction savedOut = transactionRepository.save(outTransaction);
+
+        return List.of(mapTransactionToResponse(savedIn), mapTransactionToResponse(savedOut));
+    }
+
     @Transactional(readOnly = true)
     public Optional<Transaction> getTransactionByIdAndUser(Long id, User user) {
         return transactionRepository.findByIdAndUser(id, user);
@@ -123,6 +166,22 @@ public class TransactionService {
                                                                 BigDecimal newAmount, TransactionType newType, String newDescription,
                                                                 LocalDate newDate, String newNotes) {
 
+        // Se la transazione fa parte di un trasferimento, aggiorna anche l'altra
+        if (oldTransaction.getTransferId() != null) {
+            List<Transaction> transferTransactions = transactionRepository.findByTransferIdAndUser(oldTransaction.getTransferId(), oldTransaction.getUser());
+            Transaction otherTransaction = transferTransactions.stream()
+                    .filter(t -> !t.getId().equals(oldTransaction.getId()))
+                    .findFirst()
+                    .orElse(null);
+
+            if (otherTransaction != null) {
+                otherTransaction.setImporto(newAmount);
+                otherTransaction.setData(newDate);
+                otherTransaction.setNote(newNotes);
+                transactionRepository.save(otherTransaction);
+            }
+        }
+
         oldTransaction.setAccount(newAccount);
         oldTransaction.setImporto(newAmount);
         oldTransaction.setType(newType);
@@ -137,7 +196,16 @@ public class TransactionService {
 
     @Transactional
     public void deleteTransaction(Transaction transaction) {
-        transactionRepository.delete(transaction);
+        // Se la transazione fa parte di un trasferimento, elimina anche le altre collegate
+        if (transaction.getTransferId() != null) {
+            List<Transaction> transferTransactions = transactionRepository.findByTransferIdAndUser(transaction.getTransferId(), transaction.getUser());
+            if (!transferTransactions.isEmpty()) {
+                transactionRepository.deleteAll(transferTransactions);
+            }
+        } else {
+            // Altrimenti, elimina solo la singola transazione
+            transactionRepository.delete(transaction);
+        }
     }
 
     public BigDecimal getIncomeForAccountInPeriod(Account account, LocalDateTime start, LocalDateTime end) {
