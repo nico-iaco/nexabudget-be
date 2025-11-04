@@ -18,12 +18,9 @@ public class GocardlessService {
 
     private RestClient restClient;
 
-    private final AccountService accountService;
-
     private final ObjectMapper objectMapper;
 
-    public GocardlessService(AccountService accountService, ObjectMapper objectMapper) {
-        this.accountService = accountService;
+    public GocardlessService(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
 
@@ -59,9 +56,7 @@ public class GocardlessService {
         if (createWebTokenResponse == null) {
             return null;
         }
-        GocardlessCreateWebToken webTokenResponseData = createWebTokenResponse.getData();
-        accountService.addRequisitionIdToAccount(localAccountId, webTokenResponseData.getRequisitionId());
-        return webTokenResponseData;
+        return createWebTokenResponse.getData();
     }
 
     public List<GocardlessBankDetail> getBankAccounts(String requisitionId) {
@@ -87,10 +82,6 @@ public class GocardlessService {
         }
         GocardlessBankTransaction transactionsResponseData = transactionsResponse.getData();
         return transactionsResponseData != null ? transactionsResponseData.getTransactions().getAll() : List.of();
-    }
-
-    public void linkGocardlessAccountToLocalAccount(String accountId, Long localAccountId) {
-        accountService.linkAccountToGocardless(localAccountId, accountId);
     }
 
 

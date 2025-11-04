@@ -51,10 +51,12 @@ public class GocardlessController {
         Long localAccountId = body.getLocalAccountId();
         logger.debug("Received request to get bank link for institutionId: {} and localAccountId: {}", institutionId, localAccountId);
         GocardlessCreateWebToken bankLink = gocardlessService.generateBankLinkForToken(institutionId, localAccountId);
+        accountService.addRequisitionIdToAccount(localAccountId, bankLink.getRequisitionId());
         return ResponseEntity.ok(bankLink.getLink());
     }
 
     @GetMapping("/bank/{localAccountId}/account")
+    @Operation(summary = "Ottieni conti bancari", description = "Ottieni i conti bancari associati alla banca richiesta")
     public ResponseEntity<List<GocardlessBankDetail>> getBankAccounts(
             @Parameter(description = "ID conto") @PathVariable Long localAccountId,
             @AuthenticationPrincipal User currentUser) {
@@ -64,17 +66,19 @@ public class GocardlessController {
     }
 
     @PostMapping("/bank/{localAccountId}/link")
+    @Operation(summary = "Collega conto bancario", description = "Collega un conto bancario ad un conto locale")
     public ResponseEntity<Void> linkBankAccount(
             @Parameter(description = "ID conto") @PathVariable Long localAccountId,
             @RequestBody CompleteBankLinkRequest request,
             @AuthenticationPrincipal User currentUser) {
         AccountDto.AccountResponse accountResponse = accountService.getAccountByIdAndUser(localAccountId, currentUser)
                 .orElseThrow(() -> new IllegalArgumentException("Conto non trovato"));
-        gocardlessService.linkGocardlessAccountToLocalAccount(request.getAccountId(), accountResponse.getId());
+        accountService.linkAccountToGocardless(accountResponse.getId(), request.getAccountId());
         return ResponseEntity.ok().build();
     }
 
     @PostMapping("/bank/{localAccountId}/sync")
+    @Operation(summary = "Sincronizza transazioni", description = "Sincronizza le transazioni bancarie collegate al conto locale")
     public ResponseEntity<Void> syncBankTransactions(
             @Parameter(description = "ID conto") @PathVariable Long localAccountId,
             @AuthenticationPrincipal User currentUser) {
