@@ -1,29 +1,25 @@
 package it.iacovelli.nexabudgetbe.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.AccountDto;
 import it.iacovelli.nexabudgetbe.model.Account;
 import it.iacovelli.nexabudgetbe.model.AccountType;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.AccountService;
 import it.iacovelli.nexabudgetbe.service.UserService;
-import jakarta.transaction.Transactional;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import jakarta.validation.Valid;
 import java.math.BigDecimal;
-import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Collectors;
-
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/api/accounts")
@@ -33,7 +29,6 @@ public class AccountController {
 
     private final AccountService accountService;
     private final UserService userService;
-    private final DateTimeFormatter formatter = DateTimeFormatter.ISO_DATE_TIME;
 
     public AccountController(AccountService accountService, UserService userService) {
         this.accountService = accountService;

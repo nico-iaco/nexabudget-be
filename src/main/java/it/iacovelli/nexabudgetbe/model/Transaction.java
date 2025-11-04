@@ -5,6 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -34,23 +35,25 @@ public class Transaction {
     private Category category;
 
     @Column(nullable = false, precision = 19, scale = 4)
-    private BigDecimal importo;
+    private BigDecimal amount;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
     private TransactionType type; // ENTRATA o USCITA
 
-    @Column(nullable = false)
-    private String descrizione;
+    @Column(nullable = false, length = 1000)
+    private String description;
 
-    @Column(name = "data_transazione", nullable = false)
-    private LocalDate data;
+    @Column(name = "transaction_date", nullable = false)
+    private LocalDate date;
 
-    @Lob // Per testi potenzialmente lunghi
+    @Lob
     private String note;
 
     @Column(name = "transfer_id")
-    private String transferId; // Può essere un UUID come String
+    private String transferId;
+
+    private String externalId;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

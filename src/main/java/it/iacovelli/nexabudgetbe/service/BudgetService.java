@@ -1,10 +1,6 @@
 package it.iacovelli.nexabudgetbe.service;
 
-import it.iacovelli.nexabudgetbe.model.Budget;
-import it.iacovelli.nexabudgetbe.model.Category;
-import it.iacovelli.nexabudgetbe.model.Transaction;
-import it.iacovelli.nexabudgetbe.model.TransactionType;
-import it.iacovelli.nexabudgetbe.model.User;
+import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.BudgetRepository;
 import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
 import org.springframework.stereotype.Service;
@@ -77,13 +73,13 @@ public class BudgetService {
             Category category = budget.getCategory();
 
             // Trova tutte le transazioni di tipo OUT per questa categoria in questo periodo
-            List<Transaction> transactions = transactionRepository.findByUserAndDataBetween(user, startOfMonth, endOfMonth)
+            List<Transaction> transactions = transactionRepository.findByUserAndDateBetween(user, startOfMonth, endOfMonth)
                     .stream()
                     .filter(t -> t.getType() == TransactionType.OUT && category.equals(t.getCategory()))
                     .toList();
 
             BigDecimal spent = transactions.stream()
-                    .map(Transaction::getImporto)
+                    .map(Transaction::getAmount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
             budgetUsage.put(budget, spent);

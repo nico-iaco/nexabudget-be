@@ -5,7 +5,7 @@ import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
-import java.math.BigDecimal;
+
 import java.time.LocalDateTime;
 
 @Data
@@ -33,6 +33,15 @@ public class Account {
 
     @Column(nullable = false)
     private String currency;
+
+    @Column(name = "requisition_id")
+    private String requisitionId;
+
+    @Column(name = "external_account_id")
+    private String externalAccountId;
+
+    @Column(name = "last_external_sync")
+    private LocalDateTime lastExternalSync;
 
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;

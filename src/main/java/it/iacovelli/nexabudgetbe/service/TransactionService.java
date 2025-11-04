@@ -1,15 +1,19 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import it.iacovelli.nexabudgetbe.dto.GocardlessTransaction;
 import it.iacovelli.nexabudgetbe.dto.TransactionDto;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
 import it.iacovelli.nexabudgetbe.repository.UserRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -19,6 +23,10 @@ import java.util.stream.Collectors;
 public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final UserRepository userRepository;
+
+    private final Logger logger = LoggerFactory.getLogger(TransactionService.class);
+
+    private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     public TransactionService(TransactionRepository transactionRepository, UserRepository userRepository) {
         this.transactionRepository = transactionRepository;
@@ -46,10 +54,10 @@ public class TransactionService {
         Transaction outTransaction = Transaction.builder()
                 .user(user)
                 .account(sourceAccount)
-                .importo(amount)
+                .amount(amount)
                 .type(TransactionType.OUT)
-                .descrizione("Trasferimento a " + destinationAccount.getName() + ": " + description)
-                .data(transferDate)
+                .description("Trasferimento a " + destinationAccount.getName() + ": " + description)
+                .date(transferDate)
                 .note(notes)
                 .transferId(transferId)
                 .build();
@@ -57,10 +65,10 @@ public class TransactionService {
         Transaction inTransaction = Transaction.builder()
                 .user(user)
                 .account(destinationAccount)
-                .importo(amount)
+                .amount(amount)
                 .type(TransactionType.IN)
-                .descrizione("Trasferimento da " + sourceAccount.getName() + ": " + description)
-                .data(transferDate)
+                .description("Trasferimento da " + sourceAccount.getName() + ": " + description)
+                .date(transferDate)
                 .note(notes)
                 .transferId(transferId)
                 .build();
@@ -90,22 +98,22 @@ public class TransactionService {
         Transaction outTransaction = (firstTransaction.getType() == TransactionType.OUT) ? firstTransaction : secondTransaction;
 
         // Normalizza importo, data e note basandosi sulla prima transazione
-        BigDecimal amount = firstTransaction.getImporto();
-        LocalDate date = firstTransaction.getData();
+        BigDecimal amount = firstTransaction.getAmount();
+        LocalDate date = firstTransaction.getDate();
         String notes = firstTransaction.getNote();
 
-        inTransaction.setImporto(amount);
-        inTransaction.setData(date);
+        inTransaction.setAmount(amount);
+        inTransaction.setDate(date);
         inTransaction.setNote(notes);
         inTransaction.setTransferId(transferId);
-        inTransaction.setDescrizione("Trasferimento da " + outTransaction.getAccount().getName() + ": " + inTransaction.getDescrizione());
+        inTransaction.setDescription("Trasferimento da " + outTransaction.getAccount().getName() + ": " + inTransaction.getDescription());
         inTransaction.setCategory(null); // I trasferimenti non hanno categoria
 
-        outTransaction.setImporto(amount);
-        outTransaction.setData(date);
+        outTransaction.setAmount(amount);
+        outTransaction.setDate(date);
         outTransaction.setNote(notes);
         outTransaction.setTransferId(transferId);
-        outTransaction.setDescrizione("Trasferimento a " + inTransaction.getAccount().getName() + ": " + outTransaction.getDescrizione());
+        outTransaction.setDescription("Trasferimento a " + inTransaction.getAccount().getName() + ": " + outTransaction.getDescription());
         outTransaction.setCategory(null); // I trasferimenti non hanno categoria
 
         Transaction savedIn = transactionRepository.save(inTransaction);
@@ -149,7 +157,7 @@ public class TransactionService {
 
     @Transactional(readOnly = true)
     public List<TransactionDto.TransactionResponse> getTransactionsByUserAndDateRange(User user, LocalDate start, LocalDate end) {
-        return transactionRepository.findByUserAndDataBetween(user, start, end).stream()
+        return transactionRepository.findByUserAndDateBetween(user, start, end).stream()
                 .map(this::mapTransactionToResponse)
                 .collect(Collectors.toList());
     }
@@ -175,18 +183,18 @@ public class TransactionService {
                     .orElse(null);
 
             if (otherTransaction != null) {
-                otherTransaction.setImporto(newAmount);
-                otherTransaction.setData(newDate);
+                otherTransaction.setAmount(newAmount);
+                otherTransaction.setDate(newDate);
                 otherTransaction.setNote(newNotes);
                 transactionRepository.save(otherTransaction);
             }
         }
 
         oldTransaction.setAccount(newAccount);
-        oldTransaction.setImporto(newAmount);
+        oldTransaction.setAmount(newAmount);
         oldTransaction.setType(newType);
-        oldTransaction.setDescrizione(newDescription);
-        oldTransaction.setData(newDate);
+        oldTransaction.setDescription(newDescription);
+        oldTransaction.setDate(newDate);
         oldTransaction.setNote(newNotes);
         oldTransaction.setCategory(newCategory);
 
@@ -224,6 +232,26 @@ public class TransactionService {
         return income.subtract(expense);
     }
 
+    public void importTransactionsFromGocardless(List<GocardlessTransaction> transactions, User user, Account account) {
+        transactions.forEach(gt -> {
+            if (transactionRepository.findByExternalId(gt.getTransactionId()).isEmpty()) {
+                BigDecimal rawAmount = new BigDecimal(gt.getTransactionAmount().getAmount());
+                Transaction t = new Transaction();
+                t.setExternalId(gt.getTransactionId());
+                t.setAmount(rawAmount.abs());
+                t.setType(rawAmount.signum() > 0 ? TransactionType.IN : TransactionType.OUT);
+                t.setUser(user);
+                t.setDescription(gt.getPayeeName());
+                t.setDate(LocalDate.parse(gt.getValueDate(), formatter));
+                t.setAccount(account);
+                transactionRepository.save(t);
+            } else {
+                logger.debug("Gocardless Transaction already exists: {}", gt.getTransactionId());
+            }
+        });
+
+    }
+
     private TransactionDto.TransactionResponse mapTransactionToResponse(Transaction transaction) {
         return TransactionDto.TransactionResponse.builder()
                 .id(transaction.getId())
@@ -231,10 +259,10 @@ public class TransactionService {
                 .accountName(transaction.getAccount().getName())
                 .categoryId(transaction.getCategory() != null ? transaction.getCategory().getId() : null)
                 .categoryName(transaction.getCategory() != null ? transaction.getCategory().getName() : null)
-                .importo(transaction.getImporto())
+                .amount(transaction.getAmount())
                 .type(transaction.getType())
-                .descrizione(transaction.getDescrizione())
-                .data(transaction.getData())
+                .description(transaction.getDescription())
+                .date(transaction.getDate())
                 .note(transaction.getNote())
                 .transferId(transaction.getTransferId())
                 .build();

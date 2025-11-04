@@ -1,17 +1,16 @@
 package it.iacovelli.nexabudgetbe.dto;
 
 import it.iacovelli.nexabudgetbe.model.TransactionType;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.time.LocalDateTime;
 
 public class TransactionDto {
 
@@ -27,15 +26,15 @@ public class TransactionDto {
 
         @NotNull(message = "L'importo è obbligatorio")
         @Positive(message = "L'importo deve essere positivo")
-        private BigDecimal importo;
+        private BigDecimal amount;
 
         @NotNull(message = "Il tipo di transazione è obbligatorio")
         private TransactionType type;
 
         @NotBlank(message = "La descrizione è obbligatoria")
-        private String descrizione;
+        private String description;
 
-        private LocalDate data;
+        private LocalDate date;
 
         private String note;
     }
@@ -88,10 +87,10 @@ public class TransactionDto {
         private String accountName;
         private Long categoryId;
         private String categoryName;
-        private BigDecimal importo;
+        private BigDecimal amount;
         private TransactionType type;
-        private String descrizione;
-        private LocalDate data;
+        private String description;
+        private LocalDate date;
         private String note;
         private String transferId;
     }

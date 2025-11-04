@@ -1,11 +1,18 @@
 package it.iacovelli.nexabudgetbe.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.TransactionDto;
-import it.iacovelli.nexabudgetbe.model.*;
+import it.iacovelli.nexabudgetbe.model.Account;
+import it.iacovelli.nexabudgetbe.model.Category;
+import it.iacovelli.nexabudgetbe.model.Transaction;
+import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.AccountService;
 import it.iacovelli.nexabudgetbe.service.CategoryService;
 import it.iacovelli.nexabudgetbe.service.TransactionService;
 import it.iacovelli.nexabudgetbe.service.UserService;
+import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -13,15 +20,10 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
-
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/api/transactions")
@@ -63,10 +65,10 @@ public class TransactionController {
                 .user(currentUser)
                 .account(account)
                 .category(category)
-                .importo(transactionRequest.getImporto())
+                .amount(transactionRequest.getAmount())
                 .type(transactionRequest.getType())
-                .descrizione(transactionRequest.getDescrizione())
-                .data(transactionRequest.getData())
+                .description(transactionRequest.getDescription())
+                .date(transactionRequest.getDate())
                 .note(transactionRequest.getNote())
                 .build();
 
@@ -265,10 +267,10 @@ public class TransactionController {
                 oldTransaction,
                 account,
                 category,
-                transactionRequest.getImporto(),
+                transactionRequest.getAmount(),
                 transactionRequest.getType(),
-                transactionRequest.getDescrizione(),
-                transactionRequest.getData(),
+                transactionRequest.getDescription(),
+                transactionRequest.getDate(),
                 transactionRequest.getNote()
         );
 
