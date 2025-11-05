@@ -96,6 +96,7 @@ spring.jpa.properties.hibernate.format_sql=true
 spring.jpa.open-in-view=false
 
 # JWT Configuration
+app.jwtSecret=tua-chiave-segreta-molto-lunga-e-sicura-di-almeno-64-caratteri
 app.jwtExpirationInMs=86400000
 
 # GoCardless Integration (optional)
@@ -245,13 +246,14 @@ The application supports compilation to a native executable using GraalVM, provi
 
 ## Environment Variables
 
-| Variable                        | Description                                 | Required | Default                                     |
-|---------------------------------|---------------------------------------------|----------|---------------------------------------------|
-| `DB_URL`                        | PostgreSQL database URL                     | Yes      | jdbc:postgresql://localhost:5432/nexabudget |
-| `DB_PWD`                        | PostgreSQL password                         | Yes      | -                                           |
-| `GEMINI_API_KEY`                | Google Gemini API key for AI categorization | Yes      | -                                           |
-| `app.jwtExpirationInMs`         | JWT token expiration time in milliseconds   | No       | 86400000 (24 hours)                         |
-| `gocardless.integrator.baseUrl` | GoCardless integrator service URL           | No       | http://localhost:3000                       |
+| Variable                        | Description                                 | Required | Default                                                        |
+|---------------------------------|---------------------------------------------|----------|----------------------------------------------------------------|
+| `DB_URL`                        | PostgreSQL database URL                     | Yes      | jdbc:postgresql://localhost:5432/nexabudget                    |
+| `DB_PWD`                        | PostgreSQL password                         | Yes      | -                                                              |
+| `GEMINI_API_KEY`                | Google Gemini API key for AI categorization | Yes      | -                                                              |
+| `app.jwtExpirationInMs`         | JWT token expiration time in milliseconds   | No       | 86400000 (24 hours)                                            |
+| `app.jwtSecret`                 | JWT secret                                  | No       | tua-chiave-segreta-molto-lunga-e-sicura-di-almeno-64-caratteri |
+| `gocardless.integrator.baseUrl` | GoCardless integrator service URL           | No       | http://localhost:3000                                          |
 
 ## Development
 
