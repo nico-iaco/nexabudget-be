@@ -1,51 +1,71 @@
 # NexaBudget - Backend
 This is the backend service for NexaBudget, a personal finance management application. It provides a RESTful API for handling users, accounts, transactions, budgets, and categories.
 ## Built With
-- Java
-- Spring Boot
+- Java 21
+- Spring Boot 3.5.5
 - Spring Data JPA
-- Spring Security
+- Spring Security with JWT Authentication
 - Maven
+- Lombok
+- SpringDoc OpenAPI (Swagger UI)
+- PostgreSQL
+- Google Gemini AI (for transaction categorization)
+- Spring Boot Actuator with Prometheus
+- GraalVM Native Image support
 ## Database Schema
 The application uses a relational database to persist data. The main entities are:
 - **User**: Represents a user of the application.
   - `id` (Primary Key)
-  - `username`
-  - `email`
-  - `password`
+  - `username` (unique)
+  - `email` (unique)
+  - `password_hash`
+  - `created_at`
+  - `updated_at`
 - **Account**: Represents a financial account (e.g., bank account, credit card).
   - `id` (Primary Key)
   - `name`
   - `type` (e.g., CASH, CHECKING, SAVINGS)
+  - `currency`
   - `user_id` (Foreign Key to User)
+  - `requisition_id` (for GoCardless integration)
+  - `external_account_id` (for GoCardless integration)
+  - `last_external_sync`
+  - `created_at`
 - **Category**: Represents a category for transactions (e.g., Food, Salary).
   - `id` (Primary Key)
   - `name`
-  - `type` (e.g., INCOME, EXPENSE)
+  - `transaction_type` (INCOME or EXPENSE)
+  - `user_id` (Foreign Key to User, nullable for default categories)
 - **Transaction**: Represents a single financial transaction.
   - `id` (Primary Key)
-  - `amount`
+  - `amount` (BigDecimal)
   - `description`
-  - `date`
-  - `type` (e.g., INCOME, EXPENSE)
+  - `transaction_date`
+  - `type` (INCOME or EXPENSE)
+  - `note` (optional text field)
+  - `user_id` (Foreign Key to User)
   - `account_id` (Foreign Key to Account)
   - `category_id` (Foreign Key to Category)
+  - `transfer_id` (for linked transfers)
+  - `external_id` (for GoCardless integration)
+  - `created_at`
 - **Budget**: Represents a spending or saving goal for a specific category.
   - `id` (Primary Key)
-  - `amount`
-  - `startDate`
-  - `endDate`
+  - `budget_limit` (BigDecimal)
+  - `start_date`
+  - `end_date`
   - `category_id` (Foreign Key to Category)
   - `user_id` (Foreign Key to User)
+  - `created_at`
 ## Getting Started
 
 To get a local copy up and running, follow these simple steps.
 
 ### Prerequisites
 
-- JDK 17 or newer
+- JDK 21 or newer
 - Maven
-- Docker and Docker Compose
+- Docker and Docker Compose (optional, for containerized deployment)
 
 ### 1. Clone the repository
 ```shell
@@ -61,17 +81,38 @@ This method is ideal for development and debugging.
 
 **1. Database Setup**
 
-You need a running instance of PostgreSQL. Open the `src/main/resources/application.properties` file and update the database connection properties:
+You need a running instance of PostgreSQL. Set the following environment variables or update `src/main/resources/application.properties`:
 
 ```properties
-spring.datasource.url=jdbc:postgresql://localhost:5432/nexabudget
-spring.datasource.username=your_username
-spring.datasource.password=your_password
+# Database Configuration (use environment variables or set directly)
+spring.datasource.url=${DB_URL:jdbc:postgresql://localhost:5432/nexabudget}
+spring.datasource.username=nexabudget-be
+spring.datasource.password=${DB_PWD:your_password}
 spring.datasource.driver-class-name=org.postgresql.Driver
 
-# Instruct Hibernate to generate the database schema
+# JPA Configuration
 spring.jpa.hibernate.ddl-auto=update
+spring.jpa.properties.hibernate.format_sql=true
+spring.jpa.open-in-view=false
+
+# JWT Configuration
+app.jwtExpirationInMs=86400000
+
+# GoCardless Integration (optional)
+gocardless.integrator.baseUrl=http://localhost:3000
+
+# Google Gemini AI Configuration (required for AI categorization)
+google.ai.apiKey=${GEMINI_API_KEY:your_gemini_api_key}
+
+# Actuator and Monitoring
+management.endpoints.web.exposure.include=*
+management.endpoint.health.show-details=always
 ```
+
+**Required Environment Variables:**
+- `DB_URL`: PostgreSQL database URL (default: jdbc:postgresql://localhost:5432/nexabudget)
+- `DB_PWD`: PostgreSQL database password
+- `GEMINI_API_KEY`: Google Gemini API key for AI categorization
 
 **2. Build the project**
 
@@ -120,3 +161,119 @@ docker-compose down
 # For Native
 docker-compose -f docker-compose.native.yml down
 ```
+
+## API Documentation
+
+Once the application is running, you can access the Swagger UI documentation at:
+- **Swagger UI**: http://localhost:8080/swagger-ui.html
+- **OpenAPI JSON**: http://localhost:8080/v3/api-docs
+
+The API provides the following endpoints:
+
+### Authentication (Public)
+- `POST /api/auth/login` - User login
+- `POST /api/auth/register` - User registration
+
+### Users (Protected)
+- `GET /api/users/me` - Get current user profile
+- `PUT /api/users/me` - Update current user profile
+
+### Accounts (Protected)
+- `GET /api/accounts` - Get all user accounts
+- `POST /api/accounts` - Create new account
+- `GET /api/accounts/{id}` - Get account details
+- `PUT /api/accounts/{id}` - Update account
+- `DELETE /api/accounts/{id}` - Delete account
+
+### Transactions (Protected)
+- `GET /api/transactions` - Get all user transactions (with pagination and filtering)
+- `POST /api/transactions` - Create new transaction
+- `GET /api/transactions/{id}` - Get transaction details
+- `PUT /api/transactions/{id}` - Update transaction
+- `DELETE /api/transactions/{id}` - Delete transaction
+- `POST /api/transactions/{id}/categorize` - AI categorization of transaction
+
+### Categories (Protected)
+- `GET /api/categories` - Get all categories (default + user custom)
+- `POST /api/categories` - Create custom category
+- `PUT /api/categories/{id}` - Update category
+- `DELETE /api/categories/{id}` - Delete category
+
+### Budgets (Protected)
+- `GET /api/budgets` - Get all user budgets
+- `POST /api/budgets` - Create new budget
+- `GET /api/budgets/{id}` - Get budget details
+- `PUT /api/budgets/{id}` - Update budget
+- `DELETE /api/budgets/{id}` - Delete budget
+
+### GoCardless Integration (Protected)
+- `POST /api/gocardless/requisitions` - Create requisition for bank account linking
+- `GET /api/gocardless/requisitions/{id}` - Get requisition status
+- `GET /api/gocardless/requisitions/{id}/accounts` - Get accounts from requisition
+- `POST /api/gocardless/sync/{accountId}` - Sync transactions from external account
+
+All protected endpoints require a valid JWT token in the Authorization header:
+```
+Authorization: Bearer <your_jwt_token>
+```
+
+## Features
+
+### JWT Authentication
+The application uses JWT (JSON Web Tokens) for secure authentication. Tokens expire after 24 hours by default (configurable via `app.jwtExpirationInMs` property).
+
+### AI-Powered Transaction Categorization
+Transactions can be automatically categorized using Google's Gemini AI. The AI analyzes transaction descriptions and suggests the most appropriate category based on your existing categories.
+
+### GoCardless Integration
+Connect your real bank accounts through GoCardless (formerly Nordigen) to automatically import transactions. The integration supports:
+- Creating bank connection requisitions
+- Linking external accounts
+- Syncing transactions from linked accounts
+
+### Monitoring and Health Checks
+The application exposes Spring Boot Actuator endpoints for monitoring:
+- **Health**: http://localhost:8080/actuator/health
+- **Metrics**: http://localhost:8080/actuator/metrics
+- **Prometheus**: http://localhost:8080/actuator/prometheus
+
+### GraalVM Native Image
+The application supports compilation to a native executable using GraalVM, providing:
+- Faster startup time
+- Lower memory footprint
+- Better resource efficiency
+
+## Environment Variables
+
+| Variable                        | Description                                 | Required | Default                                     |
+|---------------------------------|---------------------------------------------|----------|---------------------------------------------|
+| `DB_URL`                        | PostgreSQL database URL                     | Yes      | jdbc:postgresql://localhost:5432/nexabudget |
+| `DB_PWD`                        | PostgreSQL password                         | Yes      | -                                           |
+| `GEMINI_API_KEY`                | Google Gemini API key for AI categorization | Yes      | -                                           |
+| `app.jwtExpirationInMs`         | JWT token expiration time in milliseconds   | No       | 86400000 (24 hours)                         |
+| `gocardless.integrator.baseUrl` | GoCardless integrator service URL           | No       | http://localhost:3000                       |
+
+## Development
+
+### Project Structure
+```
+src/main/java/it/iacovelli/nexabudgetbe/
+├── config/          # Configuration classes
+├── controller/      # REST controllers
+├── dto/            # Data Transfer Objects
+├── model/          # JPA entities
+├── repository/     # Spring Data repositories
+├── security/       # JWT security components
+└── service/        # Business logic services
+```
+
+### Building Native Image
+To build a native executable locally:
+
+```shell
+./mvnw -Pnative clean package
+```
+
+Note: This requires GraalVM to be installed and configured.
+
+

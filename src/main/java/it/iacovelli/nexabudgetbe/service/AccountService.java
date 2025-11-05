@@ -166,6 +166,7 @@ public class AccountService {
                 .currency(account.getCurrency())
                 .type(account.getType())
                 .actualBalance(balance)
+                .isLinkedToExternal(account.getExternalAccountId() != null)
                 .build();
     }
 

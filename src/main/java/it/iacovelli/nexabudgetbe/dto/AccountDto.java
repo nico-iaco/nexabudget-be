@@ -1,14 +1,14 @@
 package it.iacovelli.nexabudgetbe.dto;
 
 import it.iacovelli.nexabudgetbe.model.AccountType;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.PositiveOrZero;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.PositiveOrZero;
 import java.math.BigDecimal;
 
 public class AccountDto {
@@ -41,6 +41,7 @@ public class AccountDto {
         private AccountType type;
         private BigDecimal actualBalance;
         private String currency;
+        private boolean isLinkedToExternal;
         private String createdAt;
     }
 }

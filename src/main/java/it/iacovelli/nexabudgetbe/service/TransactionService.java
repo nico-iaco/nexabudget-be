@@ -24,13 +24,16 @@ public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final UserRepository userRepository;
 
+    private final AiCategorizationService aiCategorizationService;
+
     private final Logger logger = LoggerFactory.getLogger(TransactionService.class);
 
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    public TransactionService(TransactionRepository transactionRepository, UserRepository userRepository) {
+    public TransactionService(TransactionRepository transactionRepository, UserRepository userRepository, AiCategorizationService aiCategorizationService) {
         this.transactionRepository = transactionRepository;
         this.userRepository = userRepository;
+        this.aiCategorizationService = aiCategorizationService;
     }
 
     @Transactional
@@ -244,6 +247,19 @@ public class TransactionService {
                 t.setDescription(gt.getPayeeName());
                 t.setDate(LocalDate.parse(gt.getValueDate(), formatter));
                 t.setAccount(account);
+
+                Optional<Category> foundCategory = aiCategorizationService.categorizeTransaction(gt.getPayeeName(), user, t.getType());
+
+                if (foundCategory.isPresent()) {
+                    t.setCategory(foundCategory.get());
+                    logger.debug("Transazione {} categorizzata automaticamente come: {}", gt.getTransactionId(), foundCategory.get().getName());
+                } else {
+                    // Se l'AI fallisce o non trova, la categoria resta null (come prima)
+                    // L'utente dovrà categorizzarla manualmente
+                    logger.debug("Transazione {} non categorizzata automaticamente.", gt.getTransactionId());
+                    t.setCategory(null);
+                }
+
                 transactionRepository.save(t);
             } else {
                 logger.debug("Gocardless Transaction already exists: {}", gt.getTransactionId());
