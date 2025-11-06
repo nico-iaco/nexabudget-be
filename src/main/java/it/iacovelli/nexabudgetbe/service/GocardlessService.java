@@ -9,6 +9,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class GocardlessService {
@@ -47,7 +48,7 @@ public class GocardlessService {
         return banksResponse != null ? banksResponse.getData() : List.of();
     }
 
-    public GocardlessCreateWebToken generateBankLinkForToken(String institutionId, Long localAccountId) {
+    public GocardlessCreateWebToken generateBankLinkForToken(String institutionId, UUID localAccountId) {
         String path = "/create-web-token";
         GocardlessCreateWebTokenRequest request = new GocardlessCreateWebTokenRequest();
         request.setInstitutionId(institutionId);
@@ -81,13 +82,12 @@ public class GocardlessService {
             return List.of();
         }
         GocardlessBankTransaction transactionsResponseData = transactionsResponse.getData();
-        return transactionsResponseData != null ? transactionsResponseData.getTransactions().getAll() : List.of();
+        if (transactionsResponseData == null) {
+            return List.of();
+        }
+
+        return transactionsResponseData.getTransactions() != null ? transactionsResponseData.getTransactions().getAll() : List.of();
     }
-
-
-
-
-
 
 
 }

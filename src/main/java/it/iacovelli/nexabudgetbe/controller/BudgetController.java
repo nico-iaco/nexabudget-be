@@ -1,5 +1,8 @@
 package it.iacovelli.nexabudgetbe.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.BudgetDto;
 import it.iacovelli.nexabudgetbe.model.Budget;
 import it.iacovelli.nexabudgetbe.model.Category;
@@ -7,6 +10,7 @@ import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.BudgetService;
 import it.iacovelli.nexabudgetbe.service.CategoryService;
 import it.iacovelli.nexabudgetbe.service.UserService;
+import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -14,16 +18,13 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import jakarta.validation.Valid;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.stream.Collectors;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.tags.Tag;
 
 @RestController
 @RequestMapping("/api/budgets")
@@ -80,7 +81,7 @@ public class BudgetController {
     @Operation(summary = "Budgets per categoria", description = "Budgets di un utente filtrati per categoria")
     public ResponseEntity<List<BudgetDto.BudgetResponse>> getBudgetsByUserAndCategory(
             @AuthenticationPrincipal User currentUser,
-            @Parameter(description = "ID categoria") @PathVariable Long categoryId) {
+            @Parameter(description = "ID categoria") @PathVariable UUID categoryId) {
 
         User user = userService.getUserById(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
@@ -183,7 +184,7 @@ public class BudgetController {
     @PutMapping("/{id}")
     @Operation(summary = "Aggiorna budget", description = "Aggiorna i dati di un budget esistente")
     public ResponseEntity<BudgetDto.BudgetResponse> updateBudget(
-            @Parameter(description = "ID budget") @PathVariable Long id,
+            @Parameter(description = "ID budget") @PathVariable UUID id,
             @Valid @RequestBody BudgetDto.BudgetRequest budgetRequest) {
         Budget existingBudget = budgetService.getBudgetById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget non trovato"));
@@ -202,7 +203,7 @@ public class BudgetController {
 
     @DeleteMapping("/{id}")
     @Operation(summary = "Elimina budget", description = "Elimina un budget per ID")
-    public ResponseEntity<Void> deleteBudget(@Parameter(description = "ID budget") @PathVariable Long id) {
+    public ResponseEntity<Void> deleteBudget(@Parameter(description = "ID budget") @PathVariable UUID id) {
         budgetService.deleteBudget(id);
         return ResponseEntity.noContent().build();
     }

@@ -1,23 +1,23 @@
 package it.iacovelli.nexabudgetbe.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.CategoryDto;
 import it.iacovelli.nexabudgetbe.model.Category;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.CategoryService;
 import it.iacovelli.nexabudgetbe.service.UserService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.tags.Tag;
-
-import jakarta.validation.Valid;
 import java.util.List;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 @RestController
@@ -86,7 +86,7 @@ public class CategoryController {
     @PutMapping("/{id}")
     @Operation(summary = "Aggiorna categoria", description = "Aggiorna nome e tipo di una categoria esistente")
     public ResponseEntity<CategoryDto.CategoryResponse> updateCategory(
-            @Parameter(description = "ID categoria") @PathVariable Long id,
+            @Parameter(description = "ID categoria") @PathVariable UUID id,
             @AuthenticationPrincipal User currentUser,
             @Valid @RequestBody CategoryDto.CategoryRequest categoryRequest) {
         Category existingCategory = categoryService.getCategoryByIdAndUser(id, currentUser)
@@ -101,7 +101,7 @@ public class CategoryController {
 
     @DeleteMapping("/{id}")
     @Operation(summary = "Elimina categoria", description = "Elimina una categoria per ID")
-    public ResponseEntity<Void> deleteCategory(@Parameter(description = "ID categoria") @PathVariable Long id,
+    public ResponseEntity<Void> deleteCategory(@Parameter(description = "ID categoria") @PathVariable UUID id,
                                                @AuthenticationPrincipal User currentUser) {
         categoryService.deleteCategoryWithUser(id, currentUser);
         return ResponseEntity.noContent().build();

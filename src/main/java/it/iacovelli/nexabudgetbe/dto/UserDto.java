@@ -8,6 +8,7 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import java.util.UUID;
 
 public class UserDto {
 
@@ -34,7 +35,7 @@ public class UserDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class UserResponse {
-        private Long id;
+        private UUID id;
         private String username;
         private String email;
         private String createdAt;

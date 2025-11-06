@@ -18,6 +18,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/accounts")
@@ -42,7 +43,7 @@ public class AccountController {
 
     @GetMapping("/{id}")
     @Operation(summary = "Recupera conto", description = "Ritorna i dettagli di un conto per ID")
-    public ResponseEntity<AccountDto.AccountResponse> getAccountById(@Parameter(description = "ID del conto") @PathVariable Long id,
+    public ResponseEntity<AccountDto.AccountResponse> getAccountById(@Parameter(description = "ID del conto") @PathVariable UUID id,
                                                                      @AuthenticationPrincipal User currentUser) {
         AccountDto.AccountResponse account = accountService.getAccountByIdAndUser(id, currentUser)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
@@ -82,7 +83,7 @@ public class AccountController {
     @Operation(summary = "Aggiorna conto", description = "Aggiorna i dati di un conto")
     public ResponseEntity<AccountDto.AccountResponse> updateAccount(
             @AuthenticationPrincipal User currentUser,
-            @Parameter(description = "ID del conto") @PathVariable Long id,
+            @Parameter(description = "ID del conto") @PathVariable UUID id,
             @Valid @RequestBody AccountDto.AccountRequest accountRequest) {
 
         AccountDto.AccountResponse updatedAccountResponse = accountService.updateAccount(
@@ -98,7 +99,7 @@ public class AccountController {
 
     @DeleteMapping("/{id}")
     @Operation(summary = "Elimina conto", description = "Elimina un conto e tutte le sue transazioni")
-    public ResponseEntity<Void> deleteAccount(@Parameter(description = "ID del conto") @PathVariable Long id,
+    public ResponseEntity<Void> deleteAccount(@Parameter(description = "ID del conto") @PathVariable UUID id,
                                               @AuthenticationPrincipal User currentUser) {
         // Verifica che l'utente sia il proprietario del conto prima di eliminarlo
         accountService.getAccountByIdAndUser(id, currentUser)

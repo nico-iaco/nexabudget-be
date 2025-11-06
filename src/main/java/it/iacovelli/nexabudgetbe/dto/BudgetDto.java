@@ -1,15 +1,16 @@
 package it.iacovelli.nexabudgetbe.dto;
 
 import it.iacovelli.nexabudgetbe.model.TransactionType;
+import jakarta.validation.constraints.NotNull;
+import jakarta.validation.constraints.Positive;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Positive;
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.UUID;
 
 public class BudgetDto {
 
@@ -19,7 +20,7 @@ public class BudgetDto {
     @AllArgsConstructor
     public static class BudgetRequest {
         @NotNull(message = "L'ID della categoria è obbligatorio")
-        private Long categoryId;
+        private UUID categoryId;
 
         @NotNull(message = "Il limite di budget è obbligatorio")
         @Positive(message = "Il limite di budget deve essere positivo")
@@ -36,8 +37,8 @@ public class BudgetDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class BudgetResponse {
-        private Long id;
-        private Long categoryId;
+        private UUID id;
+        private UUID categoryId;
         private String categoryName;
         private TransactionType categoryType;
         private BigDecimal limit;
@@ -50,7 +51,7 @@ public class BudgetDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class UsageResponse {
-        private Long budgetId;
+        private UUID budgetId;
         private String categoryName;
         private BigDecimal limit;
         private BigDecimal spent;

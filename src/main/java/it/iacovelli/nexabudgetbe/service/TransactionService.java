@@ -125,7 +125,7 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
-    public Optional<Transaction> getTransactionByIdAndUser(Long id, User user) {
+    public Optional<Transaction> getTransactionByIdAndUser(UUID id, User user) {
         return transactionRepository.findByIdAndUser(id, user);
     }
 
@@ -267,10 +267,12 @@ public class TransactionService {
 
     }
 
+    @Transactional(readOnly = true)
     public List<TransactionDto.TransactionResponse> findByUserAndDateBetween(User user, LocalDate start, LocalDate end) {
         return transactionRepository.findByUserAndDateBetween(user, start, end).stream().map(t -> mapTransactionToResponse(t)).toList();
     }
 
+    @Transactional(readOnly = true)
     public BigDecimal calculateBalanceForAccount(Account account) {
         return transactionRepository.calculateBalanceForAccount(account);
     }

@@ -24,6 +24,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/transactions")
@@ -133,7 +134,7 @@ public class TransactionController {
 
     @GetMapping("/account/{accountId}")
     @Operation(summary = "Transazioni conto", description = "Transazioni associate ad un conto")
-    public ResponseEntity<List<TransactionDto.TransactionResponse>> getTransactionsByAccountId(@Parameter(description = "ID conto") @PathVariable Long accountId,
+    public ResponseEntity<List<TransactionDto.TransactionResponse>> getTransactionsByAccountId(@Parameter(description = "ID conto") @PathVariable UUID accountId,
                                                                                                @AuthenticationPrincipal User currentUser) {
         User user = userService.getUserById(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
@@ -148,7 +149,7 @@ public class TransactionController {
 
     @GetMapping("/category/{categoryId}")
     @Operation(summary = "Transazioni categoria", description = "Transazioni associate ad una categoria")
-    public ResponseEntity<List<TransactionDto.TransactionResponse>> getTransactionsByCategoryId(@Parameter(description = "ID categoria") @PathVariable Long categoryId,
+    public ResponseEntity<List<TransactionDto.TransactionResponse>> getTransactionsByCategoryId(@Parameter(description = "ID categoria") @PathVariable UUID categoryId,
                                                                                                 @AuthenticationPrincipal User currentUser) {
         Category category = categoryService.getCategoryById(categoryId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Categoria non trovata"));
@@ -191,7 +192,7 @@ public class TransactionController {
     @GetMapping("/account/{accountId}/daterange")
     @Operation(summary = "Transazioni per periodo (conto)", description = "Transazioni di un conto in un intervallo temporale")
     public ResponseEntity<List<TransactionDto.TransactionResponse>> getTransactionsByAccountAndDateRange(
-            @Parameter(description = "ID conto") @PathVariable Long accountId,
+            @Parameter(description = "ID conto") @PathVariable UUID accountId,
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "Data/ora inizio (ISO)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime start,
             @Parameter(description = "Data/ora fine (ISO)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime end) {
@@ -212,7 +213,7 @@ public class TransactionController {
     @Operation(summary = "Totale entrate conto", description = "Somma entrate per un conto in un intervallo")
     public ResponseEntity<BigDecimal> getIncomeForAccountInPeriod(
             @AuthenticationPrincipal User currentUser,
-            @Parameter(description = "ID conto") @PathVariable Long accountId,
+            @Parameter(description = "ID conto") @PathVariable UUID accountId,
             @Parameter(description = "Data/ora inizio (ISO)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime start,
             @Parameter(description = "Data/ora fine (ISO)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime end) {
 
@@ -231,7 +232,7 @@ public class TransactionController {
     @Operation(summary = "Totale uscite conto", description = "Somma uscite per un conto in un intervallo")
     public ResponseEntity<BigDecimal> getExpenseForAccountInPeriod(
             @AuthenticationPrincipal User currentUser,
-            @Parameter(description = "ID conto") @PathVariable Long accountId,
+            @Parameter(description = "ID conto") @PathVariable UUID accountId,
             @Parameter(description = "Data/ora inizio (ISO)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime start,
             @Parameter(description = "Data/ora fine (ISO)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime end) {
 
@@ -248,7 +249,7 @@ public class TransactionController {
 
     @PutMapping("/{id}")
     @Operation(summary = "Aggiorna transazione", description = "Aggiorna una transazione esistente. Se fa parte di un trasferimento, aggiorna anche la transazione collegata.")
-    public ResponseEntity<TransactionDto.TransactionResponse> updateTransaction(@PathVariable Long id,
+    public ResponseEntity<TransactionDto.TransactionResponse> updateTransaction(@PathVariable UUID id,
                                                                                 @Valid @RequestBody TransactionDto.TransactionRequest transactionRequest,
                                                                                 @AuthenticationPrincipal User currentUser) {
         Transaction oldTransaction = transactionService.getTransactionByIdAndUser(id, currentUser)
@@ -279,7 +280,7 @@ public class TransactionController {
 
     @DeleteMapping("/{id}")
     @Operation(summary = "Elimina transazione", description = "Elimina una transazione per ID. Se fa parte di un trasferimento, elimina anche la transazione collegata.")
-    public ResponseEntity<Void> deleteTransaction(@Parameter(description = "ID transazione") @PathVariable Long id,
+    public ResponseEntity<Void> deleteTransaction(@Parameter(description = "ID transazione") @PathVariable UUID id,
                                                   @AuthenticationPrincipal User currentUser) {
 
         Transaction transaction = transactionService.getTransactionByIdAndUser(id, currentUser)

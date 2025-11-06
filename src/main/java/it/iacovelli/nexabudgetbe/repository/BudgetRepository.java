@@ -9,10 +9,10 @@ import org.springframework.stereotype.Repository;
 
 import java.time.LocalDate;
 import java.util.List;
-import java.util.Optional;
+import java.util.UUID;
 
 @Repository
-public interface BudgetRepository extends JpaRepository<Budget, Long> {
+public interface BudgetRepository extends JpaRepository<Budget, UUID> {
     List<Budget> findByUser(User user);
     List<Budget> findByCategory(Category category);
     List<Budget> findByUserAndCategory(User user, Category category);

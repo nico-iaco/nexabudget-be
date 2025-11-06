@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.util.UUID;
 
 public class AccountDto {
 
@@ -36,7 +37,7 @@ public class AccountDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class AccountResponse {
-        private Long id;
+        private UUID id;
         private String name;
         private AccountType type;
         private BigDecimal actualBalance;

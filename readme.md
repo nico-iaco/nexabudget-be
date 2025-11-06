@@ -13,49 +13,54 @@ This is the backend service for NexaBudget, a personal finance management applic
 - Spring Boot Actuator with Prometheus
 - GraalVM Native Image support
 ## Database Schema
-The application uses a relational database to persist data. The main entities are:
+The application uses a relational database to persist data. All entities use **UUID** as primary keys for better scalability and security. The main entities are:
+
 - **User**: Represents a user of the application.
-  - `id` (Primary Key)
+  - `id` (Primary Key, UUID)
   - `username` (unique)
   - `email` (unique)
   - `password_hash`
   - `created_at`
   - `updated_at`
+
 - **Account**: Represents a financial account (e.g., bank account, credit card).
-  - `id` (Primary Key)
+  - `id` (Primary Key, UUID)
   - `name`
   - `type` (e.g., CASH, CHECKING, SAVINGS)
   - `currency`
-  - `user_id` (Foreign Key to User)
+  - `user_id` (Foreign Key to User, UUID)
   - `requisition_id` (for GoCardless integration)
   - `external_account_id` (for GoCardless integration)
   - `last_external_sync`
   - `created_at`
+
 - **Category**: Represents a category for transactions (e.g., Food, Salary).
-  - `id` (Primary Key)
+  - `id` (Primary Key, UUID)
   - `name`
   - `transaction_type` (INCOME or EXPENSE)
-  - `user_id` (Foreign Key to User, nullable for default categories)
+  - `user_id` (Foreign Key to User, UUID, nullable for default categories)
+
 - **Transaction**: Represents a single financial transaction.
-  - `id` (Primary Key)
+  - `id` (Primary Key, UUID)
   - `amount` (BigDecimal)
   - `description`
   - `transaction_date`
   - `type` (INCOME or EXPENSE)
   - `note` (optional text field)
-  - `user_id` (Foreign Key to User)
-  - `account_id` (Foreign Key to Account)
-  - `category_id` (Foreign Key to Category)
+  - `user_id` (Foreign Key to User, UUID)
+  - `account_id` (Foreign Key to Account, UUID)
+  - `category_id` (Foreign Key to Category, UUID)
   - `transfer_id` (for linked transfers)
   - `external_id` (for GoCardless integration)
   - `created_at`
+
 - **Budget**: Represents a spending or saving goal for a specific category.
-  - `id` (Primary Key)
+  - `id` (Primary Key, UUID)
   - `budget_limit` (BigDecimal)
   - `start_date`
   - `end_date`
-  - `category_id` (Foreign Key to Category)
-  - `user_id` (Foreign Key to User)
+  - `category_id` (Foreign Key to Category, UUID)
+  - `user_id` (Foreign Key to User, UUID)
   - `created_at`
 ## Getting Started
 

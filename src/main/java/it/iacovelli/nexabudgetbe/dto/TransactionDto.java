@@ -11,6 +11,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.util.UUID;
 
 public class TransactionDto {
 
@@ -20,9 +21,9 @@ public class TransactionDto {
     @AllArgsConstructor
     public static class TransactionRequest {
         @NotNull(message = "L'ID del conto è obbligatorio")
-        private Long accountId;
+        private UUID accountId;
 
-        private Long categoryId;
+        private UUID categoryId;
 
         @NotNull(message = "L'importo è obbligatorio")
         @Positive(message = "L'importo deve essere positivo")
@@ -45,10 +46,10 @@ public class TransactionDto {
     @AllArgsConstructor
     public static class TransferRequest {
         @NotNull(message = "L'ID del conto di origine è obbligatorio")
-        private Long sourceAccountId;
+        private UUID sourceAccountId;
 
         @NotNull(message = "L'ID del conto di destinazione è obbligatorio")
-        private Long destinationAccountId;
+        private UUID destinationAccountId;
 
         @NotNull(message = "L'importo è obbligatorio")
         @Positive(message = "L'importo deve essere positivo")
@@ -70,10 +71,10 @@ public class TransactionDto {
     public static class ConvertToTransferRequest {
 
         @NotNull(message = "L'ID della transazione sorgente è obbligatorio")
-        private Long sourceTransactionId;
+        private UUID sourceTransactionId;
 
         @NotNull(message = "L'ID della transazione destinazione è obbligatorio")
-        private Long destinationTransactionId;
+        private UUID destinationTransactionId;
     }
 
 
@@ -82,10 +83,10 @@ public class TransactionDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class TransactionResponse {
-        private Long id;
-        private Long accountId;
+        private UUID id;
+        private UUID accountId;
         private String accountName;
-        private Long categoryId;
+        private UUID categoryId;
         private String categoryName;
         private BigDecimal amount;
         private TransactionType type;

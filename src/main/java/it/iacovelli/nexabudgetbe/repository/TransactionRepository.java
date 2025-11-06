@@ -11,15 +11,16 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
-public interface TransactionRepository extends JpaRepository<Transaction, Long> {
+public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
 
     @Query("SELECT COALESCE(SUM(CASE WHEN t.type = 'IN' THEN t.amount ELSE -t.amount END), 0) FROM Transaction t WHERE t.account = :account")
     BigDecimal calculateBalanceForAccount(@Param("account") Account account);
 
     @Query("SELECT t FROM Transaction t JOIN FETCH t.account LEFT JOIN FETCH t.category WHERE t.id = :id AND t.user = :user")
-    Optional<Transaction> findByIdAndUser(Long id, User user);
+    Optional<Transaction> findByIdAndUser(UUID id, User user);
 
     Optional<Transaction> findByExternalId(String externalId);
 

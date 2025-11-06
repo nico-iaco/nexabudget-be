@@ -1,13 +1,14 @@
 package it.iacovelli.nexabudgetbe.dto;
 
 import it.iacovelli.nexabudgetbe.model.TransactionType;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
-import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.NotNull;
+import java.util.UUID;
 
 public class CategoryDto {
 
@@ -28,7 +29,7 @@ public class CategoryDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class CategoryResponse {
-        private Long id;
+        private UUID id;
         private String name;
         private TransactionType transactionType;
         private Boolean isDefault;

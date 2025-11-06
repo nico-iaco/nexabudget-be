@@ -1,19 +1,18 @@
 package it.iacovelli.nexabudgetbe.controller;
 
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.UserDto;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.UserService;
+import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
-import jakarta.validation.Valid;
-
 import java.time.format.DateTimeFormatter;
-
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/users")
@@ -29,7 +28,7 @@ public class UserController {
 
     @PutMapping("/{id}")
     @Operation(summary = "Aggiorna utente", description = "Aggiorna i dati di un utente esistente (username, email, password)")
-    public ResponseEntity<UserDto.UserResponse> updateUser(@PathVariable Long id,
+    public ResponseEntity<UserDto.UserResponse> updateUser(@PathVariable UUID id,
                                                            @Valid @RequestBody UserDto.UpdateUserRequest updateRequest) {
         User existingUser = userService.getUserById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));

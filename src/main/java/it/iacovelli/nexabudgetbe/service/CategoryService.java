@@ -8,6 +8,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class CategoryService {
@@ -21,11 +22,11 @@ public class CategoryService {
         return categoryRepository.save(category);
     }
 
-    public Optional<Category> getCategoryById(Long id) {
+    public Optional<Category> getCategoryById(UUID id) {
         return categoryRepository.findById(id);
     }
 
-    public Optional<Category> getCategoryByIdAndUser(Long id, User user) {
+    public Optional<Category> getCategoryByIdAndUser(UUID id, User user) {
         return categoryRepository.findByIdAndUser(id, user);
     }
 
@@ -53,11 +54,11 @@ public class CategoryService {
         return categoryRepository.save(category);
     }
 
-    public void deleteCategory(Long categoryId) {
+    public void deleteCategory(UUID categoryId) {
         categoryRepository.deleteById(categoryId);
     }
 
-    public void deleteCategoryWithUser(Long id, User user) {
+    public void deleteCategoryWithUser(UUID id, User user) {
         categoryRepository.findByIdAndUser(id, user).ifPresent(categoryRepository::delete);
     }
 

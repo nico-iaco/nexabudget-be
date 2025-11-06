@@ -10,10 +10,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 
 @Service
 public class BudgetService {
@@ -29,7 +26,7 @@ public class BudgetService {
         return budgetRepository.save(budget);
     }
 
-    public Optional<Budget> getBudgetById(Long id) {
+    public Optional<Budget> getBudgetById(UUID id) {
         return budgetRepository.findById(id);
     }
 
@@ -61,7 +58,7 @@ public class BudgetService {
         return budgetRepository.save(budget);
     }
 
-    public void deleteBudget(Long budgetId) {
+    public void deleteBudget(UUID budgetId) {
         budgetRepository.deleteById(budgetId);
     }
 

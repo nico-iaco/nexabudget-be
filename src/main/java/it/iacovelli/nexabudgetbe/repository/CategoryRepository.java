@@ -9,15 +9,16 @@ import org.springframework.stereotype.Repository;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository
-public interface CategoryRepository extends JpaRepository<Category, Long> {
+public interface CategoryRepository extends JpaRepository<Category, UUID> {
     List<Category> findByUser(User user);
     List<Category> findByUserIsNull(); // Categorie predefinite
     List<Category> findByUserAndTransactionType(User user, TransactionType type);
 
     @Query("SELECT c FROM Category c WHERE c.id = :id AND (c.user = :user OR c.user IS NULL)")
-    Optional<Category> findByIdAndUser(Long id, User user);
+    Optional<Category> findByIdAndUser(UUID id, User user);
 
     @Query("SELECT c FROM Category c WHERE (c.user = :user OR c.user IS NULL) AND c.transactionType = :type")
     List<Category> findByUserOrDefaultAndTransactionType(User user, TransactionType type);

@@ -20,6 +20,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -124,7 +125,7 @@ class AccountServiceTest {
         request.setCurrency("EUR");
 
         assertThrows(ResponseStatusException.class, () ->
-                accountService.createAccount(request, null, 99999L)
+                accountService.createAccount(request, null, UUID.randomUUID())
         );
     }
 
@@ -202,7 +203,7 @@ class AccountServiceTest {
     @Test
     void testUpdateAccount_NotFound() {
         assertThrows(ResponseStatusException.class, () ->
-                accountService.updateAccount(99999L, testUser, "Name", AccountType.CONTO_CORRENTE, "EUR")
+                accountService.updateAccount(UUID.randomUUID(), testUser, "Name", AccountType.CONTO_CORRENTE, "EUR")
         );
     }
 

@@ -2,6 +2,7 @@ package it.iacovelli.nexabudgetbe.service;
 
 import it.iacovelli.nexabudgetbe.dto.AccountDto;
 import it.iacovelli.nexabudgetbe.dto.GocardlessTransaction;
+import it.iacovelli.nexabudgetbe.dto.SyncBankTransactionsRequest;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.AccountRepository;
 import org.springframework.http.HttpStatus;
@@ -14,6 +15,7 @@ import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class AccountService {
@@ -33,7 +35,7 @@ public class AccountService {
     }
 
     @Transactional
-    public AccountDto.AccountResponse createAccount(AccountDto.AccountRequest accountRequest, BigDecimal starterBalance, Long userId) {
+    public AccountDto.AccountResponse createAccount(AccountDto.AccountRequest accountRequest, BigDecimal starterBalance, UUID userId) {
 
         User user = userService.getUserById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
@@ -65,16 +67,16 @@ public class AccountService {
         return mapAccountToDto(savedAccount);
     }
 
-    public Optional<Account> getAccountById(long id) {
+    public Optional<Account> getAccountById(UUID id) {
         return accountRepository.findById(id);
     }
 
-    public Optional<AccountDto.AccountResponse> getAccountByIdAndUser(Long id, User user) {
+    public Optional<AccountDto.AccountResponse> getAccountByIdAndUser(UUID id, User user) {
         return accountRepository.findByIdAndUser(id, user)
                 .map(this::mapAccountToDto);
     }
 
-    public Optional<Account> getAccountEntityByIdAndUser(Long id, User user) {
+    public Optional<Account> getAccountEntityByIdAndUser(UUID id, User user) {
         return accountRepository.findByIdAndUser(id, user);
     }
 
@@ -100,7 +102,7 @@ public class AccountService {
     }
 
     @Transactional
-    public AccountDto.AccountResponse updateAccount(Long accountId, User user, String newName, AccountType newType, String newCurrency) {
+    public AccountDto.AccountResponse updateAccount(UUID accountId, User user, String newName, AccountType newType, String newCurrency) {
 
         Account account = getAccountEntityByIdAndUser(accountId, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
@@ -113,7 +115,7 @@ public class AccountService {
     }
 
     @Transactional
-    public void deleteAccount(Long accountId) {
+    public void deleteAccount(UUID accountId) {
         // Trova il conto da eliminare
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
@@ -138,7 +140,7 @@ public class AccountService {
     }
 
     @Transactional
-    public void addRequisitionIdToAccount(Long accountId, String requisitionId) {
+    public void addRequisitionIdToAccount(UUID accountId, String requisitionId) {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
         account.setRequisitionId(requisitionId);
@@ -146,20 +148,20 @@ public class AccountService {
     }
 
     @Transactional
-    public void linkAccountToGocardless(Long accountId, String gocardlessAccountId) {
+    public void linkAccountToGocardless(UUID accountId, String gocardlessAccountId) {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
         account.setExternalAccountId(gocardlessAccountId);
         accountRepository.save(account);
     }
 
-    public String getRequisitionIdForAccount(Long accountId, User user) {
+    public String getRequisitionIdForAccount(UUID accountId, User user) {
         Account account = accountRepository.findByIdAndUser(accountId, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
         return account.getRequisitionId();
     }
 
-    public void syncAccountTransactionWithGocardless(Long accountId, User user) {
+    public void syncAccountTransactionWithGocardless(UUID accountId, User user, SyncBankTransactionsRequest request) {
         Account account = accountRepository.findByIdAndUser(accountId, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
 
@@ -170,6 +172,24 @@ public class AccountService {
         List<GocardlessTransaction> goCardlessTransaction = gocardlessService.getGoCardlessTransaction(account.getRequisitionId(), account.getExternalAccountId());
 
         transactionService.importTransactionsFromGocardless(goCardlessTransaction, user, account);
+
+        // Controlla adesso il bilancio del conto corrente e lo allinea con quello atteso della request
+        BigDecimal savedBalance = transactionService.calculateBalanceForAccount(account);
+        if (savedBalance.compareTo(request.getActualBalance()) != 0) {
+
+            Transaction alignmentTransaction = Transaction.builder()
+                    .account(account)
+                    .user(user)
+                    .amount(savedBalance.compareTo(request.getActualBalance()) < 0 ? request.getActualBalance().subtract(savedBalance) : savedBalance.subtract(request.getActualBalance()))
+                    .type(savedBalance.compareTo(request.getActualBalance()) < 0 ? TransactionType.IN : TransactionType.OUT)
+                    .description("Allineamento conto")
+                    .date(LocalDate.now())
+                    .build();
+
+
+            transactionService.createTransaction(alignmentTransaction);
+        }
+
         account.setLastExternalSync(LocalDateTime.now());
         accountRepository.save(account);
     }
