@@ -4,7 +4,6 @@ import it.iacovelli.nexabudgetbe.dto.GocardlessTransaction;
 import it.iacovelli.nexabudgetbe.dto.TransactionDto;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
-import it.iacovelli.nexabudgetbe.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,7 +21,7 @@ import java.util.stream.Collectors;
 @Service
 public class TransactionService {
     private final TransactionRepository transactionRepository;
-    private final UserRepository userRepository;
+    private final UserService userService;
 
     private final AiCategorizationService aiCategorizationService;
 
@@ -30,9 +29,9 @@ public class TransactionService {
 
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    public TransactionService(TransactionRepository transactionRepository, UserRepository userRepository, AiCategorizationService aiCategorizationService) {
+    public TransactionService(TransactionRepository transactionRepository, UserService userService, AiCategorizationService aiCategorizationService) {
         this.transactionRepository = transactionRepository;
-        this.userRepository = userRepository;
+        this.userService = userService;
         this.aiCategorizationService = aiCategorizationService;
     }
 
@@ -51,7 +50,7 @@ public class TransactionService {
 
         String transferId = UUID.randomUUID().toString();
         // Ricarica l'utente per assicurarti che sia gestito dalla sessione corrente
-        User user = userRepository.findById(sourceAccount.getUser().getId())
+        User user = userService.getUserById(sourceAccount.getUser().getId())
                 .orElseThrow(() -> new IllegalStateException("Utente non trovato per il conto di origine"));
 
         Transaction outTransaction = Transaction.builder()
@@ -266,6 +265,18 @@ public class TransactionService {
             }
         });
 
+    }
+
+    public List<TransactionDto.TransactionResponse> findByUserAndDateBetween(User user, LocalDate start, LocalDate end) {
+        return transactionRepository.findByUserAndDateBetween(user, start, end).stream().map(t -> mapTransactionToResponse(t)).toList();
+    }
+
+    public BigDecimal calculateBalanceForAccount(Account account) {
+        return transactionRepository.calculateBalanceForAccount(account);
+    }
+
+    public void deleteAllTransactionByAccount(Account account) {
+        transactionRepository.deleteAllByAccount(account);
     }
 
     private TransactionDto.TransactionResponse mapTransactionToResponse(Transaction transaction) {

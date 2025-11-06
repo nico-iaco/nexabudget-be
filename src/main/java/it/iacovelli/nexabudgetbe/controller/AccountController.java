@@ -5,11 +5,9 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.AccountDto;
-import it.iacovelli.nexabudgetbe.model.Account;
 import it.iacovelli.nexabudgetbe.model.AccountType;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.AccountService;
-import it.iacovelli.nexabudgetbe.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -28,28 +26,17 @@ import java.util.List;
 public class AccountController {
 
     private final AccountService accountService;
-    private final UserService userService;
 
-    public AccountController(AccountService accountService, UserService userService) {
+    public AccountController(AccountService accountService) {
         this.accountService = accountService;
-        this.userService = userService;
     }
 
     @PostMapping
     @Operation(summary = "Crea conto", description = "Crea un nuovo conto per l'utente loggato")
     public ResponseEntity<AccountDto.AccountResponse> createAccount(@Valid @RequestBody AccountDto.AccountRequest accountRequest,
                                                                     @AuthenticationPrincipal User currentUser) {
-        User user = userService.getUserById(currentUser.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
 
-        Account account = Account.builder()
-                .user(user)
-                .name(accountRequest.getName())
-                .type(accountRequest.getType())
-                .currency(accountRequest.getCurrency())
-                .build();
-
-        AccountDto.AccountResponse createdAccount = accountService.createAccount(account, accountRequest.getStarterBalance());
+        AccountDto.AccountResponse createdAccount = accountService.createAccount(accountRequest, accountRequest.getStarterBalance(), currentUser.getId());
         return ResponseEntity.status(HttpStatus.CREATED).body(createdAccount);
     }
 
@@ -65,10 +52,8 @@ public class AccountController {
     @GetMapping("/")
     @Operation(summary = "Lista conti utente", description = "Ritorna tutti i conti dell'utente")
     public ResponseEntity<List<AccountDto.AccountResponse>> getAccountsByUserId(@AuthenticationPrincipal User currentUser) {
-        User user = userService.getUserById(currentUser.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
 
-        List<AccountDto.AccountResponse> accounts = new ArrayList<>(accountService.getAccountsByUser(user));
+        List<AccountDto.AccountResponse> accounts = new ArrayList<>(accountService.getAccountsByUser(currentUser));
         return ResponseEntity.ok(accounts);
     }
 
@@ -77,10 +62,8 @@ public class AccountController {
     public ResponseEntity<List<AccountDto.AccountResponse>> getAccountsByUserAndType(
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "Tipo di conto") @PathVariable AccountType type) {
-        User user = userService.getUserById(currentUser.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
 
-        List<AccountDto.AccountResponse> accounts = accountService.getAccountsByUserAndType(user, type);
+        List<AccountDto.AccountResponse> accounts = accountService.getAccountsByUserAndType(currentUser, type);
         return ResponseEntity.ok(accounts);
     }
 
@@ -90,10 +73,8 @@ public class AccountController {
     public ResponseEntity<List<AccountDto.AccountResponse>> getAccountsByUserAndCurrency(
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "Valuta del conto") @PathVariable String currency) {
-        User user = userService.getUserById(currentUser.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
 
-        List<AccountDto.AccountResponse> accounts = accountService.getAccountsByUserAndCurrency(user, currency);
+        List<AccountDto.AccountResponse> accounts = accountService.getAccountsByUserAndCurrency(currentUser, currency);
         return ResponseEntity.ok(accounts);
     }
 
@@ -103,13 +84,10 @@ public class AccountController {
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "ID del conto") @PathVariable Long id,
             @Valid @RequestBody AccountDto.AccountRequest accountRequest) {
-        // CORRETTO: Usa getAccountEntityByIdAndUser per ottenere l'entità da modificare
-        Account existingAccount = accountService.getAccountEntityByIdAndUser(id, currentUser)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
 
-        // CORRETTO: Chiama il metodo updateAccount del service che ora restituisce un DTO
         AccountDto.AccountResponse updatedAccountResponse = accountService.updateAccount(
-                existingAccount,
+                id,
+                currentUser,
                 accountRequest.getName(),
                 accountRequest.getType(),
                 accountRequest.getCurrency()
@@ -123,7 +101,7 @@ public class AccountController {
     public ResponseEntity<Void> deleteAccount(@Parameter(description = "ID del conto") @PathVariable Long id,
                                               @AuthenticationPrincipal User currentUser) {
         // Verifica che l'utente sia il proprietario del conto prima di eliminarlo
-        accountService.getAccountEntityByIdAndUser(id, currentUser)
+        accountService.getAccountByIdAndUser(id, currentUser)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
 
         accountService.deleteAccount(id);
@@ -135,10 +113,8 @@ public class AccountController {
     public ResponseEntity<BigDecimal> getTotalBalance(
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "Valuta per il calcolo del saldo") @RequestParam String currency) {
-        User user = userService.getUserById(currentUser.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
 
-        BigDecimal totalBalance = accountService.getTotalBalance(user, currency);
+        BigDecimal totalBalance = accountService.getTotalBalance(currentUser, currency);
         return ResponseEntity.ok(totalBalance);
     }
 
@@ -147,10 +123,8 @@ public class AccountController {
     public ResponseEntity<BigDecimal> getTotalBalanceByUserAndCurrency(
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "Codice valuta ISO") @PathVariable String currency) {
-        User user = userService.getUserById(currentUser.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
 
-        BigDecimal totalBalance = accountService.getTotalBalance(user, currency);
+        BigDecimal totalBalance = accountService.getTotalBalance(currentUser, currency);
         return ResponseEntity.ok(totalBalance);
     }
 

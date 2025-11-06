@@ -1,8 +1,11 @@
 package it.iacovelli.nexabudgetbe.service;
 
-import it.iacovelli.nexabudgetbe.model.*;
+import it.iacovelli.nexabudgetbe.dto.TransactionDto;
+import it.iacovelli.nexabudgetbe.model.Budget;
+import it.iacovelli.nexabudgetbe.model.Category;
+import it.iacovelli.nexabudgetbe.model.TransactionType;
+import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.repository.BudgetRepository;
-import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
@@ -15,11 +18,11 @@ import java.util.Optional;
 @Service
 public class BudgetService {
     private final BudgetRepository budgetRepository;
-    private final TransactionRepository transactionRepository;
+    private final TransactionService transactionService;
 
-    public BudgetService(BudgetRepository budgetRepository, TransactionRepository transactionRepository) {
+    public BudgetService(BudgetRepository budgetRepository, TransactionService transactionService) {
         this.budgetRepository = budgetRepository;
-        this.transactionRepository = transactionRepository;
+        this.transactionService = transactionService;
     }
 
     public Budget createBudget(Budget budget) {
@@ -73,13 +76,13 @@ public class BudgetService {
             Category category = budget.getCategory();
 
             // Trova tutte le transazioni di tipo OUT per questa categoria in questo periodo
-            List<Transaction> transactions = transactionRepository.findByUserAndDateBetween(user, startOfMonth, endOfMonth)
+            List<TransactionDto.TransactionResponse> transactions = transactionService.findByUserAndDateBetween(user, startOfMonth, endOfMonth)
                     .stream()
-                    .filter(t -> t.getType() == TransactionType.OUT && category.equals(t.getCategory()))
+                    .filter(t -> t.getType() == TransactionType.OUT && category.getName().equals(t.getCategoryName()))
                     .toList();
 
             BigDecimal spent = transactions.stream()
-                    .map(Transaction::getAmount)
+                    .map(TransactionDto.TransactionResponse::getAmount)
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
 
             budgetUsage.put(budget, spent);

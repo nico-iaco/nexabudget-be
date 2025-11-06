@@ -15,13 +15,11 @@ import org.springframework.stereotype.Service;
 public class AuthService {
 
     private final UserService userService;
-    private final PasswordEncoder passwordEncoder;
     private final JwtTokenProvider jwtUtil;
     private final AuthenticationManager authenticationManager;
 
     public AuthService(UserService userService, PasswordEncoder passwordEncoder, JwtTokenProvider jwtUtil, AuthenticationManager authenticationManager) {
         this.userService = userService;
-        this.passwordEncoder = passwordEncoder;
         this.jwtUtil = jwtUtil;
         this.authenticationManager = authenticationManager;
         System.out.println("AuthService inizializzato con encoder: " + passwordEncoder.getClass().getName());

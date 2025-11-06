@@ -4,7 +4,6 @@ import it.iacovelli.nexabudgetbe.dto.AccountDto;
 import it.iacovelli.nexabudgetbe.dto.GocardlessTransaction;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.AccountRepository;
-import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,25 +18,39 @@ import java.util.Optional;
 @Service
 public class AccountService {
     private final AccountRepository accountRepository;
-    private final TransactionRepository transactionRepository;
     private final TransactionService transactionService;
     private final GocardlessService gocardlessService;
+    private final UserService userService;
 
-    public AccountService(AccountRepository accountRepository, TransactionRepository transactionRepository, TransactionService transactionService, GocardlessService gocardlessService) {
+    public AccountService(AccountRepository accountRepository,
+                          TransactionService transactionService,
+                          GocardlessService gocardlessService,
+                          UserService userService) {
         this.accountRepository = accountRepository;
-        this.transactionRepository = transactionRepository;
         this.transactionService = transactionService;
         this.gocardlessService = gocardlessService;
+        this.userService = userService;
     }
 
     @Transactional
-    public AccountDto.AccountResponse createAccount(Account account, BigDecimal starterBalance) {
+    public AccountDto.AccountResponse createAccount(AccountDto.AccountRequest accountRequest, BigDecimal starterBalance, Long userId) {
+
+        User user = userService.getUserById(userId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
+
+        Account account = new Account();
+        account.setName(accountRequest.getName());
+        account.setType(accountRequest.getType());
+        account.setCurrency(accountRequest.getCurrency());
+        account.setUser(user);
+
+
         Account savedAccount = accountRepository.save(account);
 
         // Se il saldo iniziale è diverso da zero, crea la transazione
         if (starterBalance != null && starterBalance.compareTo(BigDecimal.ZERO) != 0) {
             Transaction initialTransaction = Transaction.builder()
-                    .user(account.getUser())
+                    .user(savedAccount.getUser())
                     .account(savedAccount)
                     .amount(starterBalance.abs()) // Usa il valore assoluto
                     .type(starterBalance.compareTo(BigDecimal.ZERO) >= 0 ? TransactionType.IN : TransactionType.OUT)
@@ -46,7 +59,7 @@ public class AccountService {
                     .build();
 
             // Salva la transazione
-            transactionRepository.save(initialTransaction);
+            transactionService.createTransaction(initialTransaction);
         }
 
         return mapAccountToDto(savedAccount);
@@ -87,7 +100,11 @@ public class AccountService {
     }
 
     @Transactional
-    public AccountDto.AccountResponse updateAccount(Account account, String newName, AccountType newType, String newCurrency) {
+    public AccountDto.AccountResponse updateAccount(Long accountId, User user, String newName, AccountType newType, String newCurrency) {
+
+        Account account = getAccountEntityByIdAndUser(accountId, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
+
         account.setName(newName);
         account.setType(newType);
         account.setCurrency(newCurrency);
@@ -102,7 +119,7 @@ public class AccountService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
 
         // Elimina tutte le transazioni associate a questo conto
-        transactionRepository.deleteAllByAccount(account);
+        transactionService.deleteAllTransactionByAccount(account);
 
         // Ora elimina il conto
         accountRepository.delete(account);
@@ -113,7 +130,7 @@ public class AccountService {
         BigDecimal totalBalance = BigDecimal.ZERO;
 
         for (Account account : accounts) {
-            BigDecimal balance = transactionRepository.calculateBalanceForAccount(account);
+            BigDecimal balance = transactionService.calculateBalanceForAccount(account);
             totalBalance = totalBalance.add(balance);
         }
 
@@ -158,7 +175,7 @@ public class AccountService {
     }
 
     public AccountDto.AccountResponse mapAccountToDto(Account account) {
-        BigDecimal balance = transactionRepository.calculateBalanceForAccount(account);
+        BigDecimal balance = transactionService.calculateBalanceForAccount(account);
         return AccountDto.AccountResponse
                 .builder()
                 .id(account.getId())
