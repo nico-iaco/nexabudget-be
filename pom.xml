@@ -91,6 +91,13 @@
             <artifactId>jcl-over-slf4j</artifactId>
         </dependency>
 
+        <!-- Logback with JSON encoder for structured logging in Kubernetes -->
+        <dependency>
+            <groupId>net.logstash.logback</groupId>
+            <artifactId>logstash-logback-encoder</artifactId>
+            <version>8.0</version>
+        </dependency>
+
         <dependency>
             <groupId>org.springdoc</groupId>
             <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>

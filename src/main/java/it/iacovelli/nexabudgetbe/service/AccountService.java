@@ -5,6 +5,8 @@ import it.iacovelli.nexabudgetbe.dto.GocardlessTransaction;
 import it.iacovelli.nexabudgetbe.dto.SyncBankTransactionsRequest;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.AccountRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,6 +21,9 @@ import java.util.UUID;
 
 @Service
 public class AccountService {
+
+    private static final Logger logger = LoggerFactory.getLogger(AccountService.class);
+
     private final AccountRepository accountRepository;
     private final TransactionService transactionService;
     private final GocardlessService gocardlessService;
@@ -36,6 +41,7 @@ public class AccountService {
 
     @Transactional
     public AccountDto.AccountResponse createAccount(AccountDto.AccountRequest accountRequest, BigDecimal starterBalance, UUID userId) {
+        logger.info("Creazione nuovo account '{}' per utente ID: {}", accountRequest.getName(), userId);
 
         User user = userService.getUserById(userId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
@@ -48,9 +54,11 @@ public class AccountService {
 
 
         Account savedAccount = accountRepository.save(account);
+        logger.info("Account creato con successo: {} (ID: {})", savedAccount.getName(), savedAccount.getId());
 
         // Se il saldo iniziale è diverso da zero, crea la transazione
         if (starterBalance != null && starterBalance.compareTo(BigDecimal.ZERO) != 0) {
+            logger.debug("Creazione transazione per saldo iniziale: {} per account ID: {}", starterBalance, savedAccount.getId());
             Transaction initialTransaction = Transaction.builder()
                     .user(savedAccount.getUser())
                     .account(savedAccount)
@@ -116,15 +124,15 @@ public class AccountService {
 
     @Transactional
     public void deleteAccount(UUID accountId) {
-        // Trova il conto da eliminare
+        logger.info("Eliminazione account ID: {}", accountId);
+
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
 
-        // Elimina tutte le transazioni associate a questo conto
         transactionService.deleteAllTransactionByAccount(account);
-
-        // Ora elimina il conto
         accountRepository.delete(account);
+
+        logger.info("Account eliminato con successo: {} (ID: {})", account.getName(), accountId);
     }
 
     public BigDecimal getTotalBalance(User user, String currency) {
@@ -141,6 +149,7 @@ public class AccountService {
 
     @Transactional
     public void addRequisitionIdToAccount(UUID accountId, String requisitionId) {
+        logger.info("Aggiunta requisitionId {} all'account ID: {}", requisitionId, accountId);
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
         account.setRequisitionId(requisitionId);
@@ -149,6 +158,7 @@ public class AccountService {
 
     @Transactional
     public void linkAccountToGocardless(UUID accountId, String gocardlessAccountId) {
+        logger.info("Collegamento account ID: {} a GoCardless accountId: {}", accountId, gocardlessAccountId);
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
         account.setExternalAccountId(gocardlessAccountId);
@@ -162,21 +172,26 @@ public class AccountService {
     }
 
     public void syncAccountTransactionWithGocardless(UUID accountId, User user, SyncBankTransactionsRequest request) {
+        logger.info("Sincronizzazione transazioni GoCardless per account ID: {}", accountId);
+
         Account account = accountRepository.findByIdAndUser(accountId, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
 
         if (account.getLastExternalSync() != null && account.getLastExternalSync().isAfter(LocalDateTime.now().minusHours(6))) {
+            logger.info("Account ID: {} già sincronizzato di recente, skip sincronizzazione", accountId);
             return;
         }
 
         List<GocardlessTransaction> goCardlessTransaction = gocardlessService.getGoCardlessTransaction(account.getRequisitionId(), account.getExternalAccountId());
+        logger.info("Recuperate {} transazioni da GoCardless per account ID: {}", goCardlessTransaction.size(), accountId);
 
         transactionService.importTransactionsFromGocardless(goCardlessTransaction, user, account);
 
         // Controlla adesso il bilancio del conto corrente e lo allinea con quello atteso della request
         BigDecimal savedBalance = transactionService.calculateBalanceForAccount(account);
         if (savedBalance.compareTo(request.getActualBalance()) != 0) {
-
+            logger.info("Allineamento bilancio necessario per account ID: {}, bilancio attuale: {}, atteso: {}",
+                    accountId, savedBalance, request.getActualBalance());
             Transaction alignmentTransaction = Transaction.builder()
                     .account(account)
                     .user(user)
@@ -192,6 +207,7 @@ public class AccountService {
 
         account.setLastExternalSync(LocalDateTime.now());
         accountRepository.save(account);
+        logger.info("Sincronizzazione completata per account ID: {}", accountId);
     }
 
     public AccountDto.AccountResponse mapAccountToDto(Account account) {

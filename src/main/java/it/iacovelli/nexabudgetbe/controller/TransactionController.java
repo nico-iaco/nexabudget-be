@@ -13,6 +13,8 @@ import it.iacovelli.nexabudgetbe.service.CategoryService;
 import it.iacovelli.nexabudgetbe.service.TransactionService;
 import it.iacovelli.nexabudgetbe.service.UserService;
 import jakarta.validation.Valid;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -30,6 +32,8 @@ import java.util.UUID;
 @RequestMapping("/api/transactions")
 @Tag(name = "Transazioni", description = "Gestione transazioni singole e trasferimenti tra conti")
 public class TransactionController {
+
+    private static final Logger logger = LoggerFactory.getLogger(TransactionController.class);
 
     private final TransactionService transactionService;
     private final UserService userService;
@@ -51,6 +55,9 @@ public class TransactionController {
     public ResponseEntity<TransactionDto.TransactionResponse> createTransaction(
             @Valid @RequestBody TransactionDto.TransactionRequest transactionRequest,
             @AuthenticationPrincipal User currentUser) {
+
+        logger.debug("Richiesta creazione transazione per account ID: {} da utente: {}",
+                transactionRequest.getAccountId(), currentUser.getUsername());
 
         // Usa il nuovo metodo per ottenere l'entità Account
         Account account = accountService.getAccountEntityByIdAndUser(transactionRequest.getAccountId(), currentUser)

@@ -37,14 +37,21 @@ public class TransactionService {
 
     @Transactional
     public TransactionDto.TransactionResponse createTransaction(Transaction transaction) {
+        logger.info("Creazione transazione: {} {} per account ID: {}",
+                transaction.getType(), transaction.getAmount(), transaction.getAccount().getId());
         Transaction savedTransaction = transactionRepository.save(transaction);
+        logger.debug("Transazione creata con successo: ID: {}", savedTransaction.getId());
         return mapTransactionToResponse(savedTransaction);
     }
 
     @Transactional
     public List<TransactionDto.TransactionResponse> createTransfer(Account sourceAccount, Account destinationAccount,
                                                                    BigDecimal amount, String description, LocalDate transferDate, String notes) {
+        logger.info("Creazione trasferimento: {} da account ID: {} a account ID: {}",
+                amount, sourceAccount.getId(), destinationAccount.getId());
+
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
+            logger.warn("Tentativo di trasferimento con importo non valido: {}", amount);
             throw new IllegalArgumentException("L'importo del trasferimento deve essere positivo");
         }
 
@@ -78,12 +85,17 @@ public class TransactionService {
         Transaction savedOut = transactionRepository.save(outTransaction);
         Transaction savedIn = transactionRepository.save(inTransaction);
 
+        logger.info("Trasferimento creato con successo: transferId: {}", transferId);
         return List.of(mapTransactionToResponse(savedOut), mapTransactionToResponse(savedIn));
     }
 
     @Transactional
     public List<TransactionDto.TransactionResponse> convertTransactionsToTransfer(Transaction firstTransaction, Transaction secondTransaction) {
+        logger.info("Conversione transazioni a trasferimento: ID1: {}, ID2: {}",
+                firstTransaction.getId(), secondTransaction.getId());
+
         if (firstTransaction.getTransferId() != null || secondTransaction.getTransferId() != null) {
+            logger.warn("Tentativo di conversione di transazioni già associate a trasferimento");
             throw new IllegalStateException("Una delle transazioni fa già parte di un trasferimento.");
         }
         if (firstTransaction.getAccount().getId().equals(secondTransaction.getAccount().getId())) {
@@ -121,6 +133,7 @@ public class TransactionService {
         Transaction savedIn = transactionRepository.save(inTransaction);
         Transaction savedOut = transactionRepository.save(outTransaction);
 
+        logger.info("Transazioni convertite a trasferimento con successo: transferId: {}", transferId);
         return List.of(mapTransactionToResponse(savedIn), mapTransactionToResponse(savedOut));
     }
 

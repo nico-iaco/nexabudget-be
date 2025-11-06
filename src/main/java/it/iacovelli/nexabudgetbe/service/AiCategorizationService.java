@@ -67,7 +67,7 @@ public class AiCategorizationService {
 
         } catch (Exception e) {
             // Logga l'errore (e.g., API key non valida, quota superata, ecc.)
-            System.err.println("Errore durante la categorizzazione AI: " + e.getMessage());
+            log.error("Errore durante la categorizzazione AI: {}", e.getMessage());
             return Optional.empty();
         }
     }
