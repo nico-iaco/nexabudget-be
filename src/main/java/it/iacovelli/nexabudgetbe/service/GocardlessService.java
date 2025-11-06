@@ -6,6 +6,7 @@ import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
@@ -13,6 +14,9 @@ import org.springframework.web.client.RestClientException;
 
 import java.util.List;
 import java.util.UUID;
+
+import static it.iacovelli.nexabudgetbe.config.CacheConfig.BANK_ACCOUNTS_CACHE;
+import static it.iacovelli.nexabudgetbe.config.CacheConfig.GOCARDLESS_TRANSACTIONS_CACHE;
 
 @Service
 public class GocardlessService {
@@ -92,6 +96,7 @@ public class GocardlessService {
         }
     }
 
+    @Cacheable(value = BANK_ACCOUNTS_CACHE, key = "#requisitionId")
     public List<GocardlessBankDetail> getBankAccounts(String requisitionId) {
         logger.info("Recupero conti bancari per requisitionId: {}", requisitionId);
         try {
@@ -111,7 +116,7 @@ public class GocardlessService {
             }
 
             GocardlessGetAccounts accountsResponseData = accountsResponse.getData();
-            int accountCount = accountsResponseData != null && accountsResponseData.getAccounts() != null ?
+            int accountCount = accountsResponseData != null && accountsResponseData.getAccounts() != null ? 
                     accountsResponseData.getAccounts().size() : 0;
             logger.info("Recuperati {} conti bancari per requisitionId: {}", accountCount, requisitionId);
 
@@ -122,6 +127,7 @@ public class GocardlessService {
         }
     }
 
+    @Cacheable(value = GOCARDLESS_TRANSACTIONS_CACHE, key = "#requisitionId + '_' + #accountId")
     public List<GocardlessTransaction> getGoCardlessTransaction(String requisitionId, String accountId) {
         logger.info("Recupero transazioni per requisitionId: {}, accountId: {}", requisitionId, accountId);
         try {
@@ -147,7 +153,7 @@ public class GocardlessService {
                 return List.of();
             }
 
-            List<GocardlessTransaction> transactions = transactionsResponseData.getTransactions() != null ?
+            List<GocardlessTransaction> transactions = transactionsResponseData.getTransactions() != null ? 
                     transactionsResponseData.getTransactions().getAll() : List.of();
             logger.info("Recuperate {} transazioni per accountId: {}", transactions.size(), accountId);
 

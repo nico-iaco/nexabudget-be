@@ -13,6 +13,15 @@ services:
     volumes:
       - postgres_data_jvm:/var/lib/postgresql/data
 
+  valkey:
+    image: valkey/valkey:latest
+    container_name: nexabudget-valkey
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data:/data
+    command: valkey-server --appendonly yes
+
   nexabudget-be:
     build:
       context: .
@@ -20,6 +29,7 @@ services:
     container_name: nexabudget-be
     depends_on:
       - db
+      - valkey
     ports:
       - "8080:8080"
     environment:
@@ -30,6 +40,9 @@ services:
       JWT_SECRET: tua-chiave-segreta-molto-lunga-e-sicura-di-almeno-64-caratteri
       gocardless.integrator.baseUrl: http://localhost:3000
       GEMINI_API_KEY: your_gemini_api_key
+      REDIS_HOST: valkey
+      REDIS_PORT: 6379
 
 volumes:
   postgres_data_jvm:
+  valkey_data:

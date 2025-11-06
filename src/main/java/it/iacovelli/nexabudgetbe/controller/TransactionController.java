@@ -56,7 +56,7 @@ public class TransactionController {
             @Valid @RequestBody TransactionDto.TransactionRequest transactionRequest,
             @AuthenticationPrincipal User currentUser) {
 
-        logger.debug("Richiesta creazione transazione per account ID: {} da utente: {}",
+        logger.debug("Richiesta creazione transazione per account ID: {} da utente: {}", 
                 transactionRequest.getAccountId(), currentUser.getUsername());
 
         // Usa il nuovo metodo per ottenere l'entità Account

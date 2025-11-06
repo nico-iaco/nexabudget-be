@@ -37,7 +37,7 @@ public class TransactionService {
 
     @Transactional
     public TransactionDto.TransactionResponse createTransaction(Transaction transaction) {
-        logger.info("Creazione transazione: {} {} per account ID: {}",
+        logger.info("Creazione transazione: {} {} per account ID: {}", 
                 transaction.getType(), transaction.getAmount(), transaction.getAccount().getId());
         Transaction savedTransaction = transactionRepository.save(transaction);
         logger.debug("Transazione creata con successo: ID: {}", savedTransaction.getId());
@@ -47,7 +47,7 @@ public class TransactionService {
     @Transactional
     public List<TransactionDto.TransactionResponse> createTransfer(Account sourceAccount, Account destinationAccount,
                                                                    BigDecimal amount, String description, LocalDate transferDate, String notes) {
-        logger.info("Creazione trasferimento: {} da account ID: {} a account ID: {}",
+        logger.info("Creazione trasferimento: {} da account ID: {} a account ID: {}", 
                 amount, sourceAccount.getId(), destinationAccount.getId());
 
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -91,7 +91,7 @@ public class TransactionService {
 
     @Transactional
     public List<TransactionDto.TransactionResponse> convertTransactionsToTransfer(Transaction firstTransaction, Transaction secondTransaction) {
-        logger.info("Conversione transazioni a trasferimento: ID1: {}, ID2: {}",
+        logger.info("Conversione transazioni a trasferimento: ID1: {}, ID2: {}", 
                 firstTransaction.getId(), secondTransaction.getId());
 
         if (firstTransaction.getTransferId() != null || secondTransaction.getTransferId() != null) {

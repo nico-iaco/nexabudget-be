@@ -190,7 +190,7 @@ public class AccountService {
         // Controlla adesso il bilancio del conto corrente e lo allinea con quello atteso della request
         BigDecimal savedBalance = transactionService.calculateBalanceForAccount(account);
         if (savedBalance.compareTo(request.getActualBalance()) != 0) {
-            logger.info("Allineamento bilancio necessario per account ID: {}, bilancio attuale: {}, atteso: {}",
+            logger.info("Allineamento bilancio necessario per account ID: {}, bilancio attuale: {}, atteso: {}", 
                     accountId, savedBalance, request.getActualBalance());
             Transaction alignmentTransaction = Transaction.builder()
                     .account(account)

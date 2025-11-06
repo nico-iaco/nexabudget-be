@@ -9,6 +9,8 @@ This is the backend service for NexaBudget, a personal finance management applic
 - Lombok
 - SpringDoc OpenAPI (Swagger UI)
 - PostgreSQL
+- Redisson 3.52.0 (advanced Redis client)
+- Valkey/Redis (for caching)
 - Google Gemini AI (for transaction categorization)
 - Spring Boot Actuator with Prometheus
 - GraalVM Native Image support
@@ -109,7 +111,14 @@ gocardless.integrator.baseUrl=http://localhost:3000
 
 # Google Gemini AI Configuration (required for AI categorization)
 google.ai.apiKey=${GEMINI_API_KEY:your_gemini_api_key}
-
+# Redis/Valkey Cache Configuration
+spring.cache.type=redis
+spring.data.redis.host=${REDIS_HOST:localhost}
+spring.data.redis.port=${REDIS_PORT:6379}
+spring.data.redis.password=${REDIS_PASSWORD:}
+spring.data.redis.username=${REDIS_USERNAME:}
+spring.data.redis.database=0
+spring.data.redis.ssl.enabled=false
 # Actuator and Monitoring
 management.endpoints.web.exposure.include=*
 management.endpoint.health.show-details=always
@@ -119,6 +128,15 @@ management.endpoint.health.show-details=always
 - `DB_URL`: PostgreSQL database URL (default: jdbc:postgresql://localhost:5432/nexabudget)
 - `DB_PWD`: PostgreSQL database password
 - `GEMINI_API_KEY`: Google Gemini API key for AI categorization
+
+**Optional Environment Variables:**
+
+- `REDIS_HOST`: Redis/Valkey host (default: localhost)
+- `REDIS_PORT`: Redis/Valkey port (default: 6379)
+- `REDIS_USERNAME`: Redis/Valkey username (default: empty)
+- `REDIS_PASSWORD`: Redis/Valkey password (default: empty)
+- `REDIS_SSL_ENABLED`: Enable SSL for Redis connection (default: false)
+- `REDIS_HEALTH_CHECK`: Enable Redis health check (default: true, disable for restricted ACLs)
 
 **2. Build the project**
 
@@ -139,11 +157,13 @@ You can run the application using the Spring Boot Maven plugin.
 The application will start on http://localhost:8080.
 
 #### Running with Docker
-This is the recommended way to run the application in a production-like environment. The following commands will start both the application and a PostgreSQL database.
+
+This is the recommended way to run the application in a production-like environment. The following commands will start
+the application, PostgreSQL database, and Valkey cache.
 
 **1. Run the JVM-based image**
 
-This command builds the JVM image and starts the services in detached mode.
+This command builds the JVM image and starts all services (app, PostgreSQL, Valkey) in detached mode.
 
 ```shell
 docker-compose up --build -d
@@ -157,7 +177,8 @@ For better performance and a smaller memory footprint, you can run the native-co
 docker-compose -f docker-compose.native.yml up --build -d
 ```
 
-In both cases, the application will be available at http://localhost:8080.
+In both cases, the application will be available at http://localhost:8080, PostgreSQL at port 5432, and Valkey at port
+6379.
 
 To stop and remove the containers, use:
 ```shell
@@ -237,6 +258,43 @@ Connect your real bank accounts through GoCardless (formerly Nordigen) to automa
 - Linking external accounts
 - Syncing transactions from linked accounts
 
+### Caching with Redisson & Valkey/Redis
+
+The application uses **Redisson**, an advanced Redis client, to connect to Valkey (a Redis-compatible cache) to improve
+performance and reduce external API calls.
+
+**Why Redisson?**
+
+- 🚀 Superior performance with optimized connection pooling
+- 🔧 Advanced features: distributed locks, collections, pub/sub
+- 🎯 Better error handling with automatic retries and failover
+- 📦 Native JSON codec using Jackson
+
+**Configuration Approach:**
+
+- ✅ Programmatic configuration via `RedissonConfig.java`
+- ✅ Type-safe and compile-time verified
+- ✅ Automatic SSL support for production
+- ✅ No external YAML files needed
+
+#### Cached Methods (6-hour TTL)
+
+- **`getBankAccounts`**: Caches bank account lists from GoCardless
+    - Cache key: `requisitionId`
+    - Duration: 6 hours
+- **`getGoCardlessTransaction`**: Caches transactions from GoCardless
+    - Cache key: `requisitionId_accountId`
+    - Duration: 6 hours
+
+#### Benefits
+
+- 🚀 Faster response times for repeated queries
+- 💰 Reduced API calls to external services
+- ⚡ Better scalability under load
+- 🔄 Automatic retry and reconnection handling
+
+For more details, see [CACHE.md](./CACHE.md).
+
 ### Monitoring and Health Checks
 The application exposes Spring Boot Actuator endpoints for monitoring:
 - **Health**: http://localhost:8080/actuator/health
@@ -256,8 +314,14 @@ The application supports compilation to a native executable using GraalVM, provi
 | `DB_URL`                        | PostgreSQL database URL                     | Yes      | jdbc:postgresql://localhost:5432/nexabudget                    |
 | `DB_PWD`                        | PostgreSQL password                         | Yes      | -                                                              |
 | `GEMINI_API_KEY`                | Google Gemini API key for AI categorization | Yes      | -                                                              |
+| `REDIS_HOST`                    | Redis/Valkey host for caching               | No       | localhost                                                      |
+| `REDIS_PORT`                    | Redis/Valkey port                           | No       | 6379                                                           |
+| `REDIS_USERNAME`                | Redis/Valkey username                       | No       | (empty)                                                        |
+| `REDIS_PASSWORD`                | Redis/Valkey password                       | No       | (empty)                                                        |
+| `REDIS_SSL_ENABLED`             | Enable SSL for Redis                        | No       | false                                                          |
+| `REDIS_HEALTH_CHECK`            | Enable Redis health check                   | No       | true                                                           |
+| `JWT_SECRET`                    | JWT signing secret key                      | No       | tua-chiave-segreta-molto-lunga-e-sicura-di-almeno-64-caratteri |
 | `app.jwtExpirationInMs`         | JWT token expiration time in milliseconds   | No       | 86400000 (24 hours)                                            |
-| `app.jwtSecret`                 | JWT secret                                  | No       | tua-chiave-segreta-molto-lunga-e-sicura-di-almeno-64-caratteri |
 | `gocardless.integrator.baseUrl` | GoCardless integrator service URL           | No       | http://localhost:3000                                          |
 
 ## Development

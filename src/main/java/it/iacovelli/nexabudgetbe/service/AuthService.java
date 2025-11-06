@@ -72,7 +72,7 @@ public class AuthService {
             User savedUser = userService.createUser(user);
             String token = jwtUtil.generateToken(savedUser);
 
-            logger.info("Registrazione completata con successo per l'utente: {} (ID: {})",
+            logger.info("Registrazione completata con successo per l'utente: {} (ID: {})", 
                     savedUser.getUsername(), savedUser.getId());
 
             return AuthDto.AuthResponse.builder()
@@ -81,7 +81,7 @@ public class AuthService {
                     .username(savedUser.getUsername())
                     .build();
         } catch (Exception e) {
-            logger.error("Errore durante la registrazione dell'utente: {}, motivo: {}",
+            logger.error("Errore durante la registrazione dell'utente: {}, motivo: {}", 
                     userRequest.getUsername(), e.getMessage(), e);
             throw e;
         }
