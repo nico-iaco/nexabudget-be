@@ -31,7 +31,7 @@ import java.util.UUID;
 @EnableWebSecurity
 @EnableMethodSecurity
 @RegisterReflectionForBinding(classes = {
-        UUID.class,
+        UUID[].class,
         KeysBridge.class,
         StandardEncryptionAlgorithms.class,
         StandardKeyAlgorithms.class,
