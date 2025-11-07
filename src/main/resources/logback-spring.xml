@@ -6,6 +6,9 @@
     <property name="LOG_FILE_MAX_HISTORY" value="7"/>
     <property name="LOG_FILE_TOTAL_SIZE_CAP" value="1GB"/>
 
+    <!-- Status listener per debug di logback stesso -->
+    <statusListener class="ch.qos.logback.core.status.OnConsoleStatusListener"/>
+
     <!-- Console appender with JSON format for Kubernetes -->
     <appender name="CONSOLE_JSON" class="ch.qos.logback.core.ConsoleAppender">
         <encoder class="net.logstash.logback.encoder.LogstashEncoder">
@@ -52,48 +55,46 @@
         </rollingPolicy>
     </appender>
 
-    <!-- Async appenders for better performance -->
+    <!-- Async appenders for better performance - con configurazione migliorata -->
     <appender name="ASYNC_CONSOLE" class="ch.qos.logback.classic.AsyncAppender">
         <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <neverBlock>false</neverBlock>
+        <includeCallerData>false</includeCallerData>
         <appender-ref ref="CONSOLE_JSON"/>
     </appender>
 
     <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
         <queueSize>512</queueSize>
+        <discardingThreshold>0</discardingThreshold>
         <appender-ref ref="FILE"/>
     </appender>
 
     <!-- Profiles -->
     <!-- Ambiente locale/sviluppo: log leggibili -->
-    <springProfile name="local,dev">
+    <springProfile name="local | dev | default">
         <root level="INFO">
             <appender-ref ref="CONSOLE_STANDARD"/>
         </root>
         <logger name="it.iacovelli.nexabudgetbe" level="DEBUG"/>
+        <logger name="org.springframework.web" level="DEBUG"/>
+        <logger name="org.springframework.security" level="DEBUG"/>
     </springProfile>
 
     <!-- Ambiente produzione/Kubernetes: log JSON -->
-    <springProfile name="prod,kubernetes">
+    <springProfile name="prod | kubernetes">
         <root level="INFO">
             <appender-ref ref="ASYNC_CONSOLE"/>
         </root>
-        <logger name="it.iacovelli.nexabudgetbe" level="INFO"/>
+        <logger name="it.iacovelli.nexabudgetbe" level="INFO" additivity="false">
+            <appender-ref ref="ASYNC_CONSOLE"/>
+        </logger>
+        <logger name="org.springframework.web" level="INFO"/>
+        <logger name="org.springframework.security" level="INFO"/>
+        <logger name="org.springframework.boot" level="INFO"/>
+        <logger name="org.hibernate" level="WARN"/>
     </springProfile>
-
-    <!-- Default profile (quando nessun profilo è attivo): assume ambiente locale -->
-    <springProfile name="!local &amp; !dev &amp; !prod &amp; !kubernetes">
-        <root level="INFO">
-            <appender-ref ref="CONSOLE_STANDARD"/>
-        </root>
-        <logger name="it.iacovelli.nexabudgetbe" level="DEBUG"/>
-    </springProfile>
-
-    <!-- Logger levels -->
-    <logger name="it.iacovelli.nexabudgetbe" level="INFO"/>
-    <logger name="org.springframework.web" level="INFO"/>
-    <logger name="org.springframework.security" level="INFO"/>
-    <logger name="org.hibernate" level="WARN"/>
-    <logger name="org.hibernate.SQL" level="DEBUG"/>
-    <logger name="org.hibernate.type.descriptor.sql.BasicBinder" level="TRACE"/>
 </configuration>
+
+
 
