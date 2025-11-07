@@ -30,6 +30,9 @@ services:
       JWT_SECRET: tua-chiave-segreta-molto-lunga-e-sicura-di-almeno-64-caratteri
       gocardless.integrator.baseUrl: http://localhost:3000
       GEMINI_API_KEY: your_gemini_api_key
+      ASYNC_CORE_POOL_SIZE: 2
+      ASYNC_MAX_POOL_SIZE: 3
+      ASYNC_QUEUE_CAPACITY: 50
 
 volumes:
   postgres_data_native:

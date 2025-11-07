@@ -79,15 +79,16 @@ public class GocardlessController {
     }
 
     @PostMapping("/bank/{localAccountId}/sync")
-    @Operation(summary = "Sincronizza transazioni", description = "Sincronizza le transazioni bancarie collegate al conto locale")
-    public ResponseEntity<Void> syncBankTransactions(
+    @Operation(summary = "Sincronizza transazioni", description = "Avvia la sincronizzazione asincrona delle transazioni bancarie collegate al conto locale")
+    public ResponseEntity<String> syncBankTransactions(
             @Parameter(description = "ID conto") @PathVariable UUID localAccountId,
             @RequestBody SyncBankTransactionsRequest request,
             @AuthenticationPrincipal User currentUser) {
 
+        logger.info("Avvio sincronizzazione asincrona per account ID: {}", localAccountId);
         accountService.syncAccountTransactionWithGocardless(localAccountId, currentUser, request);
 
-        return ResponseEntity.ok().build();
+        return ResponseEntity.accepted().body("Sincronizzazione avviata in background");
     }
 
 

@@ -248,7 +248,7 @@ public class TransactionService {
     }
 
     public void importTransactionsFromGocardless(List<GocardlessTransaction> transactions, User user, Account account) {
-        transactions.forEach(gt -> {
+        transactions.parallelStream().forEach(gt -> {
             if (transactionRepository.findByExternalId(gt.getTransactionId()).isEmpty()) {
                 BigDecimal rawAmount = new BigDecimal(gt.getTransactionAmount().getAmount());
                 Transaction t = new Transaction();

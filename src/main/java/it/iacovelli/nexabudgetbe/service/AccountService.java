@@ -8,6 +8,7 @@ import it.iacovelli.nexabudgetbe.repository.AccountRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -171,8 +172,9 @@ public class AccountService {
         return account.getRequisitionId();
     }
 
+    @Async
     public void syncAccountTransactionWithGocardless(UUID accountId, User user, SyncBankTransactionsRequest request) {
-        logger.info("Sincronizzazione transazioni GoCardless per account ID: {}", accountId);
+        logger.info("Sincronizzazione asincrona transazioni GoCardless per account ID: {}", accountId);
 
         Account account = accountRepository.findByIdAndUser(accountId, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
