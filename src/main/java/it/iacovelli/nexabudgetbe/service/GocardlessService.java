@@ -36,12 +36,14 @@ public class GocardlessService {
 
     @PostConstruct
     private void init() {
+        MappingJackson2HttpMessageConverter converter = new MappingJackson2HttpMessageConverter(objectMapper);
         this.restClient = RestClient.builder()
                 .baseUrl(integratorBaseUrl)
                 .messageConverters(httpMessageConverters -> {
-                    httpMessageConverters.clear();
-                    httpMessageConverters.add(new MappingJackson2HttpMessageConverter(objectMapper));
+                    httpMessageConverters.addFirst(converter);
                 })
+                .defaultHeader("Content-Type", "application/json")
+                .defaultHeader("Accept", "application/json")
                 .build();
         logger.info("GocardlessService inizializzato con baseUrl: {}", integratorBaseUrl);
     }
