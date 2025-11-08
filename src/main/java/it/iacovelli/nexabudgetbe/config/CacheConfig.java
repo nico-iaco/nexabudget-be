@@ -22,6 +22,7 @@ public class CacheConfig {
 
     public static final String BANK_ACCOUNTS_CACHE = "bankAccounts";
     public static final String GOCARDLESS_TRANSACTIONS_CACHE = "gocardlessTransactions";
+    public static final String GOCARDLESS_BANKS_CACHE = "gocardlessCountryBanks";
     public static final Duration CACHE_TTL = Duration.ofHours(6);
 
     @Bean

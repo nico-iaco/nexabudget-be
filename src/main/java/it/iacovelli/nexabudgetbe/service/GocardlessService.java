@@ -15,8 +15,7 @@ import org.springframework.web.client.RestClientException;
 import java.util.List;
 import java.util.UUID;
 
-import static it.iacovelli.nexabudgetbe.config.CacheConfig.BANK_ACCOUNTS_CACHE;
-import static it.iacovelli.nexabudgetbe.config.CacheConfig.GOCARDLESS_TRANSACTIONS_CACHE;
+import static it.iacovelli.nexabudgetbe.config.CacheConfig.*;
 
 @Service
 public class GocardlessService {
@@ -48,6 +47,7 @@ public class GocardlessService {
         logger.info("GocardlessService inizializzato con baseUrl: {}", integratorBaseUrl);
     }
 
+    @Cacheable(value = GOCARDLESS_BANKS_CACHE, key = "#countryCode")
     public List<GocardlessBank> getBanks(String countryCode) {
         logger.info("Recupero lista banche per il paese: {}", countryCode);
         try {

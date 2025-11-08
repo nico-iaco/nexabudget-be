@@ -6,6 +6,7 @@ import com.google.genai.types.GenerateContentResponse;
 import it.iacovelli.nexabudgetbe.model.Category;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
+import it.iacovelli.nexabudgetbe.model.semantic_cache.CachedResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -20,6 +21,7 @@ public class AiCategorizationService {
 
     private static final Logger log = LoggerFactory.getLogger(AiCategorizationService.class);
     private final CategoryService categoryService;
+    private final SemanticCacheService semanticCacheService;
     private final Client client;
 
     // Configurazione per una risposta "secca"
@@ -29,9 +31,9 @@ public class AiCategorizationService {
             .maxOutputTokens(50) // Risposta "secca"
             .build();
 
-    public AiCategorizationService(CategoryService categoryService, @Value("${google.ai.apiKey}") String apiKey) {
+    public AiCategorizationService(CategoryService categoryService, SemanticCacheService semanticCacheService, @Value("${google.ai.apiKey}") String apiKey) {
         this.categoryService = categoryService;
-
+        this.semanticCacheService = semanticCacheService;
         this.client = Client.builder().apiKey(apiKey).build();
     }
 
@@ -48,8 +50,16 @@ public class AiCategorizationService {
         // 2. Costruisci il prompt per l'AI
         String prompt = buildPrompt(description, availableCategories);
 
+        Optional<CachedResponse> similar = semanticCacheService.findSimilar(description);
+
+        if (similar.isPresent()) {
+            String aiResponseText = similar.get().getGeminiResponse();
+            return availableCategories.stream()
+                    .filter(c -> c.getName().equalsIgnoreCase(aiResponseText))
+                    .findFirst();
+        }
+
         try {
-            // 3. Chiama l'API di Gemini
             GenerateContentResponse response = client.models.generateContent(
                     "gemini-2.5-flash-lite",
                     prompt,
@@ -58,6 +68,8 @@ public class AiCategorizationService {
             String aiResponseText = response.text() != null ? response.text().trim() : "";
 
             log.debug("Risposta AI: {}", aiResponseText);
+
+            semanticCacheService.saveToCache(description, aiResponseText);
 
             // 4. Cerca la categoria corrispondente nella lista
             // (La risposta AI dovrebbe essere SOLO il nome della categoria)
