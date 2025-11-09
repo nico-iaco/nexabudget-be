@@ -179,32 +179,38 @@ public class AccountService {
         Account account = accountRepository.findByIdAndUser(accountId, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
 
-        if (account.getLastExternalSync() != null && account.getLastExternalSync().isAfter(LocalDateTime.now().minusHours(6))) {
+        LocalDateTime lastExternalSync = account.getLastExternalSync();
+
+        if (lastExternalSync != null && lastExternalSync.isAfter(LocalDateTime.now().minusHours(6))) {
             logger.info("Account ID: {} già sincronizzato di recente, skip sincronizzazione", accountId);
             return;
         }
 
-        List<GocardlessTransaction> goCardlessTransaction = gocardlessService.getGoCardlessTransaction(account.getRequisitionId(), account.getExternalAccountId());
+        LocalDate startDate = lastExternalSync != null ? lastExternalSync.toLocalDate() : null;
+
+        List<GocardlessTransaction> goCardlessTransaction = gocardlessService.getGoCardlessTransaction(account.getRequisitionId(), account.getExternalAccountId(), startDate);
         logger.info("Recuperate {} transazioni da GoCardless per account ID: {}", goCardlessTransaction.size(), accountId);
 
         transactionService.importTransactionsFromGocardless(goCardlessTransaction, user, account);
 
-        // Controlla adesso il bilancio del conto corrente e lo allinea con quello atteso della request
-        BigDecimal savedBalance = transactionService.calculateBalanceForAccount(account);
-        if (savedBalance.compareTo(request.getActualBalance()) != 0) {
-            logger.info("Allineamento bilancio necessario per account ID: {}, bilancio attuale: {}, atteso: {}", 
-                    accountId, savedBalance, request.getActualBalance());
-            Transaction alignmentTransaction = Transaction.builder()
-                    .account(account)
-                    .user(user)
-                    .amount(savedBalance.compareTo(request.getActualBalance()) < 0 ? request.getActualBalance().subtract(savedBalance) : savedBalance.subtract(request.getActualBalance()))
-                    .type(savedBalance.compareTo(request.getActualBalance()) < 0 ? TransactionType.IN : TransactionType.OUT)
-                    .description("Allineamento conto")
-                    .date(LocalDate.now())
-                    .build();
+        if (request.getActualBalance() != null) {
+            // Controlla adesso il bilancio del conto corrente e lo allinea con quello atteso della request
+            BigDecimal savedBalance = transactionService.calculateBalanceForAccount(account);
+            if (savedBalance.compareTo(request.getActualBalance()) != 0) {
+                logger.info("Allineamento bilancio necessario per account ID: {}, bilancio attuale: {}, atteso: {}",
+                        accountId, savedBalance, request.getActualBalance());
+                Transaction alignmentTransaction = Transaction.builder()
+                        .account(account)
+                        .user(user)
+                        .amount(savedBalance.compareTo(request.getActualBalance()) < 0 ? request.getActualBalance().subtract(savedBalance) : savedBalance.subtract(request.getActualBalance()))
+                        .type(savedBalance.compareTo(request.getActualBalance()) < 0 ? TransactionType.IN : TransactionType.OUT)
+                        .description("Allineamento conto")
+                        .date(LocalDate.now())
+                        .build();
 
 
-            transactionService.createTransaction(alignmentTransaction);
+                transactionService.createTransaction(alignmentTransaction);
+            }
         }
 
         account.setLastExternalSync(LocalDateTime.now());

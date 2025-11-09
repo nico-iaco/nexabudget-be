@@ -5,6 +5,7 @@ import it.iacovelli.nexabudgetbe.dto.*;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.converter.json.MappingJackson2HttpMessageConverter;
@@ -12,11 +13,32 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
 import static it.iacovelli.nexabudgetbe.config.CacheConfig.*;
 
+@RegisterReflectionForBinding(classes = {
+        GocardlessGetBanksRequest.class,
+        GocardlessGetBanksResponse.class,
+        GocardlessCreateWebTokenRequest.class,
+        GocardlessCreateWebTokenResponse.class,
+        GocardlessGetAccountsRequest.class,
+        GocardlessGetAccountsResponse.class,
+        GocardlessGetTransactionsRequest.class,
+        GocardlessGetTransactionsResponse.class,
+        GocardlessBaseResponse.class,
+        GocardlessBank.class,
+        GocardlessCreateWebToken.class,
+        GocardlessGetAccounts.class,
+        GocardlessBankDetail.class,
+        GocardlessBankTransaction.class,
+        GocardlessTransactions.class,
+        GocardlessTransaction.class,
+        GocardlessBalance.class,
+        GocardlessAmount.class
+})
 @Service
 public class GocardlessService {
 
@@ -130,13 +152,14 @@ public class GocardlessService {
     }
 
     @Cacheable(value = GOCARDLESS_TRANSACTIONS_CACHE, key = "#requisitionId + '_' + #accountId")
-    public List<GocardlessTransaction> getGoCardlessTransaction(String requisitionId, String accountId) {
+    public List<GocardlessTransaction> getGoCardlessTransaction(String requisitionId, String accountId, LocalDate startDate) {
         logger.info("Recupero transazioni per requisitionId: {}, accountId: {}", requisitionId, accountId);
         try {
             String path = "/transactions";
             GocardlessGetTransactionsRequest request = new GocardlessGetTransactionsRequest();
             request.setRequisitionId(requisitionId);
             request.setAccountId(accountId);
+            request.setStartDate(startDate);
 
             GocardlessGetTransactionsResponse transactionsResponse = restClient.post()
                     .uri(path)
