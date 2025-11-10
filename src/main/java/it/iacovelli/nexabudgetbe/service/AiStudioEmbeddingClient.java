@@ -8,9 +8,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
-import java.util.stream.Collectors;
 
 @Service
 public class AiStudioEmbeddingClient {
@@ -36,15 +36,14 @@ public class AiStudioEmbeddingClient {
                 .embeddings();
 
         if (response.isPresent() && !response.get().isEmpty()) {
-            ContentEmbedding embedding = response.get().getFirst();
-            log.debug("Embedding: {}", embedding);
+            List<Double> embeddings = new ArrayList<>();
 
-            if (embedding.values().isPresent()) {
-                return embedding.values().get().stream()
-                        .map(Double::valueOf)
-                        .collect(Collectors.toList());
-            }
+            response.get().forEach(contentEmbedding -> {
+                contentEmbedding.values().ifPresent(values -> embeddings.addAll(values.stream().map(Double::valueOf).toList()));
+            });
+            log.debug("Embeddings: {}", embeddings);
 
+            return embeddings;
         }
 
         throw new RuntimeException("Nessun embedding generato per il testo fornito");
