@@ -37,7 +37,7 @@ public class TransactionService {
 
     @Transactional
     public TransactionDto.TransactionResponse createTransaction(Transaction transaction) {
-        logger.info("Creazione transazione: {} {} per account ID: {}", 
+        logger.info("Creazione transazione: {} {} per account ID: {}",
                 transaction.getType(), transaction.getAmount(), transaction.getAccount().getId());
         Transaction savedTransaction = transactionRepository.save(transaction);
         logger.debug("Transazione creata con successo: ID: {}", savedTransaction.getId());
@@ -47,7 +47,7 @@ public class TransactionService {
     @Transactional
     public List<TransactionDto.TransactionResponse> createTransfer(Account sourceAccount, Account destinationAccount,
                                                                    BigDecimal amount, String description, LocalDate transferDate, String notes) {
-        logger.info("Creazione trasferimento: {} da account ID: {} a account ID: {}", 
+        logger.info("Creazione trasferimento: {} da account ID: {} a account ID: {}",
                 amount, sourceAccount.getId(), destinationAccount.getId());
 
         if (amount.compareTo(BigDecimal.ZERO) <= 0) {
@@ -91,7 +91,7 @@ public class TransactionService {
 
     @Transactional
     public List<TransactionDto.TransactionResponse> convertTransactionsToTransfer(Transaction firstTransaction, Transaction secondTransaction) {
-        logger.info("Conversione transazioni a trasferimento: ID1: {}, ID2: {}", 
+        logger.info("Conversione transazioni a trasferimento: ID1: {}, ID2: {}",
                 firstTransaction.getId(), secondTransaction.getId());
 
         if (firstTransaction.getTransferId() != null || secondTransaction.getTransferId() != null) {
@@ -247,36 +247,38 @@ public class TransactionService {
         return income.subtract(expense);
     }
 
-    public void importTransactionsFromGocardless(List<GocardlessTransaction> transactions, User user, Account account) {
-        transactions.parallelStream().forEach(gt -> {
-            if (transactionRepository.findByExternalId(gt.getTransactionId()).isEmpty()) {
-                BigDecimal rawAmount = new BigDecimal(gt.getTransactionAmount().getAmount());
-                Transaction t = new Transaction();
-                t.setExternalId(gt.getTransactionId());
-                t.setAmount(rawAmount.abs());
-                t.setType(rawAmount.signum() > 0 ? TransactionType.IN : TransactionType.OUT);
-                t.setUser(user);
-                t.setDescription(gt.getPayeeName());
-                t.setDate(LocalDate.parse(gt.getValueDate(), formatter));
-                t.setAccount(account);
+    public void importTransactionsFromGocardless(List<GocardlessTransaction> transactions, User user, Account account, LocalDate startDate) {
+        transactions.parallelStream()
+                .filter(gc -> LocalDate.parse(gc.getDate()).isAfter(startDate.minusDays(1L)))
+                .forEach(gt -> {
+                    if (transactionRepository.findByExternalId(gt.getTransactionId()).isEmpty()) {
+                        BigDecimal rawAmount = new BigDecimal(gt.getTransactionAmount().getAmount());
+                        Transaction t = new Transaction();
+                        t.setExternalId(gt.getTransactionId());
+                        t.setAmount(rawAmount.abs());
+                        t.setType(rawAmount.signum() > 0 ? TransactionType.IN : TransactionType.OUT);
+                        t.setUser(user);
+                        t.setDescription(gt.getPayeeName());
+                        t.setDate(LocalDate.parse(gt.getValueDate(), formatter));
+                        t.setAccount(account);
 
-                Optional<Category> foundCategory = aiCategorizationService.categorizeTransaction(gt.getPayeeName(), user, t.getType());
+                        Optional<Category> foundCategory = aiCategorizationService.categorizeTransaction(gt.getPayeeName(), user, t.getType());
 
-                if (foundCategory.isPresent()) {
-                    t.setCategory(foundCategory.get());
-                    logger.debug("Transazione {} categorizzata automaticamente come: {}", gt.getTransactionId(), foundCategory.get().getName());
-                } else {
-                    // Se l'AI fallisce o non trova, la categoria resta null (come prima)
-                    // L'utente dovrà categorizzarla manualmente
-                    logger.debug("Transazione {} non categorizzata automaticamente.", gt.getTransactionId());
-                    t.setCategory(null);
-                }
+                        if (foundCategory.isPresent()) {
+                            t.setCategory(foundCategory.get());
+                            logger.debug("Transazione {} categorizzata automaticamente come: {}", gt.getTransactionId(), foundCategory.get().getName());
+                        } else {
+                            // Se l'AI fallisce o non trova, la categoria resta null (come prima)
+                            // L'utente dovrà categorizzarla manualmente
+                            logger.debug("Transazione {} non categorizzata automaticamente.", gt.getTransactionId());
+                            t.setCategory(null);
+                        }
 
-                transactionRepository.save(t);
-            } else {
-                logger.debug("Gocardless Transaction already exists: {}", gt.getTransactionId());
-            }
-        });
+                        transactionRepository.save(t);
+                    } else {
+                        logger.debug("Gocardless Transaction already exists: {}", gt.getTransactionId());
+                    }
+                });
 
     }
 

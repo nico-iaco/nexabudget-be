@@ -13,7 +13,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
-import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -152,14 +151,13 @@ public class GocardlessService {
     }
 
     @Cacheable(value = GOCARDLESS_TRANSACTIONS_CACHE, key = "#requisitionId + '_' + #accountId")
-    public List<GocardlessTransaction> getGoCardlessTransaction(String requisitionId, String accountId, LocalDate startDate) {
+    public List<GocardlessTransaction> getGoCardlessTransaction(String requisitionId, String accountId) {
         logger.info("Recupero transazioni per requisitionId: {}, accountId: {}", requisitionId, accountId);
         try {
             String path = "/transactions";
             GocardlessGetTransactionsRequest request = new GocardlessGetTransactionsRequest();
             request.setRequisitionId(requisitionId);
             request.setAccountId(accountId);
-            request.setStartDate(startDate);
 
             GocardlessGetTransactionsResponse transactionsResponse = restClient.post()
                     .uri(path)

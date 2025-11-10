@@ -188,10 +188,10 @@ public class AccountService {
 
         LocalDate startDate = lastExternalSync != null ? lastExternalSync.toLocalDate() : null;
 
-        List<GocardlessTransaction> goCardlessTransaction = gocardlessService.getGoCardlessTransaction(account.getRequisitionId(), account.getExternalAccountId(), startDate);
+        List<GocardlessTransaction> goCardlessTransaction = gocardlessService.getGoCardlessTransaction(account.getRequisitionId(), account.getExternalAccountId());
         logger.info("Recuperate {} transazioni da GoCardless per account ID: {}", goCardlessTransaction.size(), accountId);
 
-        transactionService.importTransactionsFromGocardless(goCardlessTransaction, user, account);
+        transactionService.importTransactionsFromGocardless(goCardlessTransaction, user, account, startDate);
 
         if (request.getActualBalance() != null) {
             // Controlla adesso il bilancio del conto corrente e lo allinea con quello atteso della request
