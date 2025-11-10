@@ -1,5 +1,6 @@
 package it.iacovelli.nexabudgetbe.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -91,6 +92,7 @@ public class TransactionDto {
         private BigDecimal amount;
         private TransactionType type;
         private String description;
+        @JsonFormat(pattern = "yyyy-MM-dd")
         private LocalDate date;
         private String note;
         private String transferId;
