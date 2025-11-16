@@ -43,6 +43,7 @@ public class AccountDto {
         private BigDecimal actualBalance;
         private String currency;
         private boolean isLinkedToExternal;
+        private boolean isSynchronizing;
         private String createdAt;
     }
 }

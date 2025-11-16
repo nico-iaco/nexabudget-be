@@ -3,6 +3,7 @@ package it.iacovelli.nexabudgetbe.model.semantic_cache;
 import jakarta.persistence.Id;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.springframework.data.mongodb.core.index.Indexed;
 import org.springframework.data.mongodb.core.mapping.Document;
 
 import java.util.List;
@@ -15,6 +16,7 @@ public class CachedResponse {
     @Id
     private String id;
 
+    @Indexed(unique = true)
     private String promptText;
     private String geminiResponse;
     private List<Double> embedding;

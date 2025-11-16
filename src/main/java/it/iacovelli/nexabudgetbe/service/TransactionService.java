@@ -249,7 +249,7 @@ public class TransactionService {
 
     public void importTransactionsFromGocardless(List<GocardlessTransaction> transactions, User user, Account account, LocalDate startDate) {
         transactions.parallelStream()
-                .filter(gc -> LocalDate.parse(gc.getDate()).isAfter(startDate.minusDays(1L)))
+                .filter(gc -> startDate == null || LocalDate.parse(gc.getDate()).isAfter(startDate.minusDays(1L)))
                 .forEach(gt -> {
                     if (transactionRepository.findByExternalId(gt.getTransactionId()).isEmpty()) {
                         BigDecimal rawAmount = new BigDecimal(gt.getTransactionAmount().getAmount());

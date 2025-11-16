@@ -181,6 +181,13 @@ public class AccountService {
 
         LocalDateTime lastExternalSync = account.getLastExternalSync();
 
+        if (account.getIsSynchronizing()) {
+            return;
+        } else {
+            account.setIsSynchronizing(true);
+            account = accountRepository.save(account);
+        }
+
         if (lastExternalSync != null && lastExternalSync.isAfter(LocalDateTime.now().minusHours(6))) {
             logger.info("Account ID: {} già sincronizzato di recente, skip sincronizzazione", accountId);
             return;
@@ -214,6 +221,7 @@ public class AccountService {
         }
 
         account.setLastExternalSync(LocalDateTime.now());
+        account.setIsSynchronizing(false);
         accountRepository.save(account);
         logger.info("Sincronizzazione completata per account ID: {}", accountId);
     }
@@ -228,6 +236,7 @@ public class AccountService {
                 .type(account.getType())
                 .actualBalance(balance)
                 .isLinkedToExternal(account.getExternalAccountId() != null)
+                .isSynchronizing(account.getIsSynchronizing())
                 .build();
     }
 

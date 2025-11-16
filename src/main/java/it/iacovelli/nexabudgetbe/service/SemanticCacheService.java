@@ -89,8 +89,25 @@ public class SemanticCacheService {
 
     /**
      * Salva una nuova coppia prompt/risposta nella cache.
+     * Prima controlla se esiste già un prompt identico per evitare duplicati.
      */
     public void saveToCache(String prompt, String response) {
+        // Controlla se esiste già un prompt identico
+        Optional<CachedResponse> existing = cacheRepository.findByPromptText(prompt);
+
+        if (existing.isPresent()) {
+            log.debug("Entry già presente nella cache per il prompt: {}", prompt);
+            // Opzionalmente, potresti aggiornare la risposta se è cambiata
+            CachedResponse cachedResponse = existing.get();
+            if (!cachedResponse.getGeminiResponse().equals(response)) {
+                log.debug("Aggiornamento risposta esistente nella cache");
+                cachedResponse.setGeminiResponse(response);
+                cacheRepository.save(cachedResponse);
+            }
+            return;
+        }
+
+        // Se non esiste, genera l'embedding e salva
         List<Double> embedding = embeddingClient.getEmbedding(prompt);
         CachedResponse newEntry = new CachedResponse(prompt, response, embedding);
         cacheRepository.save(newEntry);

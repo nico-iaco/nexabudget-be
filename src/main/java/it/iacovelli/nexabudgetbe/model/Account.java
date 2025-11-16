@@ -44,6 +44,9 @@ public class Account {
     @Column(name = "last_external_sync")
     private LocalDateTime lastExternalSync;
 
+    @Column(name = "is_synchronizing")
+    private Boolean isSynchronizing;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
