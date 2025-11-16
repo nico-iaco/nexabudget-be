@@ -198,32 +198,37 @@ public class AccountService {
         List<GocardlessTransaction> goCardlessTransaction = gocardlessService.getGoCardlessTransaction(account.getRequisitionId(), account.getExternalAccountId());
         logger.info("Recuperate {} transazioni da GoCardless per account ID: {}", goCardlessTransaction.size(), accountId);
 
-        transactionService.importTransactionsFromGocardless(goCardlessTransaction, user, account, startDate);
+        try {
+            transactionService.importTransactionsFromGocardless(goCardlessTransaction, user, account, startDate);
 
-        if (request.getActualBalance() != null) {
-            // Controlla adesso il bilancio del conto corrente e lo allinea con quello atteso della request
-            BigDecimal savedBalance = transactionService.calculateBalanceForAccount(account);
-            if (savedBalance.compareTo(request.getActualBalance()) != 0) {
-                logger.info("Allineamento bilancio necessario per account ID: {}, bilancio attuale: {}, atteso: {}",
-                        accountId, savedBalance, request.getActualBalance());
-                Transaction alignmentTransaction = Transaction.builder()
-                        .account(account)
-                        .user(user)
-                        .amount(savedBalance.compareTo(request.getActualBalance()) < 0 ? request.getActualBalance().subtract(savedBalance) : savedBalance.subtract(request.getActualBalance()))
-                        .type(savedBalance.compareTo(request.getActualBalance()) < 0 ? TransactionType.IN : TransactionType.OUT)
-                        .description("Allineamento conto")
-                        .date(LocalDate.now())
-                        .build();
+            if (request.getActualBalance() != null) {
+                // Controlla adesso il bilancio del conto corrente e lo allinea con quello atteso della request
+                BigDecimal savedBalance = transactionService.calculateBalanceForAccount(account);
+                if (savedBalance.compareTo(request.getActualBalance()) != 0) {
+                    logger.info("Allineamento bilancio necessario per account ID: {}, bilancio attuale: {}, atteso: {}",
+                            accountId, savedBalance, request.getActualBalance());
+                    Transaction alignmentTransaction = Transaction.builder()
+                            .account(account)
+                            .user(user)
+                            .amount(savedBalance.compareTo(request.getActualBalance()) < 0 ? request.getActualBalance().subtract(savedBalance) : savedBalance.subtract(request.getActualBalance()))
+                            .type(savedBalance.compareTo(request.getActualBalance()) < 0 ? TransactionType.IN : TransactionType.OUT)
+                            .description("Allineamento conto")
+                            .date(LocalDate.now())
+                            .build();
 
 
-                transactionService.createTransaction(alignmentTransaction);
+                    transactionService.createTransaction(alignmentTransaction);
+                }
             }
-        }
 
-        account.setLastExternalSync(LocalDateTime.now());
-        account.setIsSynchronizing(false);
-        accountRepository.save(account);
-        logger.info("Sincronizzazione completata per account ID: {}", accountId);
+            account.setLastExternalSync(LocalDateTime.now());
+            logger.info("Sincronizzazione completata per account ID: {}", accountId);
+        } catch (Exception e) {
+            logger.error("Errore durante la sincronizzazione delle transazioni GoCardless per account ID: {}, motivo: {}", accountId, e.getMessage());
+        } finally {
+            account.setIsSynchronizing(false);
+            accountRepository.save(account);
+        }
     }
 
     public AccountDto.AccountResponse mapAccountToDto(Account account) {
