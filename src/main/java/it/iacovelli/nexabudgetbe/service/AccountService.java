@@ -52,7 +52,7 @@ public class AccountService {
         account.setType(accountRequest.getType());
         account.setCurrency(accountRequest.getCurrency());
         account.setUser(user);
-
+        account.setIsSynchronizing(false);
 
         Account savedAccount = accountRepository.save(account);
         logger.info("Account creato con successo: {} (ID: {})", savedAccount.getName(), savedAccount.getId());
@@ -236,7 +236,7 @@ public class AccountService {
                 .type(account.getType())
                 .actualBalance(balance)
                 .isLinkedToExternal(account.getExternalAccountId() != null)
-                .isSynchronizing(account.getIsSynchronizing())
+                .isSynchronizing(account.getIsSynchronizing() != null && account.getIsSynchronizing())
                 .build();
     }
 

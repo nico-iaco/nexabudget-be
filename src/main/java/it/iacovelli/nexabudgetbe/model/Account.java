@@ -53,5 +53,8 @@ public class Account {
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+        if (isSynchronizing == null) {
+            isSynchronizing = false;
+        }
     }
 }
