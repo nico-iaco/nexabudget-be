@@ -84,6 +84,14 @@ public class AiCategorizationService {
         }
     }
 
+    public void updateSemanticCache(String description, Category oldCategory, Category newCategory) {
+        if (oldCategory == null) {
+            semanticCacheService.saveToCache(description, newCategory.getName());
+        } else {
+            semanticCacheService.updateCache(description, newCategory.getName());
+        }
+    }
+
     private String buildPrompt(String description, List<Category> categories) {
         String categoryList = categories.stream()
                 .map(Category::getName)

@@ -114,5 +114,21 @@ public class SemanticCacheService {
         log.debug("Saved new entry in semantic cache: {}", newEntry);
     }
 
+    /**
+     * Aggiorna la cache con una nuova risposta.
+     */
+    public void updateCache(String prompt, String newResponse) {
+        Optional<CachedResponse> existing = cacheRepository.findByPromptText(prompt);
+
+        if (existing.isPresent()) {
+            CachedResponse cachedResponse = existing.get();
+            cachedResponse.setGeminiResponse(newResponse);
+            cacheRepository.save(cachedResponse);
+            log.debug("Updated cache entry for prompt: {}", prompt);
+        } else {
+            log.warn("No existing cache entry found for prompt: {}", prompt);
+        }
+    }
+
 
 }

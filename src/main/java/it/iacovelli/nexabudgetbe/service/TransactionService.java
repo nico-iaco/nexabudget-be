@@ -205,6 +205,21 @@ public class TransactionService {
             }
         }
 
+        // Aggiorna la cache semantica se la categoria è cambiata
+        if (newCategory != null &&
+                (oldTransaction.getCategory() == null ||
+                        !oldTransaction.getCategory().getId().equals(newCategory.getId()))) {
+
+            logger.info("Aggiornamento cache semantica per transazione: {} con nuova categoria: {}",
+                    oldTransaction.getId(), newCategory.getName());
+
+            aiCategorizationService.updateSemanticCache(
+                    oldTransaction.getDescription(),
+                    oldTransaction.getCategory(),
+                    newCategory
+            );
+        }
+
         oldTransaction.setAccount(newAccount);
         oldTransaction.setAmount(newAmount);
         oldTransaction.setType(newType);
@@ -216,6 +231,7 @@ public class TransactionService {
         Transaction savedTransaction = transactionRepository.save(oldTransaction);
         return mapTransactionToResponse(savedTransaction);
     }
+
 
     @Transactional
     public void deleteTransaction(Transaction transaction) {
