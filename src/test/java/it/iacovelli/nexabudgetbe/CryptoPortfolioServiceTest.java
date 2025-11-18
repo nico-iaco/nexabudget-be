@@ -1,6 +1,7 @@
 package it.iacovelli.nexabudgetbe;
 
 import it.iacovelli.nexabudgetbe.dto.CryptoDto;
+import it.iacovelli.nexabudgetbe.dto.CryptoHoldingDto;
 import it.iacovelli.nexabudgetbe.model.CryptoHolding;
 import it.iacovelli.nexabudgetbe.model.HoldingSource;
 import it.iacovelli.nexabudgetbe.model.User;
@@ -85,7 +86,7 @@ public class CryptoPortfolioServiceTest {
         BigDecimal amount = new BigDecimal("0.5");
 
         // Act
-        CryptoHolding holding = cryptoPortfolioService.addManualHolding(testUser, symbol, amount);
+        CryptoHoldingDto holding = cryptoPortfolioService.addManualHolding(testUser, symbol, amount);
 
         // Assert
         assertNotNull(holding);
@@ -93,7 +94,6 @@ public class CryptoPortfolioServiceTest {
         assertEquals(symbol.toUpperCase(), holding.getSymbol());
         assertEquals(amount, holding.getAmount());
         assertEquals(HoldingSource.MANUAL, holding.getSource());
-        assertEquals(testUser, holding.getUser());
     }
 
     @Test
@@ -101,11 +101,11 @@ public class CryptoPortfolioServiceTest {
         // Arrange - First add
         String symbol = "BTC";
         BigDecimal initialAmount = new BigDecimal("0.5");
-        CryptoHolding firstHolding = cryptoPortfolioService.addManualHolding(testUser, symbol, initialAmount);
+        CryptoHoldingDto firstHolding = cryptoPortfolioService.addManualHolding(testUser, symbol, initialAmount);
 
         // Act - Update with new amount
         BigDecimal newAmount = new BigDecimal("1.0");
-        CryptoHolding updatedHolding = cryptoPortfolioService.addManualHolding(testUser, symbol, newAmount);
+        CryptoHoldingDto updatedHolding = cryptoPortfolioService.addManualHolding(testUser, symbol, newAmount);
 
         // Assert
         assertEquals(firstHolding.getId(), updatedHolding.getId());

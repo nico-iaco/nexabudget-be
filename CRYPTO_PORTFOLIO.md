@@ -69,11 +69,19 @@ Le chiavi vengono salvate in modo sicuro nel database utilizzando crittografia A
 
 ### 4. Sincronizza da Binance
 
+### 4. Sincronizza da Binance
 ```
 POST /api/crypto/binance/sync
 ```
 
 Importa automaticamente tutti gli asset dal wallet Binance dell'utente.
+
+**Note:**
+
+- Recupera asset da **TUTTI i wallet** (Spot, Funding, Cross Margin, Isolated Margin, etc.)
+- Se il metodo completo fallisce, fa automaticamente fallback al solo wallet Spot
+- L'operazione è asincrona e può richiedere qualche secondo
+- Gli asset esistenti da Binance vengono sostituiti, quelli manuali rimangono intatti
 
 ## Configurazione
 

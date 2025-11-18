@@ -2,13 +2,17 @@ package it.iacovelli.nexabudgetbe.service;
 
 import it.iacovelli.nexabudgetbe.dto.CryptoBalance;
 import it.iacovelli.nexabudgetbe.dto.CryptoDto;
+import it.iacovelli.nexabudgetbe.dto.CryptoHoldingDto;
 import it.iacovelli.nexabudgetbe.model.CryptoHolding;
 import it.iacovelli.nexabudgetbe.model.HoldingSource;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.model.UserBinanceKeys;
 import it.iacovelli.nexabudgetbe.repository.CryptoHoldingRepository;
 import it.iacovelli.nexabudgetbe.repository.UserBinanceKeysRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -27,6 +31,7 @@ public class CryptoPortfolioService {
     private final UserBinanceKeysRepository keysRepository;
     private final BinanceService binanceService;
     private final CurrencyConversionService currencyConversionService;
+    private static final Logger log = LoggerFactory.getLogger(CryptoPortfolioService.class);
 
     public CryptoPortfolioService(CryptoHoldingRepository holdingRepository,
                                   UserBinanceKeysRepository keysRepository,
@@ -38,7 +43,7 @@ public class CryptoPortfolioService {
         this.currencyConversionService = currencyConversionService;
     }
 
-    public CryptoHolding addManualHolding(User user, String symbol, BigDecimal amount) {
+    public CryptoHoldingDto addManualHolding(User user, String symbol, BigDecimal amount) {
         Optional<CryptoHolding> existing = holdingRepository.findByUserAndSymbolAndSource(
                 user, symbol, HoldingSource.MANUAL);
 
@@ -48,7 +53,9 @@ public class CryptoPortfolioService {
         holding.setAmount(amount);
         holding.setSource(HoldingSource.MANUAL);
 
-        return holdingRepository.save(holding);
+        CryptoHolding cryptoHolding = holdingRepository.save(holding);
+
+        return mapEntityToDto(cryptoHolding);
     }
 
     @Transactional
@@ -63,16 +70,27 @@ public class CryptoPortfolioService {
         keysRepository.save(keys);
     }
 
+    @Async
     @Transactional
     public void syncBinanceHoldings(User user) {
         UserBinanceKeys keys = keysRepository.findByUser(user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Chiavi Binance non configurate"));
 
-        List<CryptoBalance> binanceBalances = binanceService.getAccountBalances(keys.getApiKey(), keys.getApiSecret());
+        // USA IL NUOVO METODO che recupera esplicitamente da: Spot + Earn Flexible + Earn Locked
+        List<CryptoBalance> binanceBalances = binanceService.getAllWalletsIncludingEarn(keys.getApiKey(), keys.getApiSecret());
 
-        // Pulisci i vecchi dati Binance prima di importare i nuovi
-        holdingRepository.deleteByUserAndSource(user, HoldingSource.BINANCE);
+        // Recupera i vecchi holdings da eliminare
+        List<CryptoHolding> oldHoldings = holdingRepository.findByUser(user).stream()
+                .filter(h -> h.getSource() == HoldingSource.BINANCE)
+                .toList();
 
+        // Elimina i vecchi holdings Binance in batch e forza il flush
+        if (!oldHoldings.isEmpty()) {
+            holdingRepository.deleteAllInBatch(oldHoldings);
+            holdingRepository.flush();
+        }
+
+        // Crea i nuovi holdings
         List<CryptoHolding> holdingsToSave = binanceBalances.stream()
                 .map(balance -> CryptoHolding.builder()
                         .user(user)
@@ -103,14 +121,19 @@ public class CryptoPortfolioService {
             String symbol = entry.getKey();
             BigDecimal amount = entry.getValue();
 
-            Optional<BigDecimal> priceOpt = binanceService.getTickerPrice(symbol);
+            try {
+                Optional<BigDecimal> priceOpt = binanceService.getTickerPrice(symbol);
 
-            if (priceOpt.isPresent()) {
-                BigDecimal priceUsd = priceOpt.get();
-                BigDecimal assetValueUsd = amount.multiply(priceUsd);
-                totalValueUsd = totalValueUsd.add(assetValueUsd);
-                assetValues.add(new CryptoDto.AssetValue(symbol, amount, priceUsd, assetValueUsd));
+                if (priceOpt.isPresent()) {
+                    BigDecimal priceUsd = priceOpt.get();
+                    BigDecimal assetValueUsd = amount.multiply(priceUsd);
+                    totalValueUsd = totalValueUsd.add(assetValueUsd);
+                    assetValues.add(new CryptoDto.AssetValue(symbol, amount, priceUsd, assetValueUsd));
+                }
+            } catch (Exception e) {
+                log.error("Errore durante il recupero del prezzo del token {}", symbol, e);
             }
+
         }
 
         // Converti i valori nella valuta richiesta se non è USD
@@ -140,5 +163,14 @@ public class CryptoPortfolioService {
                 .collect(Collectors.toList());
 
         return new CryptoDto.PortfolioValueResponse(totalValueConverted, targetCurrency.toUpperCase(), convertedAssets);
+    }
+
+    private CryptoHoldingDto mapEntityToDto(CryptoHolding cryptoHolding) {
+        CryptoHoldingDto cryptoHoldingDto = new CryptoHoldingDto();
+        cryptoHoldingDto.setId(cryptoHolding.getId());
+        cryptoHoldingDto.setAmount(cryptoHolding.getAmount());
+        cryptoHoldingDto.setSymbol(cryptoHolding.getSymbol());
+        cryptoHoldingDto.setSource(cryptoHolding.getSource());
+        return cryptoHoldingDto;
     }
 }

@@ -4,7 +4,7 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.CryptoDto;
-import it.iacovelli.nexabudgetbe.model.CryptoHolding;
+import it.iacovelli.nexabudgetbe.dto.CryptoHoldingDto;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.CryptoPortfolioService;
 import jakarta.validation.Valid;
@@ -33,12 +33,12 @@ public class CryptoPortfolioController {
         return ResponseEntity.ok(cryptoService.getPortfolioValue(currentUser, currency));
     }
 
-    @PostMapping("/holdings/manual")
+    @PostMapping("/holdings")
     @Operation(summary = "Aggiungi/Aggiorna holding manuale", description = "Crea o aggiorna un asset inserito manualmente")
-    public ResponseEntity<CryptoHolding> addManualHolding(
+    public ResponseEntity<CryptoHoldingDto> addManualHolding(
             @AuthenticationPrincipal User currentUser,
             @Valid @RequestBody CryptoDto.ManualHoldingRequest request) {
-        CryptoHolding holding = cryptoService.addManualHolding(
+        CryptoHoldingDto holding = cryptoService.addManualHolding(
                 currentUser, request.getSymbol(), request.getAmount());
         return ResponseEntity.status(HttpStatus.CREATED).body(holding);
     }
