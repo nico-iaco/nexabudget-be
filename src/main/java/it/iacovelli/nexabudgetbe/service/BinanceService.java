@@ -2,6 +2,7 @@ package it.iacovelli.nexabudgetbe.service;
 
 import com.binance.connector.client.SpotClient;
 import com.binance.connector.client.impl.SpotClientImpl;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import it.iacovelli.nexabudgetbe.config.CacheConfig;
@@ -66,20 +67,33 @@ public class BinanceService {
         try {
             // Assumiamo USDT come valuta di quotazione
             String tradingPair = symbol.toUpperCase() + "USDT";
-            Map<String, Object> parameters = new LinkedHashMap<>();
-            parameters.put("symbol", tradingPair);
-            String jsonResponse = spotClient.createMarket().ticker(parameters);
-
-            // Parse JSON: { "symbol": "BTCUSDT", "weightedAvgPrice": "65000.00" }
-            JsonNode root = objectMapper.readTree(jsonResponse);
-            String priceStr = root.get("weightedAvgPrice").asText();
-            BigDecimal price = new BigDecimal(priceStr);
-
-            logger.debug("Prezzo {} recuperato: {}", symbol, price);
-            return Optional.of(price);
+            Optional<BigDecimal> price = getConvertedPriceFromCryptoPairs(tradingPair);
+            if (price.isPresent()) {
+                logger.info("Prezzo {} recuperato: {}", symbol, price);
+                return price;
+            } else {
+                logger.warn("Prezzo {} non disponibile. Ritorno valore originale.", symbol);
+                return Optional.empty();
+            }
         } catch (Exception e) {
-            logger.error("Errore nel recupero prezzo Binance per {}: {}", symbol, e.getMessage());
-            return Optional.empty();
+            logger.error("Errore nel recupero prezzo Binance per {}: {}, trying to convert to BTC", symbol, e.getMessage());
+            try {
+                String tradingPair = symbol.toUpperCase() + "BTC";
+                Optional<BigDecimal> btcPrice = getConvertedPriceFromCryptoPairs(tradingPair);
+
+                if (btcPrice.isPresent()) {
+                    Optional<BigDecimal> btcUsdtPrice = getConvertedPriceFromCryptoPairs("BTCUSDT");
+                    if (btcUsdtPrice.isPresent()) {
+                        BigDecimal usdtPrice = btcPrice.get().multiply(btcUsdtPrice.get());
+                        logger.debug("Prezzo {} convertito via BTC: {}", symbol, usdtPrice);
+                        return Optional.of(usdtPrice);
+                    }
+                }
+                return Optional.empty();
+            } catch (Exception e2) {
+                logger.error("Errore nel recupero prezzo Binance da BTC per {}: {}", symbol, e2.getMessage());
+                return Optional.empty();
+            }
         }
     }
 
@@ -232,7 +246,7 @@ public class BinanceService {
         }
     }
 
-    // Combina balances da più liste, sommando asset con lo stesso simbolo
+
     private List<CryptoBalance> combineBalances(List<CryptoBalance>... balanceLists) {
         Map<String, BigDecimal> combinedMap = new LinkedHashMap<>();
         for (List<CryptoBalance> balanceList : balanceLists) {
@@ -249,7 +263,16 @@ public class BinanceService {
         return result;
     }
 
-    // METODO PRINCIPALE: Recupera TUTTI gli asset (Spot + Earn Flexible + Earn Locked)
+    private Optional<BigDecimal> getConvertedPriceFromCryptoPairs(String pairs) throws JsonProcessingException {
+        Map<String, Object> parameters = new LinkedHashMap<>();
+        parameters.put("symbol", pairs);
+        String jsonResponse = spotClient.createMarket().ticker(parameters);
+        JsonNode root = objectMapper.readTree(jsonResponse);
+        String priceStr = root.get("weightedAvgPrice").asText();
+        BigDecimal price = new BigDecimal(priceStr);
+        return Optional.of(price);
+    }
+
     public List<CryptoBalance> getAllWalletsIncludingEarn(String apiKey, String apiSecret) {
         logger.info("Recupero COMPLETO: Spot + Earn Flexible + Earn Locked...");
         try {
