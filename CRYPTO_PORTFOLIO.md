@@ -38,7 +38,7 @@ Restituisce il valore totale e i dettagli di ogni asset nel portfolio.
 ### 2. Aggiungi/Aggiorna holding manuale
 
 ```
-POST /api/crypto/holdings/manual
+POST /api/crypto/holdings
 ```
 
 **Request Body:**
