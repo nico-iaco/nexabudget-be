@@ -23,13 +23,13 @@ Restituisce il valore totale e i dettagli di ogni asset nel portfolio.
 
 ```json
 {
-  "totalValueUsd": "15000.50",
+  "totalValue": "15000.50",
   "assets": [
     {
       "symbol": "BTC",
       "amount": "0.5",
-      "priceUsd": "30000.00",
-      "valueUsd": "15000.00"
+      "price": "30000.00",
+      "value": "15000.00"
     }
   ]
 }
