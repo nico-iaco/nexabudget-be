@@ -23,13 +23,13 @@ Restituisce il valore totale e i dettagli di ogni asset nel portfolio.
 
 ```json
 {
-  "totalValueUsd": "15000.50",
+  "totalValue": "15000.50",
   "assets": [
     {
       "symbol": "BTC",
       "amount": "0.5",
-      "priceUsd": "30000.00",
-      "valueUsd": "15000.00"
+      "price": "30000.00",
+      "value": "15000.00"
     }
   ]
 }
@@ -38,7 +38,7 @@ Restituisce il valore totale e i dettagli di ogni asset nel portfolio.
 ### 2. Aggiungi/Aggiorna holding manuale
 
 ```
-POST /api/crypto/holdings/manual
+POST /api/crypto/holdings
 ```
 
 **Request Body:**
@@ -166,7 +166,7 @@ I prezzi delle crypto vengono cachati per ridurre le chiamate API a Binance:
 1. **Login utente** e ottieni il token JWT
 2. **Aggiungi crypto manualmente**:
    ```bash
-   curl -X POST http://localhost:8080/api/crypto/holdings/manual \
+   curl -X POST http://localhost:8080/api/crypto/holdings \
      -H "Authorization: Bearer <token>" \
      -H "Content-Type: application/json" \
      -d '{"symbol":"ETH","amount":"2.5"}'
