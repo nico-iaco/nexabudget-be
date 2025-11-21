@@ -166,7 +166,7 @@ I prezzi delle crypto vengono cachati per ridurre le chiamate API a Binance:
 1. **Login utente** e ottieni il token JWT
 2. **Aggiungi crypto manualmente**:
    ```bash
-   curl -X POST http://localhost:8080/api/crypto/holdings/manual \
+   curl -X POST http://localhost:8080/api/crypto/holdings \
      -H "Authorization: Bearer <token>" \
      -H "Content-Type: application/json" \
      -d '{"symbol":"ETH","amount":"2.5"}'
