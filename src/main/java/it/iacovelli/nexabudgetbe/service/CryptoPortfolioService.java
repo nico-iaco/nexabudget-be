@@ -71,12 +71,10 @@ public class CryptoPortfolioService {
     }
 
     @Async
-    @Transactional
     public void syncBinanceHoldings(User user) {
         UserBinanceKeys keys = keysRepository.findByUser(user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Chiavi Binance non configurate"));
 
-        // USA IL NUOVO METODO che recupera esplicitamente da: Spot + Earn Flexible + Earn Locked
         List<CryptoBalance> binanceBalances = binanceService.getAllWalletsIncludingEarn(keys.getApiKey(), keys.getApiSecret());
 
         // Recupera i vecchi holdings da eliminare
