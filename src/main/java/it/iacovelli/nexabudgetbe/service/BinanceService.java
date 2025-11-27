@@ -247,6 +247,7 @@ public class BinanceService {
     }
 
 
+    @SafeVarargs
     private List<CryptoBalance> combineBalances(List<CryptoBalance>... balanceLists) {
         Map<String, BigDecimal> combinedMap = new LinkedHashMap<>();
         for (List<CryptoBalance> balanceList : balanceLists) {
