@@ -1,15 +1,12 @@
 package it.iacovelli.nexabudgetbe.service;
 
-import com.google.genai.Client;
-import com.google.genai.types.GenerateContentConfig;
-import com.google.genai.types.GenerateContentResponse;
 import it.iacovelli.nexabudgetbe.model.Category;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
-import it.iacovelli.nexabudgetbe.model.semantic_cache.CachedResponse;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -22,19 +19,13 @@ public class AiCategorizationService {
     private static final Logger log = LoggerFactory.getLogger(AiCategorizationService.class);
     private final CategoryService categoryService;
     private final SemanticCacheService semanticCacheService;
-    private final Client client;
+    private final GoogleGenAiChatModel chatClient;
 
-    // Configurazione per una risposta "secca"
-    private final GenerateContentConfig generationConfig = GenerateContentConfig.builder()
-            .temperature(0.1f) // Bassa "creatività"
-            .topK(1f)
-            .maxOutputTokens(50) // Risposta "secca"
-            .build();
-
-    public AiCategorizationService(CategoryService categoryService, SemanticCacheService semanticCacheService, @Value("${google.ai.apiKey}") String apiKey) {
+    public AiCategorizationService(CategoryService categoryService, SemanticCacheService semanticCacheService,
+                                   GoogleGenAiChatModel chatClient) {
         this.categoryService = categoryService;
         this.semanticCacheService = semanticCacheService;
-        this.client = Client.builder().apiKey(apiKey).build();
+        this.chatClient = chatClient;
     }
 
     /**
@@ -50,22 +41,29 @@ public class AiCategorizationService {
         // 2. Costruisci il prompt per l'AI
         String prompt = buildPrompt(description, availableCategories);
 
-        Optional<CachedResponse> similar = semanticCacheService.findSimilar(description);
+        Optional<String> similar = semanticCacheService.findSimilar(description);
+
 
         if (similar.isPresent()) {
-            String aiResponseText = similar.get().getGeminiResponse();
+            String aiResponseText = similar.get();
+            log.debug("Risposta AI (cache): {}", aiResponseText);
             return availableCategories.stream()
                     .filter(c -> c.getName().equalsIgnoreCase(aiResponseText))
                     .findFirst();
         }
 
         try {
-            GenerateContentResponse response = client.models.generateContent(
-                    "gemini-2.5-flash-lite",
-                    prompt,
-                    generationConfig);
+            log.debug("Prompt: {}", prompt);
+            String aiResponseText = chatClient.call(new Prompt(prompt))
+                    .getResult()
+                    .getOutput()
+                    .getText();
 
-            String aiResponseText = response.text() != null ? response.text().trim() : "";
+            if (aiResponseText != null) {
+                aiResponseText = aiResponseText.trim();
+            } else {
+                aiResponseText = "";
+            }
 
             log.debug("Risposta AI: {}", aiResponseText);
 
@@ -73,8 +71,9 @@ public class AiCategorizationService {
 
             // 4. Cerca la categoria corrispondente nella lista
             // (La risposta AI dovrebbe essere SOLO il nome della categoria)
+            String finalAiResponseText = aiResponseText;
             return availableCategories.stream()
-                    .filter(c -> c.getName().equalsIgnoreCase(aiResponseText))
+                    .filter(c -> c.getName().equalsIgnoreCase(finalAiResponseText))
                     .findFirst();
 
         } catch (Exception e) {

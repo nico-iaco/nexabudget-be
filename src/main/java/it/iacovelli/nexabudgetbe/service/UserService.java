@@ -13,9 +13,9 @@ import java.util.UUID;
 
 @Service
 public class UserService {
-
+    
     private static final Logger logger = LoggerFactory.getLogger(UserService.class);
-
+    
     private final UserRepository userRepository;
     private final PasswordEncoder passwordEncoder;
 
@@ -26,7 +26,7 @@ public class UserService {
 
     public User createUser(User user) {
         logger.info("Tentativo di creazione utente: {}", user.getUsername());
-
+        
         if (userRepository.existsByUsername(user.getUsername())) {
             logger.warn("Tentativo di creazione utente con username già esistente: {}", user.getUsername());
             throw new IllegalArgumentException("Username già in uso");

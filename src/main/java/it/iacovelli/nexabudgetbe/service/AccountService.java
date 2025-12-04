@@ -182,6 +182,7 @@ public class AccountService {
         LocalDateTime lastExternalSync = account.getLastExternalSync();
 
         if (account.getIsSynchronizing()) {
+            logger.info("C'è già una sincronizzazione in corso per account ID: {}, ignorata", accountId);
             return;
         } else {
             account.setIsSynchronizing(true);
