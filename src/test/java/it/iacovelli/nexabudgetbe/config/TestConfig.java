@@ -4,6 +4,7 @@ import it.iacovelli.nexabudgetbe.model.Category;
 import it.iacovelli.nexabudgetbe.service.AiCategorizationService;
 import it.iacovelli.nexabudgetbe.service.SemanticCacheService;
 import org.mockito.Mockito;
+import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
@@ -19,6 +20,12 @@ import static org.mockito.Mockito.when;
 @TestConfiguration
 @Profile("test")
 public class TestConfig {
+
+    @Bean
+    @Primary
+    public VectorStore vectorStore() {
+        return Mockito.mock(VectorStore.class);
+    }
 
     @Bean
     @Primary
