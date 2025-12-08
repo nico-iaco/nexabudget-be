@@ -18,8 +18,10 @@ EXPOSE 8080
 ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-jar", "app.jar"]
 
 # Stage 3: Builder nativo ottimizzato
-FROM vegardit/graalvm-maven:latest-java21 AS builder-native
+FROM ghcr.io/graalvm/native-image-community:21 AS builder-native
 WORKDIR /app
+# Install Maven
+RUN microdnf install -y maven findutils
 COPY pom.xml .
 RUN mvn dependency:go-offline -Pnative
 COPY src ./src
