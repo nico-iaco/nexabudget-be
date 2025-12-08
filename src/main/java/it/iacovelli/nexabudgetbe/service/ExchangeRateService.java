@@ -6,12 +6,10 @@ import it.iacovelli.nexabudgetbe.config.CacheConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
-import java.time.Duration;
 import java.util.Optional;
 
 /**
@@ -25,14 +23,13 @@ public class ExchangeRateService {
 
     private static final String EXCHANGE_RATE_API_URL = "https://api.exchangerate-api.com/v4/latest/";
 
-    private final RestTemplate restTemplate;
+    private final RestClient restClient;
     private final ObjectMapper objectMapper;
 
     public ExchangeRateService() {
-        SimpleClientHttpRequestFactory f = new SimpleClientHttpRequestFactory();
-        f.setConnectTimeout((int) Duration.ofSeconds(5).toMillis());
-        f.setReadTimeout((int) Duration.ofSeconds(5).toMillis());
-        this.restTemplate = new RestTemplate(f);
+        this.restClient = RestClient.builder()
+                .baseUrl(EXCHANGE_RATE_API_URL)
+                .build();
         this.objectMapper = new ObjectMapper();
     }
 
@@ -44,8 +41,10 @@ public class ExchangeRateService {
     public Optional<BigDecimal> getRate(String sourceCurrency, String targetCurrency) {
         logger.info("Tasso non in cache: {} -> {}", sourceCurrency, targetCurrency);
         try {
-            String url = EXCHANGE_RATE_API_URL + sourceCurrency.toUpperCase();
-            String jsonResponse = restTemplate.getForObject(url, String.class);
+            String jsonResponse = restClient.get()
+                    .uri(sourceCurrency.toUpperCase())
+                    .retrieve()
+                    .body(String.class);
             JsonNode root = objectMapper.readTree(jsonResponse);
             JsonNode ratesNode = root.get("rates");
             if (ratesNode != null && ratesNode.has(targetCurrency.toUpperCase())) {

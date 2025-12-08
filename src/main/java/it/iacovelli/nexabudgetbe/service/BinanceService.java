@@ -10,12 +10,8 @@ import it.iacovelli.nexabudgetbe.dto.CryptoBalance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
-import org.springframework.http.HttpEntity;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpMethod;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.RestTemplate;
+import org.springframework.web.client.RestClient;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -28,8 +24,14 @@ public class BinanceService {
 
     private static final Logger logger = LoggerFactory.getLogger(BinanceService.class);
     private final ObjectMapper objectMapper = new ObjectMapper();
-    private final RestTemplate restTemplate = new RestTemplate();
+    private final RestClient restClient;
     private static final String BINANCE_API_BASE = "https://api.binance.com";
+
+    public BinanceService() {
+        this.restClient = RestClient.builder()
+                .baseUrl(BINANCE_API_BASE)
+                .build();
+    }
 
     // Client per dati pubblici (prezzi)
     private final SpotClient spotClient = new SpotClientImpl();
@@ -176,14 +178,15 @@ public class BinanceService {
             long timestamp = System.currentTimeMillis();
             String queryString = "timestamp=" + timestamp + "&recvWindow=60000";
             String signature = generateSignature(queryString, apiSecret);
-            String url = BINANCE_API_BASE + "/sapi/v1/simple-earn/flexible/position?" + queryString + "&signature=" + signature;
+            String url = "/sapi/v1/simple-earn/flexible/position?" + queryString + "&signature=" + signature;
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("X-MBX-APIKEY", apiKey);
-            HttpEntity<String> entity = new HttpEntity<>(headers);
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            String responseBody = restClient.get()
+                    .uri(url)
+                    .header("X-MBX-APIKEY", apiKey)
+                    .retrieve()
+                    .body(String.class);
 
-            JsonNode root = objectMapper.readTree(response.getBody());
+            JsonNode root = objectMapper.readTree(responseBody);
             JsonNode rowsNode = root.get("rows");
 
             List<CryptoBalance> balances = new ArrayList<>();
@@ -216,14 +219,15 @@ public class BinanceService {
             long timestamp = System.currentTimeMillis();
             String queryString = "timestamp=" + timestamp + "&recvWindow=60000";
             String signature = generateSignature(queryString, apiSecret);
-            String url = BINANCE_API_BASE + "/sapi/v1/simple-earn/locked/position?" + queryString + "&signature=" + signature;
+            String url = "/sapi/v1/simple-earn/locked/position?" + queryString + "&signature=" + signature;
 
-            HttpHeaders headers = new HttpHeaders();
-            headers.set("X-MBX-APIKEY", apiKey);
-            HttpEntity<String> entity = new HttpEntity<>(headers);
-            ResponseEntity<String> response = restTemplate.exchange(url, HttpMethod.GET, entity, String.class);
+            String responseBody = restClient.get()
+                    .uri(url)
+                    .header("X-MBX-APIKEY", apiKey)
+                    .retrieve()
+                    .body(String.class);
 
-            JsonNode root = objectMapper.readTree(response.getBody());
+            JsonNode root = objectMapper.readTree(responseBody);
             JsonNode rowsNode = root.get("rows");
 
             List<CryptoBalance> balances = new ArrayList<>();
