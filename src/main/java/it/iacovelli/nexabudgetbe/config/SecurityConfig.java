@@ -29,7 +29,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 @EnableWebSecurity
 @EnableMethodSecurity
 @RegisterReflectionForBinding(classes = {
-        java.util.UUID[].class,
+//        java.util.UUID[].class,
         KeysBridge.class,
         StandardEncryptionAlgorithms.class,
         StandardKeyAlgorithms.class,
