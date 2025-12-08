@@ -3,6 +3,11 @@ name: PR Check & Beta Build
 on:
   pull_request:
     types: [opened, synchronize, reopened]
+    paths:
+      - 'src/**'
+      - 'pom.xml'
+      - 'Dockerfile'
+      - '.github/workflows/pr-check.yml'
     branches: [main]
 
 env:
