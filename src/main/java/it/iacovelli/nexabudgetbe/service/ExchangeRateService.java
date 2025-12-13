@@ -6,10 +6,12 @@ import it.iacovelli.nexabudgetbe.config.CacheConfig;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
 import java.math.BigDecimal;
+import java.time.Duration;
 import java.util.Optional;
 
 /**
@@ -29,6 +31,10 @@ public class ExchangeRateService {
     public ExchangeRateService() {
         this.restClient = RestClient.builder()
                 .baseUrl(EXCHANGE_RATE_API_URL)
+                .requestFactory(new SimpleClientHttpRequestFactory() {{
+                    setConnectTimeout(Duration.ofSeconds(5));
+                    setReadTimeout(Duration.ofSeconds(5));
+                }})
                 .build();
         this.objectMapper = new ObjectMapper();
     }

@@ -10,6 +10,7 @@ import it.iacovelli.nexabudgetbe.dto.CryptoBalance;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 
@@ -17,6 +18,7 @@ import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.*;
 
 @Service
@@ -28,8 +30,13 @@ public class BinanceService {
     private static final String BINANCE_API_BASE = "https://api.binance.com";
 
     public BinanceService() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(5));
+        factory.setReadTimeout(Duration.ofSeconds(5));
+
         this.restClient = RestClient.builder()
                 .baseUrl(BINANCE_API_BASE)
+                .requestFactory(factory)
                 .build();
     }
 
