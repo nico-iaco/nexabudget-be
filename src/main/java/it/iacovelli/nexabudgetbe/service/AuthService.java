@@ -31,7 +31,7 @@ public class AuthService {
 
     public AuthDto.AuthResponse login(AuthDto.LoginRequest loginRequest) {
         logger.info("Tentativo di login per l'utente: {}", loginRequest.getUsername());
-
+        
         try {
             Authentication authentication = authenticationManager.authenticate(
                     new UsernamePasswordAuthenticationToken(

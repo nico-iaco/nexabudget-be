@@ -33,9 +33,10 @@ public class CacheConfig {
         ObjectMapper cacheObjectMapper = objectMapper.copy();
         cacheObjectMapper.registerModule(new JavaTimeModule());
         cacheObjectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        cacheObjectMapper.activateDefaultTyping(
+        cacheObjectMapper.activateDefaultTypingAsProperty(
                 cacheObjectMapper.getPolymorphicTypeValidator(),
-                ObjectMapper.DefaultTyping.NON_FINAL
+                ObjectMapper.DefaultTyping.NON_FINAL,
+                "@class"
         );
 
         RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
