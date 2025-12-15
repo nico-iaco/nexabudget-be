@@ -1,14 +1,14 @@
-name: Build and Push Docker Images
+name: PR Check & Beta Build
 
 on:
-  push:
-    branches: [ "main" ]
+  pull_request:
+    types: [opened, synchronize, reopened]
     paths:
       - 'src/**'
       - 'pom.xml'
       - 'Dockerfile'
-      - '.github/workflows/docker-publish.yml'
-  workflow_dispatch:
+      - '.github/workflows/pr-check.yml'
+    branches: [main]
 
 env:
   REGISTRY: ghcr.io
@@ -23,29 +23,28 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-      - name: Set up JDK
+      - name: Set up JDK 25
         uses: actions/setup-java@v4
         with:
-          java-version: '25'
-          distribution: 'temurin'
+          java-version: "25"
+          distribution: "temurin"
           cache: maven
       - name: Run tests
-        run: mvn test
+        run: ./mvnw clean test
+
   build-jvm:
-    name: Build and Push JVM Image
-    runs-on: ubuntu-latest
+    name: Build Beta JVM Image
     needs: test
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set short git commit SHA
-        id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - name: Extract branch name
+        run: echo "cleaned_branch_name=$(echo ${{ github.head_ref }} | sed 's/[^a-zA-Z0-9]/-/g')" >> $GITHUB_ENV
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -60,34 +59,30 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push JVM Docker image
+      - name: Build and push Beta JVM image
         uses: docker/build-push-action@v6
         with:
           context: .
           target: jvm
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:jvm-latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_short }}-jvm
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:beta-${{ env.cleaned_branch_name }}-jvm
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
   build-native:
-    name: Build and Push Native Image
-    runs-on: ubuntu-latest
+    name: Build Beta Native Image
     needs: test
+    runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Set short git commit SHA
-        id: vars
-        run: echo "sha_short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+      - name: Extract branch name
+        run: echo "cleaned_branch_name=$(echo ${{ github.head_ref }} | sed 's/[^a-zA-Z0-9]/-/g')" >> $GITHUB_ENV
 
       - name: Set up QEMU
         uses: docker/setup-qemu-action@v3
@@ -102,15 +97,13 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push Native Docker image
+      - name: Build and push Beta Native image
         uses: docker/build-push-action@v6
         with:
           context: .
           target: native
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           push: true
-          tags: |
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:native-latest
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.sha_short }}-native
+          tags: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:beta-${{ env.cleaned_branch_name }}-native
           cache-from: type=gha
           cache-to: type=gha,mode=max
