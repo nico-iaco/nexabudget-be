@@ -198,11 +198,11 @@ The application will start on <http://localhost:8080>.
 #### Running with Docker
 
 This is the recommended way to run the application in a production-like environment. The following commands will start
-the application, PostgreSQL database, and Valkey cache.
+the application, PostgreSQL database, Valkey cache, and MongoDB.
 
 ##### 1. Run the JVM-based image
 
-This command builds the JVM image and starts all services (app, PostgreSQL, Valkey) in detached mode.
+This command builds the JVM image and starts all services (app, PostgreSQL, Valkey, MongoDB) in detached mode.
 
 ```shell
 docker-compose up --build -d
@@ -216,8 +216,8 @@ For better performance and a smaller memory footprint, you can run the native-co
 docker-compose -f docker-compose.native.yml up --build -d
 ```
 
-In both cases, the application will be available at <http://localhost:8080>, PostgreSQL at port 5432, and Valkey at port
-6379.
+In both cases, the application will be available at <http://localhost:8080>, PostgreSQL at port 5432, Valkey at port
+6379, and MongoDB at port 27017.
 
 To stop and remove the containers, use:
 

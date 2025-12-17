@@ -13,6 +13,23 @@ services:
     volumes:
       - postgres_data_native:/var/lib/postgresql/data
 
+  valkey:
+    image: valkey/valkey:latest
+    container_name: nexabudget-valkey
+    ports:
+      - "6379:6379"
+    volumes:
+      - valkey_data_native:/data
+    command: valkey-server --appendonly yes
+
+  mongodb:
+    image: mongo:latest
+    container_name: nexabudget-mongodb
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data_native:/data/db
+
   nexabudget-be:
     build:
       context: .
@@ -20,6 +37,8 @@ services:
     container_name: nexabudget-be
     depends_on:
       - db
+      - valkey
+      - mongodb
     ports:
       - "8080:8080"
     environment:
@@ -30,9 +49,15 @@ services:
       JWT_SECRET: tua-chiave-segreta-molto-lunga-e-sicura-di-almeno-64-caratteri
       gocardless.integrator.baseUrl: http://localhost:3000
       GEMINI_API_KEY: your_gemini_api_key
+      MONGODB_URI: mongodb://mongodb:27017/nexabudget-be
+      CRYPTO_ENCRYPTION_KEY: MySuperSecretKey1234567890123456
+      REDIS_HOST: valkey
+      REDIS_PORT: 6379
       ASYNC_CORE_POOL_SIZE: 2
       ASYNC_MAX_POOL_SIZE: 3
       ASYNC_QUEUE_CAPACITY: 50
 
 volumes:
   postgres_data_native:
+  valkey_data_native:
+  mongodb_data_native:

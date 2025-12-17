@@ -20,41 +20,37 @@ import java.time.Duration;
 @EnableCaching
 public class CacheConfig {
 
-    public static final String BANK_ACCOUNTS_CACHE = "bankAccounts";
-    public static final String GOCARDLESS_TRANSACTIONS_CACHE = "gocardlessTransactions";
-    public static final String GOCARDLESS_BANKS_CACHE = "gocardlessCountryBanks";
-    public static final String CRYPTO_PRICES_CACHE = "cryptoPrices";
-    public static final String EXCHANGE_RATES_CACHE = "exchangeRates";
-    public static final Duration CRYPTO_CACHE_TTL = Duration.ofMinutes(5);
-    public static final Duration CACHE_TTL = Duration.ofHours(6);
+        public static final String BANK_ACCOUNTS_CACHE = "bankAccounts";
+        public static final String GOCARDLESS_TRANSACTIONS_CACHE = "gocardlessTransactions";
+        public static final String GOCARDLESS_BANKS_CACHE = "gocardlessCountryBanks";
+        public static final String CRYPTO_PRICES_CACHE = "cryptoPrices";
+        public static final String EXCHANGE_RATES_CACHE = "exchangeRates";
+        public static final Duration CRYPTO_CACHE_TTL = Duration.ofMinutes(5);
+        public static final Duration CACHE_TTL = Duration.ofHours(6);
 
-    @Bean
-    public CacheManager cacheManager(RedisConnectionFactory connectionFactory, ObjectMapper objectMapper) {
-        ObjectMapper cacheObjectMapper = objectMapper.copy();
-        cacheObjectMapper.registerModule(new JavaTimeModule());
-        cacheObjectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
-        cacheObjectMapper.activateDefaultTypingAsProperty(
-                cacheObjectMapper.getPolymorphicTypeValidator(),
-                ObjectMapper.DefaultTyping.NON_FINAL,
-                "@class"
-        );
+        @Bean
+        public CacheManager cacheManager(RedisConnectionFactory connectionFactory, ObjectMapper objectMapper) {
+                ObjectMapper cacheObjectMapper = objectMapper.copy();
+                cacheObjectMapper.registerModule(new JavaTimeModule());
+                cacheObjectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
+                cacheObjectMapper.activateDefaultTypingAsProperty(
+                                cacheObjectMapper.getPolymorphicTypeValidator(),
+                                ObjectMapper.DefaultTyping.NON_FINAL,
+                                "@class");
 
-        RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
-                .entryTtl(CACHE_TTL)
-                .disableCachingNullValues()
-                .serializeKeysWith(
-                        RedisSerializationContext.SerializationPair.fromSerializer(
-                                new StringRedisSerializer()
-                        )
-                )
-                .serializeValuesWith(
-                        RedisSerializationContext.SerializationPair.fromSerializer(
-                                new GenericJackson2JsonRedisSerializer(cacheObjectMapper)
-                        )
-                );
+                RedisCacheConfiguration config = RedisCacheConfiguration.defaultCacheConfig()
+                                .entryTtl(CACHE_TTL)
+                                .disableCachingNullValues()
+                                .serializeKeysWith(
+                                                RedisSerializationContext.SerializationPair.fromSerializer(
+                                                                new StringRedisSerializer()))
+                                .serializeValuesWith(
+                                                RedisSerializationContext.SerializationPair.fromSerializer(
+                                                                new GenericJackson2JsonRedisSerializer(
+                                                                                cacheObjectMapper)));
 
-        return RedisCacheManager.builder(connectionFactory)
-                .cacheDefaults(config)
-                .build();
-    }
+                return RedisCacheManager.builder(connectionFactory)
+                                .cacheDefaults(config)
+                                .build();
+        }
 }
