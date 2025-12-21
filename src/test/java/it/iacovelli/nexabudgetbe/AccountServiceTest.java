@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.context.annotation.Import;
+import it.iacovelli.nexabudgetbe.config.TestConfig;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -26,6 +28,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@Import(TestConfig.class)
 class AccountServiceTest {
 
     @Autowired
@@ -93,14 +96,12 @@ class AccountServiceTest {
         request.setCurrency("EUR");
 
         AccountDto.AccountResponse response = accountService.createAccount(
-                request, new BigDecimal("1000"), testUser.getId()
-        );
+                request, new BigDecimal("1000"), testUser.getId());
 
         assertNotNull(response);
         assertEquals("Risparmio", response.getName());
         assertEquals(0, new BigDecimal("1000").compareTo(response.getActualBalance()));
     }
-
 
     @Test
     void testCreateAccount_WithNegativeStarterBalance() {
@@ -110,8 +111,7 @@ class AccountServiceTest {
         request.setCurrency("EUR");
 
         AccountDto.AccountResponse response = accountService.createAccount(
-                request, new BigDecimal("-500"), testUser.getId()
-        );
+                request, new BigDecimal("-500"), testUser.getId());
 
         assertNotNull(response);
         assertEquals(0, new BigDecimal("-500").compareTo(response.getActualBalance()));
@@ -124,9 +124,8 @@ class AccountServiceTest {
         request.setType(AccountType.CONTO_CORRENTE);
         request.setCurrency("EUR");
 
-        assertThrows(ResponseStatusException.class, () ->
-                accountService.createAccount(request, null, UUID.randomUUID())
-        );
+        assertThrows(ResponseStatusException.class,
+                () -> accountService.createAccount(request, null, UUID.randomUUID()));
     }
 
     @Test
@@ -154,8 +153,7 @@ class AccountServiceTest {
         AccountDto.AccountResponse created = accountService.createAccount(request, null, testUser.getId());
 
         Optional<AccountDto.AccountResponse> found = accountService.getAccountByIdAndUser(
-                created.getId(), testUser
-        );
+                created.getId(), testUser);
 
         assertTrue(found.isPresent());
         assertEquals("My Account", found.get().getName());
@@ -192,8 +190,7 @@ class AccountServiceTest {
         AccountDto.AccountResponse created = accountService.createAccount(request, null, testUser.getId());
 
         AccountDto.AccountResponse updated = accountService.updateAccount(
-                created.getId(), testUser, "New Name", AccountType.RISPARMIO, "USD"
-        );
+                created.getId(), testUser, "New Name", AccountType.RISPARMIO, "USD");
 
         assertEquals("New Name", updated.getName());
         assertEquals(AccountType.RISPARMIO, updated.getType());
@@ -202,9 +199,8 @@ class AccountServiceTest {
 
     @Test
     void testUpdateAccount_NotFound() {
-        assertThrows(ResponseStatusException.class, () ->
-                accountService.updateAccount(UUID.randomUUID(), testUser, "Name", AccountType.CONTO_CORRENTE, "EUR")
-        );
+        assertThrows(ResponseStatusException.class, () -> accountService.updateAccount(UUID.randomUUID(), testUser,
+                "Name", AccountType.CONTO_CORRENTE, "EUR"));
     }
 
     @Test

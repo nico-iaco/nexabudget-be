@@ -4,6 +4,7 @@ import it.iacovelli.nexabudgetbe.model.Category;
 import it.iacovelli.nexabudgetbe.service.AiCategorizationService;
 import it.iacovelli.nexabudgetbe.service.SemanticCacheService;
 import org.mockito.Mockito;
+import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.vectorstore.VectorStore;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -29,6 +30,12 @@ public class TestConfig {
 
     @Bean
     @Primary
+    public EmbeddingModel embeddingModel() {
+        return Mockito.mock(EmbeddingModel.class);
+    }
+
+    @Bean
+    @Primary
     public SemanticCacheService semanticCacheService() {
         SemanticCacheService mockService = Mockito.mock(SemanticCacheService.class);
 
@@ -50,4 +57,3 @@ public class TestConfig {
         return mockService;
     }
 }
-

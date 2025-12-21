@@ -15,6 +15,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.context.annotation.Import;
+import it.iacovelli.nexabudgetbe.config.TestConfig;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -28,6 +30,7 @@ import static org.mockito.Mockito.when;
 
 @SpringBootTest
 @ActiveProfiles("test")
+@Import(TestConfig.class)
 @Transactional
 public class CryptoPortfolioServiceTest {
 
@@ -67,7 +70,8 @@ public class CryptoPortfolioServiceTest {
         // Mock exchange rate per EUR (USD -> EUR = 0.92)
         when(exchangeRateService.getRate("USD", "EUR"))
                 .thenReturn(Optional.of(new BigDecimal("0.92")));
-        // Fallback: per qualsiasi altra valuta richiamata nei test, ritorna empty così rimane USD
+        // Fallback: per qualsiasi altra valuta richiamata nei test, ritorna empty così
+        // rimane USD
         when(exchangeRateService.getRate(anyString(), anyString()))
                 .thenAnswer(inv -> {
                     String src = inv.getArgument(0);
@@ -214,4 +218,3 @@ public class CryptoPortfolioServiceTest {
         assertEquals(0, expectedPriceEur.compareTo(response.getTotalValue()));
     }
 }
-
