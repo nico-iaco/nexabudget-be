@@ -12,6 +12,9 @@ import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.google.genai.GoogleGenAiEmbeddingConnectionDetails;
+import org.springframework.ai.google.genai.text.GoogleGenAiTextEmbeddingModel;
 import org.springframework.retry.support.RetryTemplate;
 
 @Configuration
@@ -26,6 +29,12 @@ public class GoogleGenAiConfig {
 
         @Value("${spring.ai.google.genai.chat.options.temperature}")
         private double temperature;
+
+        @Value("${spring.ai.google.genai.embedding.text.options.model}")
+        private String embeddingModelName;
+
+        @Value("${spring.ai.google.genai.embedding.text.options.dimensions}")
+        private Integer embeddingDimensions;
 
         @Bean
         public GoogleGenAiChatModel client() {
@@ -42,6 +51,22 @@ public class GoogleGenAiConfig {
                                                 .build(),
                                 RetryTemplate.defaultInstance(),
                                 ObservationRegistry.create());
+        }
+
+        @Bean
+        public EmbeddingModel embeddingModel() {
+                GoogleGenAiEmbeddingConnectionDetails connectionDetails = GoogleGenAiEmbeddingConnectionDetails
+                                .builder()
+                                .apiKey(apiKey)
+                                .build();
+
+                GoogleGenAiTextEmbeddingOptions options = GoogleGenAiTextEmbeddingOptions.builder()
+                                .model(embeddingModelName)
+                                .dimensions(embeddingDimensions)
+                                .taskType(GoogleGenAiTextEmbeddingOptions.TaskType.SEMANTIC_SIMILARITY)
+                                .build();
+
+                return new GoogleGenAiTextEmbeddingModel(connectionDetails, options);
         }
 
 }
