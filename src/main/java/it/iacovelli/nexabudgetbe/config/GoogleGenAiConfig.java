@@ -1,6 +1,9 @@
 package it.iacovelli.nexabudgetbe.config;
 
 import com.google.genai.Client;
+import com.google.genai.types.EmbedContentConfig;
+import com.google.genai.types.EmbedContentParameters;
+import com.google.genai.types.EmbedContentResponse;
 import io.micrometer.observation.ObservationRegistry;
 
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
@@ -18,7 +21,9 @@ import org.springframework.ai.google.genai.text.GoogleGenAiTextEmbeddingModel;
 import org.springframework.retry.support.RetryTemplate;
 
 @Configuration
-@RegisterReflectionForBinding({ GoogleGenAiTextEmbeddingOptions.class, GoogleGenAiChatOptions.class })
+@RegisterReflectionForBinding({ GoogleGenAiTextEmbeddingOptions.class, GoogleGenAiChatOptions.class,
+                EmbedContentConfig.class,
+                EmbedContentParameters.class, EmbedContentResponse.class })
 public class GoogleGenAiConfig {
 
         @Value("${spring.ai.google.genai.api-key}")
