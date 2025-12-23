@@ -6,6 +6,8 @@ import com.google.genai.types.Candidate;
 import com.google.genai.types.CitationMetadata;
 import com.google.genai.types.CodeExecutionResult;
 import com.google.genai.types.Content;
+import com.google.genai.types.ContentEmbedding;
+import com.google.genai.types.ContentEmbeddingStatistics;
 import com.google.genai.types.EmbedContentConfig;
 import com.google.genai.types.EmbedContentParameters;
 import com.google.genai.types.EmbedContentResponse;
@@ -50,7 +52,8 @@ import org.springframework.retry.support.RetryTemplate;
                 ExecutableCode.class, CodeExecutionResult.class, SafetySetting.class, GenerationConfig.class,
                 GenerateContentResponse.class, Candidate.class, CitationMetadata.class, UsageMetadata.class,
                 VideoMetadata.class, GroundingMetadata.class, RetrievalMetadata.class, SafetyRating.class,
-                GoogleRpcStatus.class, LogprobsResult.class, GroundingChunk.class, GroundingSupport.class })
+                GoogleRpcStatus.class, LogprobsResult.class, GroundingChunk.class, GroundingSupport.class,
+                ContentEmbedding.class, ContentEmbeddingStatistics.class })
 public class GoogleGenAiConfig {
 
         @Value("${spring.ai.google.genai.api-key}")
