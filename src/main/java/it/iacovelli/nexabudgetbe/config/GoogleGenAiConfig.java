@@ -36,6 +36,7 @@ import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.ai.google.genai.text.GoogleGenAiTextEmbeddingOptions;
 import org.springframework.ai.model.tool.ToolCallingManager;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
+import org.springframework.context.annotation.ImportRuntimeHints;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -45,6 +46,7 @@ import org.springframework.ai.google.genai.text.GoogleGenAiTextEmbeddingModel;
 import org.springframework.retry.support.RetryTemplate;
 
 @Configuration
+@ImportRuntimeHints(GoogleGenAiRuntimeHints.class)
 @RegisterReflectionForBinding({ GoogleGenAiTextEmbeddingOptions.class, GoogleGenAiChatOptions.class,
                 EmbedContentConfig.class,
                 EmbedContentParameters.class, EmbedContentResponse.class, Content.class, Part.class,

@@ -184,15 +184,15 @@ public class AccountService {
         if (account.getIsSynchronizing()) {
             logger.info("C'è già una sincronizzazione in corso per account ID: {}, ignorata", accountId);
             return;
-        } else {
-            account.setIsSynchronizing(true);
-            account = accountRepository.save(account);
         }
 
         if (lastExternalSync != null && lastExternalSync.isAfter(LocalDateTime.now().minusHours(6))) {
             logger.info("Account ID: {} già sincronizzato di recente, skip sincronizzazione", accountId);
             return;
         }
+
+        account.setIsSynchronizing(true);
+        account = accountRepository.save(account);
 
         LocalDate startDate = lastExternalSync != null ? lastExternalSync.toLocalDate() : null;
 
