@@ -18,6 +18,7 @@ public class NativeTypesRegistry {
 
         // Embed Content Response
         resolver.addMapping(EmbedContentResponse.Builder.class, AutoValue_EmbedContentResponse.Builder.class);
+        resolver.addMapping(EmbedContentMetadata.Builder.class, AutoValue_EmbedContentMetadata.Builder.class);
         resolver.addMapping(ContentEmbedding.Builder.class, AutoValue_ContentEmbedding.Builder.class);
         resolver.addMapping(ContentEmbeddingStatistics.Builder.class,
                 AutoValue_ContentEmbeddingStatistics.Builder.class);

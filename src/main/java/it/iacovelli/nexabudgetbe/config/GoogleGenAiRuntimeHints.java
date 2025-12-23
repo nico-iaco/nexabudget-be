@@ -43,6 +43,8 @@ public class GoogleGenAiRuntimeHints implements RuntimeHintsRegistrar {
                 "com.google.genai.types.AutoValue_CodeExecutionResult$Builder",
 
                 // Metadata Types
+                "com.google.genai.types.AutoValue_EmbedContentMetadata",
+                "com.google.genai.types.AutoValue_EmbedContentMetadata$Builder",
                 "com.google.genai.types.AutoValue_VideoMetadata",
                 "com.google.genai.types.AutoValue_VideoMetadata$Builder",
                 "com.google.genai.types.AutoValue_GroundingMetadata",
