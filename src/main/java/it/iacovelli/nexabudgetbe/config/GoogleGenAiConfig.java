@@ -2,14 +2,22 @@ package it.iacovelli.nexabudgetbe.config;
 
 import com.google.genai.Client;
 import com.google.genai.types.Blob;
+import com.google.genai.types.Candidate;
+import com.google.genai.types.CitationMetadata;
+import com.google.genai.types.CodeExecutionResult;
 import com.google.genai.types.Content;
 import com.google.genai.types.EmbedContentConfig;
 import com.google.genai.types.EmbedContentParameters;
 import com.google.genai.types.EmbedContentResponse;
+import com.google.genai.types.ExecutableCode;
 import com.google.genai.types.FileData;
 import com.google.genai.types.FunctionCall;
 import com.google.genai.types.FunctionResponse;
+import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.GenerationConfig;
 import com.google.genai.types.Part;
+import com.google.genai.types.SafetySetting;
+import com.google.genai.types.UsageMetadata;
 import io.micrometer.observation.ObservationRegistry;
 
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
@@ -30,7 +38,9 @@ import org.springframework.retry.support.RetryTemplate;
 @RegisterReflectionForBinding({ GoogleGenAiTextEmbeddingOptions.class, GoogleGenAiChatOptions.class,
                 EmbedContentConfig.class,
                 EmbedContentParameters.class, EmbedContentResponse.class, Content.class, Part.class,
-                Blob.class, FileData.class, FunctionCall.class, FunctionResponse.class })
+                Blob.class, FileData.class, FunctionCall.class, FunctionResponse.class,
+                ExecutableCode.class, CodeExecutionResult.class, SafetySetting.class, GenerationConfig.class,
+                GenerateContentResponse.class, Candidate.class, CitationMetadata.class, UsageMetadata.class })
 public class GoogleGenAiConfig {
 
         @Value("${spring.ai.google.genai.api-key}")
