@@ -15,9 +15,17 @@ import com.google.genai.types.FunctionCall;
 import com.google.genai.types.FunctionResponse;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.GenerationConfig;
+import com.google.genai.types.GoogleRpcStatus;
+import com.google.genai.types.GroundingChunk;
+import com.google.genai.types.GroundingMetadata;
+import com.google.genai.types.GroundingSupport;
+import com.google.genai.types.LogprobsResult;
 import com.google.genai.types.Part;
+import com.google.genai.types.RetrievalMetadata;
+import com.google.genai.types.SafetyRating;
 import com.google.genai.types.SafetySetting;
 import com.google.genai.types.UsageMetadata;
+import com.google.genai.types.VideoMetadata;
 import io.micrometer.observation.ObservationRegistry;
 
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
@@ -40,7 +48,9 @@ import org.springframework.retry.support.RetryTemplate;
                 EmbedContentParameters.class, EmbedContentResponse.class, Content.class, Part.class,
                 Blob.class, FileData.class, FunctionCall.class, FunctionResponse.class,
                 ExecutableCode.class, CodeExecutionResult.class, SafetySetting.class, GenerationConfig.class,
-                GenerateContentResponse.class, Candidate.class, CitationMetadata.class, UsageMetadata.class })
+                GenerateContentResponse.class, Candidate.class, CitationMetadata.class, UsageMetadata.class,
+                VideoMetadata.class, GroundingMetadata.class, RetrievalMetadata.class, SafetyRating.class,
+                GoogleRpcStatus.class, LogprobsResult.class, GroundingChunk.class, GroundingSupport.class })
 public class GoogleGenAiConfig {
 
         @Value("${spring.ai.google.genai.api-key}")
