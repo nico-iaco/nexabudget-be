@@ -2,53 +2,24 @@ package it.iacovelli.nexabudgetbe.config;
 
 import com.google.genai.Client;
 import com.google.genai.JsonSerializableAccessor;
-import com.google.genai.types.NativeTypesRegistry;
-import com.google.genai.types.Blob;
-import com.google.genai.types.Candidate;
-import com.google.genai.types.CitationMetadata;
-import com.google.genai.types.CodeExecutionResult;
-import com.google.genai.types.Content;
-import com.google.genai.types.ContentEmbedding;
-import com.google.genai.types.ContentEmbeddingStatistics;
-import com.google.genai.types.EmbedContentConfig;
-import com.google.genai.types.EmbedContentParameters;
-import com.google.genai.types.EmbedContentResponse;
-import com.google.genai.types.ExecutableCode;
-import com.google.genai.types.FileData;
-import com.google.genai.types.FunctionCall;
-import com.google.genai.types.FunctionResponse;
-import com.google.genai.types.GenerateContentResponse;
-import com.google.genai.types.GenerationConfig;
-import com.google.genai.types.GoogleRpcStatus;
-import com.google.genai.types.GroundingChunk;
-import com.google.genai.types.GroundingMetadata;
-import com.google.genai.types.GroundingSupport;
-import com.google.genai.types.LogprobsResult;
-import com.google.genai.types.Part;
-import com.google.genai.types.RetrievalMetadata;
-import com.google.genai.types.SafetyRating;
-import com.google.genai.types.SafetySetting;
-import com.google.genai.types.UsageMetadata;
-import com.google.genai.types.VideoMetadata;
+import com.google.genai.types.*;
 import io.micrometer.observation.ObservationRegistry;
-
-import org.springframework.ai.google.genai.GoogleGenAiChatModel;
-import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
-
-import org.springframework.ai.google.genai.text.GoogleGenAiTextEmbeddingOptions;
-import org.springframework.ai.model.tool.ToolCallingManager;
-import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
-import org.springframework.context.annotation.ImportRuntimeHints;
-import org.springframework.beans.factory.annotation.Value;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.embedding.EmbeddingModel;
+import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.ai.google.genai.GoogleGenAiEmbeddingConnectionDetails;
 import org.springframework.ai.google.genai.text.GoogleGenAiTextEmbeddingModel;
-import org.springframework.retry.support.RetryTemplate;
+import org.springframework.ai.google.genai.text.GoogleGenAiTextEmbeddingOptions;
+import org.springframework.ai.model.tool.ToolCallingManager;
+import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.ImportRuntimeHints;
+import org.springframework.core.retry.RetryTemplate;
 
 @Configuration
 @ImportRuntimeHints(GoogleGenAiRuntimeHints.class)
@@ -91,6 +62,8 @@ public class GoogleGenAiConfig {
         @Value("${spring.ai.google.genai.embedding.text.options.dimensions}")
         private Integer embeddingDimensions;
 
+        private final RetryTemplate retryTemplate = new RetryTemplate();
+
         @Bean
         public GoogleGenAiChatModel client() {
                 Client apiClient = Client.builder()
@@ -104,7 +77,7 @@ public class GoogleGenAiConfig {
                                                 .build(),
                                 ToolCallingManager.builder()
                                                 .build(),
-                                RetryTemplate.defaultInstance(),
+                                retryTemplate,
                                 ObservationRegistry.create());
         }
 
