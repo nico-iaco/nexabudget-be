@@ -29,7 +29,7 @@ public class CryptoPortfolioController {
     @Operation(summary = "Valore portafoglio", description = "Ottiene il valore totale e dettagliato del portafoglio crypto nella valuta specificata")
     public ResponseEntity<CryptoDto.PortfolioValueResponse> getPortfolioValue(
             @AuthenticationPrincipal User currentUser,
-            @RequestParam(defaultValue = "USD") String currency) {
+            @RequestParam(defaultValue = "EUR") String currency) {
         return ResponseEntity.ok(cryptoService.getPortfolioValue(currentUser, currency));
     }
 

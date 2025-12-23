@@ -69,8 +69,6 @@ public class BinanceService {
 
         if ("USDT".equalsIgnoreCase(symbol)) {
             return Optional.of(BigDecimal.ONE);
-        } else if ("ETHW".equalsIgnoreCase(symbol)) {
-            symbol = "ETH";
         }
 
         try {
