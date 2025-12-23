@@ -1,12 +1,8 @@
 package it.iacovelli.nexabudgetbe.config;
 
 import com.google.genai.Client;
-import com.google.genai.JsonSerializableAccessor;
 import com.google.genai.types.*;
 import io.micrometer.observation.ObservationRegistry;
-import jakarta.annotation.PostConstruct;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.ai.embedding.EmbeddingModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
@@ -33,19 +29,6 @@ import org.springframework.core.retry.RetryTemplate;
                 GoogleRpcStatus.class, LogprobsResult.class, GroundingChunk.class, GroundingSupport.class,
                 ContentEmbedding.class, ContentEmbeddingStatistics.class })
 public class GoogleGenAiConfig {
-
-        private static final Logger log = LoggerFactory.getLogger(GoogleGenAiConfig.class);
-
-        @PostConstruct
-        public void initNativeFix() {
-                try {
-                        log.info("Initializing Google GenAI Native Image fix...");
-                        NativeTypesRegistry.registerTypes(JsonSerializableAccessor.getObjectMapper());
-                        log.info("Google GenAI Native Image fix applied successfully.");
-                } catch (Exception e) {
-                        log.error("Failed to apply Google GenAI Native Image fix", e);
-                }
-        }
 
         @Value("${spring.ai.google.genai.api-key}")
         private String apiKey;
