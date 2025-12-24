@@ -8,8 +8,11 @@ import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
+import it.iacovelli.nexabudgetbe.model.HoldingSource;
+
 import java.math.BigDecimal;
 import java.util.List;
+import java.util.UUID;
 
 public class CryptoDto {
 
@@ -20,6 +23,16 @@ public class CryptoDto {
     public static class ManualHoldingRequest {
         @NotBlank
         private String symbol;
+        @NotNull
+        @Positive
+        private BigDecimal amount;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class UpdateHoldingRequest {
         @NotNull
         @Positive
         private BigDecimal amount;
@@ -51,6 +64,8 @@ public class CryptoDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class AssetValue {
+        private UUID id;
+        private HoldingSource source;
         private String symbol;
         private BigDecimal amount;
         private BigDecimal price; // Prezzo nella valuta specificata

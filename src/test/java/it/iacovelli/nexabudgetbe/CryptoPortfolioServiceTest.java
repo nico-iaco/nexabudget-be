@@ -19,12 +19,12 @@ import org.springframework.context.annotation.Import;
 import it.iacovelli.nexabudgetbe.config.TestConfig;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.when;
 
@@ -117,6 +117,63 @@ public class CryptoPortfolioServiceTest {
     }
 
     @Test
+    public void testUpdateManualHoldingForbidden() {
+        // Arrange
+        CryptoHoldingDto holding = cryptoPortfolioService.addManualHolding(testUser, "BTC", new BigDecimal("0.5"));
+        User otherUser = new User();
+        otherUser.setId(java.util.UUID.randomUUID()); // Random ID
+
+        // Act & Assert
+        assertThrows(ResponseStatusException.class, () -> {
+            cryptoPortfolioService.updateManualHolding(otherUser, holding.getId(), new BigDecimal("1.0"));
+        });
+    }
+
+    @Test
+    public void testUpdateManualHoldingWrongSource() {
+        // Arrange
+        CryptoHolding binanceHolding = CryptoHolding.builder()
+                .user(testUser)
+                .symbol("ETH")
+                .amount(new BigDecimal("10.0"))
+                .source(HoldingSource.BINANCE)
+                .build();
+        binanceHolding = holdingRepository.save(binanceHolding);
+
+        // Act & Assert
+        final java.util.UUID id = binanceHolding.getId();
+        assertThrows(ResponseStatusException.class, () -> {
+            cryptoPortfolioService.updateManualHolding(testUser, id, new BigDecimal("5.0"));
+        });
+    }
+
+    @Test
+    public void testDeleteManualHoldingSuccess() {
+        // Arrange
+        CryptoHoldingDto holding = cryptoPortfolioService.addManualHolding(testUser, "BTC", new BigDecimal("0.5"));
+
+        // Act
+        cryptoPortfolioService.deleteManualHolding(testUser, holding.getId());
+
+        // Assert
+        Optional<CryptoHolding> deleted = holdingRepository.findById(holding.getId());
+        assertTrue(deleted.isEmpty());
+    }
+
+    @Test
+    public void testDeleteManualHoldingForbidden() {
+        // Arrange
+        CryptoHoldingDto holding = cryptoPortfolioService.addManualHolding(testUser, "BTC", new BigDecimal("0.5"));
+        User otherUser = new User();
+        otherUser.setId(java.util.UUID.randomUUID());
+
+        // Act & Assert
+        assertThrows(ResponseStatusException.class, () -> {
+            cryptoPortfolioService.deleteManualHolding(otherUser, holding.getId());
+        });
+    }
+
+    @Test
     public void testGetPortfolioValue() {
         // Arrange
         cryptoPortfolioService.addManualHolding(testUser, "BTC", new BigDecimal("0.5"));
@@ -161,19 +218,27 @@ public class CryptoPortfolioServiceTest {
         CryptoDto.PortfolioValueResponse response = cryptoPortfolioService.getPortfolioValue(testUser, "USD");
 
         // Assert
+        // Assert
         assertNotNull(response);
-        assertEquals(1, response.getAssets().size());
+        assertEquals(2, response.getAssets().size());
 
-        CryptoDto.AssetValue btcAsset = response.getAssets().getFirst();
-        assertEquals("BTC", btcAsset.getSymbol());
+        CryptoDto.AssetValue manualAsset = response.getAssets().stream()
+                .filter(a -> a.getSource() == HoldingSource.MANUAL)
+                .findFirst()
+                .orElseThrow();
 
-        // Total BTC: 0.3 + 0.2 = 0.5
-        BigDecimal expectedAmount = new BigDecimal("0.5");
-        assertEquals(0, expectedAmount.compareTo(btcAsset.getAmount()));
+        CryptoDto.AssetValue binanceAsset = response.getAssets().stream()
+                .filter(a -> a.getSource() == HoldingSource.BINANCE)
+                .findFirst()
+                .orElseThrow();
 
-        // Value: 0.5 * 30000 = 15000
-        BigDecimal expectedValue = new BigDecimal("15000.00");
-        assertEquals(0, expectedValue.compareTo(btcAsset.getValue()));
+        assertEquals("BTC", manualAsset.getSymbol());
+        assertEquals(new BigDecimal("0.3"), manualAsset.getAmount());
+        assertEquals(0, new BigDecimal("9000.00").compareTo(manualAsset.getValue())); // 0.3 * 30000
+
+        assertEquals("BTC", binanceAsset.getSymbol());
+        assertEquals(new BigDecimal("0.2"), binanceAsset.getAmount());
+        assertEquals(0, new BigDecimal("6000.00").compareTo(binanceAsset.getValue())); // 0.2 * 30000
     }
 
     @Test

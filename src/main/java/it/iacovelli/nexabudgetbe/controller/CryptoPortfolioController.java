@@ -11,6 +11,7 @@ import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import java.util.UUID;
 import org.springframework.web.bind.annotation.*;
 
 @RestController
@@ -41,6 +42,26 @@ public class CryptoPortfolioController {
         CryptoHoldingDto holding = cryptoService.addManualHolding(
                 currentUser, request.getSymbol(), request.getAmount());
         return ResponseEntity.status(HttpStatus.CREATED).body(holding);
+    }
+
+    @PatchMapping("/holdings/{id}")
+    @Operation(summary = "Modifica holding manuale", description = "Modifica la quantità di un asset manuale esistente")
+    public ResponseEntity<CryptoHoldingDto> updateManualHolding(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable UUID id,
+            @Valid @RequestBody CryptoDto.UpdateHoldingRequest request) {
+        CryptoHoldingDto holding = cryptoService.updateManualHolding(
+                currentUser, id, request.getAmount());
+        return ResponseEntity.ok(holding);
+    }
+
+    @DeleteMapping("/holdings/{id}")
+    @Operation(summary = "Elimina holding manuale", description = "Elimina un asset manuale")
+    public ResponseEntity<Void> deleteManualHolding(
+            @AuthenticationPrincipal User currentUser,
+            @PathVariable UUID id) {
+        cryptoService.deleteManualHolding(currentUser, id);
+        return ResponseEntity.noContent().build();
     }
 
     @PostMapping("/binance/keys")
