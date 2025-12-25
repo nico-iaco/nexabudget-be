@@ -3,6 +3,7 @@ package it.iacovelli.nexabudgetbe.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.context.annotation.Bean;
@@ -18,6 +19,7 @@ import java.time.Duration;
 
 @Configuration
 @EnableCaching
+@ConditionalOnProperty(value = "spring.cache.type", havingValue = "redis", matchIfMissing = true)
 public class CacheConfig {
 
         public static final String BANK_ACCOUNTS_CACHE = "bankAccounts";
