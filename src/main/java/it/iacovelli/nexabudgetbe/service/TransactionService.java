@@ -178,7 +178,7 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
-    public List<TransactionDto.TransactionResponse> getTransactionsByAccountAndDateRange(Account account, LocalDateTime start, LocalDateTime end) {
+    public List<TransactionDto.TransactionResponse> getTransactionsByAccountAndDateRange(Account account, LocalDate start, LocalDate end) {
         return transactionRepository.findByAccountAndDateRangeOrderByDateDesc(account, start, end).stream()
                 .map(this::mapTransactionToResponse)
                 .collect(Collectors.toList());

@@ -1,5 +1,6 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import it.iacovelli.nexabudgetbe.config.CacheConfig;
 import it.iacovelli.nexabudgetbe.dto.CryptoBalance;
 import it.iacovelli.nexabudgetbe.dto.CryptoDto;
 import it.iacovelli.nexabudgetbe.dto.CryptoHoldingDto;
@@ -11,6 +12,7 @@ import it.iacovelli.nexabudgetbe.repository.CryptoHoldingRepository;
 import it.iacovelli.nexabudgetbe.repository.UserBinanceKeysRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -18,11 +20,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import java.util.UUID;
+import java.util.*;
 import java.util.stream.Collectors;
 
 @Service
@@ -137,6 +135,7 @@ public class CryptoPortfolioService {
     }
 
     @Transactional(readOnly = true)
+    @Cacheable(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id + '_' + #currency")
     public CryptoDto.PortfolioValueResponse getPortfolioValue(User user, String currency) {
         List<CryptoHolding> holdings = holdingRepository.findByUser(user);
 

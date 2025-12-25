@@ -37,7 +37,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     List<Transaction> findByAccountAndDateBetween(Account account, LocalDate start, LocalDate end);
 
     @Query("SELECT t FROM Transaction t WHERE t.account = :account AND t.date BETWEEN :start AND :end ORDER BY t.date DESC")
-    List<Transaction> findByAccountAndDateRangeOrderByDateDesc(Account account, LocalDateTime start, LocalDateTime end);
+    List<Transaction> findByAccountAndDateRangeOrderByDateDesc(Account account, LocalDate start, LocalDate end);
 
     @Query("SELECT SUM(t.amount) FROM Transaction t WHERE t.account = :account AND t.type = :type AND t.date BETWEEN :start AND :end")
     BigDecimal sumByAccountAndTypeAndDateRange(Account account, TransactionType type, LocalDateTime start, LocalDateTime end);

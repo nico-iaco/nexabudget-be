@@ -90,7 +90,6 @@ public class TransactionController {
             @Valid @RequestBody TransactionDto.TransferRequest transferRequest,
             @AuthenticationPrincipal User currentUser) {
 
-        // Usa il nuovo metodo per ottenere le entità Account
         Account sourceAccount = accountService.getAccountEntityByIdAndUser(transferRequest.getSourceAccountId(), currentUser)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto di origine non trovato"));
 
@@ -201,8 +200,8 @@ public class TransactionController {
     public ResponseEntity<List<TransactionDto.TransactionResponse>> getTransactionsByAccountAndDateRange(
             @Parameter(description = "ID conto") @PathVariable UUID accountId,
             @AuthenticationPrincipal User currentUser,
-            @Parameter(description = "Data/ora inizio (ISO)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime start,
-            @Parameter(description = "Data/ora fine (ISO)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) LocalDateTime end) {
+            @Parameter(description = "Data/ora inizio (ISO)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @Parameter(description = "Data/ora fine (ISO)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end) {
 
         User user = userService.getUserById(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
