@@ -12,6 +12,7 @@ import it.iacovelli.nexabudgetbe.repository.CryptoHoldingRepository;
 import it.iacovelli.nexabudgetbe.repository.UserBinanceKeysRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.CacheEvict;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
@@ -42,6 +43,7 @@ public class CryptoPortfolioService {
         this.currencyConversionService = currencyConversionService;
     }
 
+    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
     public CryptoHoldingDto addManualHolding(User user, String symbol, BigDecimal amount) {
         Optional<CryptoHolding> existing = holdingRepository.findByUserAndSymbolAndSource(
                 user, symbol, HoldingSource.MANUAL);
@@ -57,6 +59,7 @@ public class CryptoPortfolioService {
         return mapEntityToDto(cryptoHolding);
     }
 
+    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
     public CryptoHoldingDto updateManualHolding(User user, UUID holdingId, BigDecimal newAmount) {
         CryptoHolding holding = holdingRepository.findById(holdingId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset non trovato"));
@@ -75,6 +78,7 @@ public class CryptoPortfolioService {
         return mapEntityToDto(updated);
     }
 
+    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
     public void deleteManualHolding(User user, UUID holdingId) {
         CryptoHolding holding = holdingRepository.findById(holdingId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset non trovato"));
@@ -103,6 +107,7 @@ public class CryptoPortfolioService {
     }
 
     @Async
+    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
     public void syncBinanceHoldings(User user) {
         UserBinanceKeys keys = keysRepository.findByUser(user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Chiavi Binance non configurate"));
@@ -135,7 +140,7 @@ public class CryptoPortfolioService {
     }
 
     @Transactional(readOnly = true)
-    @Cacheable(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id + '_' + #currency")
+    @Cacheable(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
     public CryptoDto.PortfolioValueResponse getPortfolioValue(User user, String currency) {
         List<CryptoHolding> holdings = holdingRepository.findByUser(user);
 
