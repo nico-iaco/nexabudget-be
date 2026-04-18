@@ -17,6 +17,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.context.annotation.Import;
 import it.iacovelli.nexabudgetbe.config.TestConfig;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -29,6 +30,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @ActiveProfiles("test")
 @Import(TestConfig.class)
+@org.springframework.transaction.annotation.Transactional
 class AccountServiceTest {
 
     @Autowired
@@ -50,9 +52,9 @@ class AccountServiceTest {
 
     @BeforeEach
     void setUp() {
-        // Ordine corretto di pulizia
-        transactionRepository.deleteAll();
-        accountRepository.deleteAll();
+        // Ordine corretto di pulizia (hard delete per bypassare soft-delete filter)
+        transactionRepository.hardDeleteAll();
+        accountRepository.hardDeleteAll();
         categoryRepository.deleteAll();
         userRepository.deleteAll();
 
@@ -66,8 +68,8 @@ class AccountServiceTest {
 
     @AfterEach
     void tearDown() {
-        transactionRepository.deleteAll();
-        accountRepository.deleteAll();
+        transactionRepository.hardDeleteAll();
+        accountRepository.hardDeleteAll();
         categoryRepository.deleteAll();
         userRepository.deleteAll();
     }

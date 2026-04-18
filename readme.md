@@ -40,6 +40,8 @@ The application uses a relational database to persist data. All entities use **U
   - `external_account_id` (for GoCardless integration)
   - `last_external_sync`
   - `created_at`
+  - `deleted` (soft-delete flag, default `false`)
+  - `deleted_at` (timestamp of soft deletion)
 
 - **Category**: Represents a category for transactions (e.g., Food, Salary).
   - `id` (Primary Key, UUID)
@@ -60,6 +62,12 @@ The application uses a relational database to persist data. All entities use **U
   - `transfer_id` (for linked transfers)
   - `external_id` (for GoCardless integration)
   - `created_at`
+  - `deleted` (soft-delete flag, default `false`)
+  - `deleted_at` (timestamp of soft deletion)
+  - `exchange_rate` (nullable — populated on the IN leg of a multi-currency transfer)
+  - `original_currency` (nullable — source currency for multi-currency transfers)
+  - `original_amount` (nullable — amount in source currency for multi-currency transfers)
+  - `import_hash` (nullable — SHA-256 dedup hash for CSV/OFX imports)
 
 - **Budget**: Represents a spending or saving goal for a specific category.
   - `id` (Primary Key, UUID)
@@ -82,6 +90,45 @@ The application uses a relational database to persist data. All entities use **U
   - `api_key` (Encrypted)
   - `api_secret` (Encrypted)
   - `user_id` (Foreign Key to User, UUID)
+
+- **BudgetTemplate**: A recurring budget definition that auto-instantiates budgets on a schedule.
+  - `id` (Primary Key, UUID)
+  - `budget_limit` (BigDecimal)
+  - `recurrence_type` (`MONTHLY`, `QUARTERLY`, `YEARLY`)
+  - `active` (default `true`)
+  - `category_id` (Foreign Key to Category, UUID)
+  - `user_id` (Foreign Key to User, UUID)
+  - `created_at`
+
+- **BudgetAlert**: A threshold-based alert for budget spending.
+  - `id` (Primary Key, UUID)
+  - `threshold_percentage` (1–100)
+  - `active` (default `true`)
+  - `last_notified_at`
+  - `budget_id` (Foreign Key to Budget, UUID)
+  - `user_id` (Foreign Key to User, UUID)
+  - `created_at`
+
+- **AuditLog**: Immutable record of every write operation on core entities.
+  - `id` (Primary Key, UUID)
+  - `user_id` (UUID of the actor)
+  - `action` (e.g. `CREATE_TRANSACTION`, `DELETE_ACCOUNT`)
+  - `entity_type` (e.g. `Transaction`, `Account`)
+  - `entity_id` (ID of the affected entity)
+  - `new_value` (JSON snapshot of response DTO, nullable)
+  - `timestamp`
+  - `ip_address` (nullable)
+
+- **ApiKey**: Machine-to-machine API keys for accessing the API without JWT.
+  - `id` (Primary Key, UUID)
+  - `name`
+  - `key_hash` (SHA-256 of the plaintext key — never stored plain)
+  - `scopes` (comma-separated, e.g. `READ_ALL,WRITE_TRANSACTIONS`)
+  - `expires_at` (nullable)
+  - `last_used_at` (nullable)
+  - `active` (default `true`)
+  - `user_id` (Foreign Key to User, UUID)
+  - `created_at`
 
 ## Getting Started
 
@@ -164,13 +211,13 @@ management.endpoint.health.show-details=always
 
 - `DB_URL`: PostgreSQL database URL
 - `DB_PWD`: PostgreSQL database password
+- `JWT_SECRET`: Secret key for JWT signing — **must be set and must not equal the dev default**; the application refuses to start otherwise (min 32 chars)
 - `GEMINI_API_KEY`: Google Gemini API key
 - `MONGODB_URI`: MongoDB connection URI (for vector store)
 - `CRYPTO_ENCRYPTION_KEY`: 32-char key for encrypting sensitive data (Binance keys)
 
 **Optional Environment Variables:**
 
-- `JWT_SECRET`: Secret key for JWT signing
 - `REDIS_HOST`: Redis/Valkey host (default: localhost)
 - `REDIS_PORT`: Redis/Valkey port (default: 6379)
 - `REDIS_USERNAME`: Redis/Valkey username
@@ -258,34 +305,40 @@ The API provides the following endpoints:
 
 ### Transactions (Protected)
 
-- `GET /api/transactions` - Get all user transactions (with pagination and filtering)
+- `GET /api/transactions` - Get all user transactions (full list)
+- `GET /api/transactions/paged?page=0&size=20` - Get transactions with pagination, sorted by date descending
 - `POST /api/transactions` - Create new transaction
 - `GET /api/transactions/{id}` - Get transaction details
 - `PUT /api/transactions/{id}` - Update transaction
 - `DELETE /api/transactions/{id}` - Delete transaction
-- `POST /api/transactions/{id}/categorize` - AI categorization of transaction
+- `GET /api/transactions/daterange?start=&end=` - Transactions in a date range
+- `GET /api/transactions/account/{id}/daterange` - Account transactions in a date range
 
 ### Categories (Protected)
 
 - `GET /api/categories` - Get all categories (default + user custom)
-- `POST /api/categories` - Create custom category
+- `POST /api/categories` - Create custom category — returns `409 Conflict` if a category with the same name and type already exists for the user
 - `PUT /api/categories/{id}` - Update category
 - `DELETE /api/categories/{id}` - Delete category
+- `POST /api/categories/{sourceId}/merge-into/{targetId}` - Merge source into target (moves all transactions and budgets, deletes source) — returns `400` if the two categories have different transaction types
 
 ### Budgets (Protected)
 
-- `GET /api/budgets` - Get all user budgets
-- `POST /api/budgets` - Create new budget
-- `GET /api/budgets/{id}` - Get budget details
-- `PUT /api/budgets/{id}` - Update budget
-- `DELETE /api/budgets/{id}` - Delete budget
+- `GET /api/budgets/` - Get all user budgets
+- `POST /api/budgets` - Create new budget — `endDate` must be ≥ `startDate` (returns `400` otherwise)
+- `GET /api/budgets/active` - Active budgets at a given date
+- `GET /api/budgets/usage` - Spending percentage for active budgets
+- `GET /api/budgets/remaining` - Remaining budget for active budgets
+- `PUT /api/budgets/{id}` - Update budget (ownership verified — returns `404` if budget belongs to another user)
+- `DELETE /api/budgets/{id}` - Delete budget (ownership verified — returns `404` if budget belongs to another user)
 
 ### GoCardless Integration (Protected)
 
-- `POST /api/gocardless/requisitions` - Create requisition for bank account linking
-- `GET /api/gocardless/requisitions/{id}` - Get requisition status
-- `GET /api/gocardless/requisitions/{id}/accounts` - Get accounts from requisition
-- `POST /api/gocardless/sync/{accountId}` - Sync transactions from external account
+- `GET /api/gocardless/bank` - List supported banks by country
+- `POST /api/gocardless/bank/link` - Generate bank link — returns `503` if GoCardless is unavailable
+- `GET /api/gocardless/bank/{localAccountId}/account` - List bank accounts linked via GoCardless
+- `POST /api/gocardless/bank/{localAccountId}/link` - Link a bank account to a local account
+- `POST /api/gocardless/bank/{localAccountId}/sync` - Start async transaction sync (uses atomic DB lock to prevent concurrent syncs)
 
 ### Crypto Portfolio (Protected)
 
@@ -294,10 +347,73 @@ The API provides the following endpoints:
 - `POST /api/crypto/binance/keys` - Save Binance API keys (encrypted)
 - `POST /api/crypto/binance/sync` - Trigger sync from Binance
 
-All protected endpoints require a valid JWT token in the Authorization header:
+### Trash / Recovery (Protected)
+
+Deleted accounts and transactions are soft-deleted and retained for 30 days before permanent purge (runs daily at 3 AM).
+
+- `GET /api/trash/transactions` - List soft-deleted transactions
+- `POST /api/trash/transactions/{id}/restore` - Restore a soft-deleted transaction
+- `GET /api/trash/accounts` - List soft-deleted accounts
+- `POST /api/trash/accounts/{id}/restore` - Restore a soft-deleted account (also restores all its transactions)
+
+### Financial Reports (Protected)
+
+- `GET /api/reports/monthly-trend?months=12` - Monthly income/expense totals for the last N months
+- `GET /api/reports/category-breakdown?type=OUT&startDate=&endDate=` - Spending/income by category in a date range
+- `GET /api/reports/month-comparison?year=&month=` - Compare a month vs. the previous month
+- `GET /api/reports/monthly-projection` - Projected end-of-month totals based on current spending rate
+
+### Budget Templates (Protected)
+
+Templates automatically instantiate budgets on the 1st of every month (MONTHLY), at the start of each quarter (QUARTERLY), and on January 1st (YEARLY).
+
+- `GET /api/budget-templates` - List all budget templates
+- `POST /api/budget-templates` - Create a budget template
+- `GET /api/budget-templates/{id}` - Get a budget template
+- `PUT /api/budget-templates/{id}` - Update a budget template
+- `DELETE /api/budget-templates/{id}` - Delete a budget template
+
+### Budget Alerts (Protected)
+
+Alerts are evaluated hourly. A notification is logged when `spent / limit ≥ thresholdPercentage` and the alert has not been triggered in the past 24 hours.
+
+- `GET /api/budget-alerts` - List all budget alerts
+- `POST /api/budget-alerts` - Create a budget alert (`thresholdPercentage`: 1–100)
+- `GET /api/budget-alerts/{id}` - Get a budget alert
+- `PUT /api/budget-alerts/{id}` - Update a budget alert
+- `DELETE /api/budget-alerts/{id}` - Delete a budget alert
+
+### Audit Log (Protected)
+
+Every write operation on core entities (Transaction, Account, Budget, Category) is automatically recorded.
+
+- `GET /api/audit-log?page=0&size=20` - Paginated audit log for the current user
+- `GET /api/audit-log/{entityType}/{entityId}` - History of a specific entity
+
+### API Keys (Protected)
+
+Machine-to-machine access without JWT. The plaintext key is shown **only once** at creation.
+
+- `POST /api/api-keys` - Create a new API key (returns plaintext key once)
+- `GET /api/api-keys` - List all API keys (no plaintext values)
+- `PUT /api/api-keys/{id}` - Update name, scopes, expiry, or active status
+- `DELETE /api/api-keys/{id}` - Delete a key permanently
+
+### Import Transactions (Protected)
+
+Two-step import: preview first, then confirm.
+
+- `POST /api/accounts/{id}/import/csv/preview` - Preview CSV import (`multipart/form-data`: `file` + `mapping`)
+- `POST /api/accounts/{id}/import/csv` - Import from CSV
+- `POST /api/accounts/{id}/import/ofx/preview` - Preview OFX/QFX import (`multipart/form-data`: `file`)
+- `POST /api/accounts/{id}/import/ofx` - Import from OFX/QFX
+
+All protected endpoints require a valid JWT token **or** an API key:
 
 ```http
 Authorization: Bearer <your_jwt_token>
+# or
+X-Api-Key: <your_api_key>
 ```
 
 ## Features
@@ -305,6 +421,25 @@ Authorization: Bearer <your_jwt_token>
 ### JWT Authentication
 
 The application uses JWT (JSON Web Tokens) for secure authentication. Tokens expire after 24 hours by default (configurable via `app.jwtExpirationInMs` property).
+
+The application validates the `JWT_SECRET` at startup — it will **refuse to start** if the secret is the development default or shorter than 32 characters.
+
+### Security & Validation Rules
+
+- **Password updates** are always BCrypt-encoded through `UserService.updateUserProfile()` — raw passwords are never persisted.
+- **Budget ownership** is enforced on `PUT /api/budgets/{id}` and `DELETE /api/budgets/{id}` — a user can only modify their own budgets.
+- **Category uniqueness**: a user cannot have two categories with the same name and transaction type (`UNIQUE(user_id, name, transaction_type)`).
+- **Budget date validation**: `endDate`, when provided, must be ≥ `startDate`. The API returns `400 Bad Request` otherwise.
+- **GoCardless sync**: concurrent sync attempts on the same account are prevented with an atomic DB-level lock (`UPDATE … WHERE isSynchronizing = false`).
+- **GoCardless token generation**: returns `503 Service Unavailable` (instead of a `NullPointerException`) when GoCardless does not return a valid response.
+- **Category merge**: `POST /categories/{sourceId}/merge-into/{targetId}` moves all transactions and budgets from source to target atomically via bulk JPQL UPDATE, then deletes the source. Only user-owned categories can be used as source (default categories are protected).
+
+### Resilience & Performance
+
+- **Automatic retry** on transient network failures: GoCardless API calls and exchange rate lookups retry up to 3 times with exponential backoff (1 s, 2 s) via Spring Retry `@Retryable`. Empty fallback results are never cached (via `unless` conditions), so subsequent requests retry properly.
+- **HTTP timeouts**: GoCardless RestClient: 5 s connect / 10 s read. Binance and ExchangeRate RestClients: 5 s / 5 s.
+- **Batch crypto prices**: `CryptoPortfolioService.getPortfolioValue()` fetches all USDT prices in a single `GET /api/v3/ticker/price` call instead of one call per symbol. Falls back to per-symbol lookup for any symbol not present in the batch response.
+- **Cache warming**: at startup, `CacheWarmupRunner` pre-populates the exchange rate cache (USD → EUR, USD → GBP) asynchronously so the first real request hits a warm cache.
 
 ### AI-Powered Transaction Categorization
 
@@ -325,6 +460,61 @@ Track your cryptocurrency assets in one place:
 - **Binance Integration**: securely connect your Binance account to auto-sync holdings.
 - **Manual Tracking**: add assets from other wallets or exchanges manually.
 - **Portfolio Valuation**: view your total portfolio balance in your preferred currency.
+
+### Soft Delete & Trash Recovery
+
+Deleting a transaction or account performs a **soft delete** — the record is marked `deleted = true` with a timestamp instead of being removed from the database. All normal JPA queries automatically filter out deleted rows via Hibernate's `@SQLRestriction("deleted = false")`.
+
+- Deleted items are accessible via the `/api/trash/` endpoints for 30 days.
+- Restoring an account also restores all of its soft-deleted transactions.
+- A scheduled job at **3 AM daily** permanently purges items older than 30 days.
+
+### Financial Reports
+
+Aggregate reports built directly on the transaction data:
+
+- **Monthly trend**: totals per month for income and expenses.
+- **Category breakdown**: ranked spending/income by category for any date range.
+- **Month comparison**: compare totals for any month vs. the previous one.
+- **Monthly projection**: extrapolates end-of-month totals from the current daily spending rate.
+
+### Budget Templates
+
+Define recurring budget templates (`MONTHLY`, `QUARTERLY`, `YEARLY`) that automatically instantiate real budgets on a schedule:
+
+- Monthly templates fire on the **1st of every month**.
+- Quarterly templates fire on the **1st of January, April, July, October**.
+- Yearly templates fire on **January 1st**.
+
+### Budget Alerts
+
+Set percentage-based thresholds on any budget. An hourly scheduler checks all active alerts and logs a warning when `spent / limit ≥ thresholdPercentage`. Alerts suppress repeated notifications within a **24-hour cooldown window**.
+
+### Multi-Currency Transfers
+
+When a transfer is created between two accounts with different currencies, the application automatically fetches the current exchange rate via `ExchangeRateService` and converts the destination amount. The IN-leg transaction stores `exchangeRate`, `originalCurrency`, and `originalAmount` for full auditability.
+
+### Audit Log
+
+Every write operation (create, update, delete) on Transactions, Accounts, Budgets, and Categories is automatically recorded via a Spring AOP aspect (`AuditAspect`) — no changes to service code required. Each entry captures the user ID, action name, affected entity type/ID, serialized response DTO, timestamp, and client IP address.
+
+### API Key Management
+
+Users can generate API keys for machine-to-machine access (e.g. scripts, dashboards, automations). Keys are:
+- Generated with a cryptographically secure random 32-byte value (base64url-encoded)
+- Stored only as a SHA-256 hash — the plaintext is shown exactly once at creation
+- Validated on every request via `ApiKeyAuthenticationFilter` (reads `X-Api-Key` header)
+- Configurable with scopes, expiry dates, and active/inactive status
+
+### Import Transactions (CSV / OFX)
+
+Import transactions from bank exports in CSV or OFX format:
+
+- **CSV**: flexible column mapping (date column, amount column, description column, optional type column, date format, delimiter)
+- **OFX**: supports both OFX 1.x SGML and OFX 2.x XML formats
+- **Two-step flow**: call `/preview` first to see which rows are duplicates, then `/import` to confirm
+- **Deduplication**: SHA-256 hash of `(accountId | date | amount | description)` stored in `import_hash`; OFX FITID tracked via `external_id`
+- **AI auto-categorization**: each imported transaction is automatically categorized via Google Gemini
 
 ### Semantic Caching (MongoDB Vector Store)
 
@@ -397,7 +587,7 @@ The application supports compilation to a native executable using GraalVM, provi
 | `REDIS_USERNAME`                | Redis/Valkey username                       | No       | (empty)                                                        |
 | `REDIS_PASSWORD`                | Redis/Valkey password                       | No       | (empty)                                                        |
 | `REDIS_SSL_ENABLED`             | Enable SSL for Redis                        | No       | false                                                          |
-| `JWT_SECRET`                    | JWT signing secret key                      | No       | tua-chiave-segreta-molto-lunga-e-sicura-di-almeno-64-caratteri |
+| `JWT_SECRET`                    | JWT signing secret (min 32 chars, must not equal dev default) | **Yes** | — (app fails to start without it) |
 | `app.jwtExpirationInMs`         | JWT token expiration time in milliseconds   | No       | 86400000 (24 hours)                                            |
 | `gocardless.integrator.baseUrl` | GoCardless integrator service URL           | No       | <http://localhost:3000>                                          |
 

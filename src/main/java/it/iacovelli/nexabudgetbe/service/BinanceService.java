@@ -63,6 +63,42 @@ public class BinanceService {
         }
     }
 
+    /**
+     * Recupera tutti i prezzi USDT in una singola chiamata batch.
+     * Restituisce una mappa base_symbol -> prezzo in USDT.
+     * Riduce le chiamate API da N (una per simbolo) a 1.
+     */
+    @Cacheable(value = CacheConfig.CRYPTO_PRICES_CACHE, key = "'ALL_USDT'")
+    public Map<String, BigDecimal> getAllTickerPricesUsdt() {
+        logger.info("Recupero batch prezzi USDT da Binance");
+        try {
+            String responseBody = restClient.get()
+                    .uri("/api/v3/ticker/price")
+                    .retrieve()
+                    .body(String.class);
+            JsonNode root = objectMapper.readTree(responseBody);
+            Map<String, BigDecimal> prices = new LinkedHashMap<>();
+            if (root.isArray()) {
+                for (JsonNode ticker : root) {
+                    String symbol = ticker.get("symbol").asText();
+                    if (symbol.endsWith("USDT")) {
+                        String base = symbol.substring(0, symbol.length() - 4);
+                        BigDecimal price = new BigDecimal(ticker.get("price").asText());
+                        if (price.compareTo(BigDecimal.ZERO) > 0) {
+                            prices.put(base, price);
+                        }
+                    }
+                }
+            }
+            prices.put("USDT", BigDecimal.ONE);
+            logger.info("Recuperati {} prezzi USDT in batch da Binance", prices.size());
+            return prices;
+        } catch (Exception e) {
+            logger.error("Errore nel recupero batch prezzi da Binance: {}", e.getMessage());
+            return Map.of();
+        }
+    }
+
     @Cacheable(value = CacheConfig.CRYPTO_PRICES_CACHE, key = "#symbol")
     public Optional<BigDecimal> getTickerPrice(String symbol) {
         logger.info("Recupero prezzo non in cache per {}", symbol);

@@ -7,8 +7,12 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
+import org.springframework.retry.annotation.Backoff;
+import org.springframework.retry.annotation.Recover;
+import org.springframework.retry.annotation.Retryable;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.web.client.RestClientException;
 
 import java.math.BigDecimal;
 import java.time.Duration;
@@ -42,15 +46,18 @@ public class ExchangeRateService {
     /**
      * Recupera e cache il tasso source->target.
      * Caching per chiave = targetCurrency + '|' + sourceCurrency così da distinguere basi diverse.
+     * I risultati vuoti (Optional.empty) non vengono cachati per permettere retry successivi.
      */
-    @Cacheable(value = CacheConfig.EXCHANGE_RATES_CACHE, key = "#sourceCurrency + '|' + #targetCurrency")
+    @Cacheable(value = CacheConfig.EXCHANGE_RATES_CACHE, key = "#sourceCurrency + '|' + #targetCurrency",
+               unless = "#result == null || !#result.isPresent()")
+    @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
     public Optional<BigDecimal> getRate(String sourceCurrency, String targetCurrency) {
         logger.info("Tasso non in cache: {} -> {}", sourceCurrency, targetCurrency);
+        String jsonResponse = restClient.get()
+                .uri(sourceCurrency.toUpperCase())
+                .retrieve()
+                .body(String.class);
         try {
-            String jsonResponse = restClient.get()
-                    .uri(sourceCurrency.toUpperCase())
-                    .retrieve()
-                    .body(String.class);
             JsonNode root = objectMapper.readTree(jsonResponse);
             JsonNode ratesNode = root.get("rates");
             if (ratesNode != null && ratesNode.has(targetCurrency.toUpperCase())) {
@@ -61,9 +68,15 @@ public class ExchangeRateService {
             logger.warn("Valuta target {} non trovata per base {}", targetCurrency, sourceCurrency);
             return Optional.empty();
         } catch (Exception e) {
-            logger.error("Errore recupero tasso {}->{}: {}", sourceCurrency, targetCurrency, e.getMessage());
+            logger.error("Errore parsing tasso {}->{}: {}", sourceCurrency, targetCurrency, e.getMessage());
             return Optional.empty();
         }
+    }
+
+    @Recover
+    public Optional<BigDecimal> recoverGetRate(RestClientException e, String sourceCurrency, String targetCurrency) {
+        logger.error("Tasso {}->{} non disponibile dopo i retry: {}", sourceCurrency, targetCurrency, e.getMessage());
+        return Optional.empty();
     }
 }
 

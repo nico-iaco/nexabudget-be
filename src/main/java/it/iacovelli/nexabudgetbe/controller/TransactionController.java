@@ -22,6 +22,10 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -135,6 +139,19 @@ public class TransactionController {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
         // Chiama direttamente il metodo che restituisce DTO
         List<TransactionDto.TransactionResponse> transactions = transactionService.getTransactionsByUser(user);
+        return ResponseEntity.ok(transactions);
+    }
+
+    @GetMapping("/paged")
+    @Operation(summary = "Transazioni utente (paginato)", description = "Transazioni dell'utente con paginazione, ordinate per data decrescente")
+    public ResponseEntity<Page<TransactionDto.TransactionResponse>> getTransactionsByUserIdPaged(
+            @AuthenticationPrincipal User currentUser,
+            @Parameter(description = "Numero pagina (0-based)") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Dimensione pagina") @RequestParam(defaultValue = "20") int size) {
+        User user = userService.getUserById(currentUser.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
+        Page<TransactionDto.TransactionResponse> transactions = transactionService.getTransactionsByUserPaged(
+                user, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "date")));
         return ResponseEntity.ok(transactions);
     }
 

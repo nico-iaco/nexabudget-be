@@ -16,6 +16,11 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
+import org.springframework.transaction.annotation.Transactional;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
@@ -26,6 +31,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @ActiveProfiles("test")
 @Import(TestConfig.class)
+@org.springframework.transaction.annotation.Transactional
 class TransactionServiceTest {
 
     @Autowired
@@ -49,8 +55,8 @@ class TransactionServiceTest {
 
     @BeforeEach
     void setUp() {
-        transactionRepository.deleteAll();
-        accountRepository.deleteAll();
+        transactionRepository.hardDeleteAll();
+        accountRepository.hardDeleteAll();
         categoryRepository.deleteAll();
         userRepository.deleteAll();
 
@@ -79,8 +85,8 @@ class TransactionServiceTest {
 
     @AfterEach
     void tearDown() {
-        transactionRepository.deleteAll();
-        accountRepository.deleteAll();
+        transactionRepository.hardDeleteAll();
+        accountRepository.hardDeleteAll();
         categoryRepository.deleteAll();
         userRepository.deleteAll();
     }
@@ -353,6 +359,41 @@ class TransactionServiceTest {
         assertEquals(2, results.size());
         assertNotNull(results.get(0).getTransferId());
         assertEquals(results.get(0).getTransferId(), results.get(1).getTransferId());
+    }
+
+    @Test
+    void testGetTransactionsByUserPaged_ReturnsCorrectPage() {
+        for (int i = 0; i < 5; i++) {
+            transactionService.createTransaction(Transaction.builder()
+                    .user(testUser).account(testAccount)
+                    .amount(BigDecimal.TEN).type(TransactionType.OUT)
+                    .description("Trans " + i).date(LocalDate.now().minusDays(i))
+                    .build());
+        }
+
+        Page<TransactionDto.TransactionResponse> page = transactionService.getTransactionsByUserPaged(
+                testUser, PageRequest.of(0, 3, Sort.by(Sort.Direction.DESC, "date")));
+
+        assertEquals(5, page.getTotalElements());
+        assertEquals(2, page.getTotalPages());
+        assertEquals(3, page.getContent().size());
+    }
+
+    @Test
+    void testGetTransactionsByUserPaged_SecondPage() {
+        for (int i = 0; i < 5; i++) {
+            transactionService.createTransaction(Transaction.builder()
+                    .user(testUser).account(testAccount)
+                    .amount(BigDecimal.TEN).type(TransactionType.OUT)
+                    .description("Trans " + i).date(LocalDate.now().minusDays(i))
+                    .build());
+        }
+
+        Page<TransactionDto.TransactionResponse> page = transactionService.getTransactionsByUserPaged(
+                testUser, PageRequest.of(1, 3));
+
+        assertEquals(2, page.getContent().size());
+        assertTrue(page.isLast());
     }
 
     @Test

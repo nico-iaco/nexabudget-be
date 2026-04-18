@@ -13,7 +13,9 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "categories")
+@Table(name = "categories", uniqueConstraints = {
+        @UniqueConstraint(name = "uk_category_user_name_type", columnNames = {"user_id", "name", "transaction_type"})
+})
 public class Category {
 
     @Id

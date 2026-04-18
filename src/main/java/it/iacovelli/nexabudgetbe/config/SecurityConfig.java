@@ -6,6 +6,7 @@ import io.jsonwebtoken.impl.DefaultJwtHeaderBuilder;
 import io.jsonwebtoken.impl.DefaultJwtParserBuilder;
 import io.jsonwebtoken.impl.io.StandardCompressionAlgorithms;
 import io.jsonwebtoken.impl.security.*;
+import it.iacovelli.nexabudgetbe.security.ApiKeyAuthenticationFilter;
 import it.iacovelli.nexabudgetbe.security.JwtAuthenticationFilter;
 import it.iacovelli.nexabudgetbe.service.UserDetailsServiceImpl;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
@@ -52,10 +53,14 @@ public class SecurityConfig {
 
     private final UserDetailsServiceImpl userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
+    private final ApiKeyAuthenticationFilter apiKeyAuthenticationFilter;
 
-    public SecurityConfig(UserDetailsServiceImpl userDetailsService, JwtAuthenticationFilter jwtAuthenticationFilter) {
+    public SecurityConfig(UserDetailsServiceImpl userDetailsService,
+                          JwtAuthenticationFilter jwtAuthenticationFilter,
+                          ApiKeyAuthenticationFilter apiKeyAuthenticationFilter) {
         this.userDetailsService = userDetailsService;
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
+        this.apiKeyAuthenticationFilter = apiKeyAuthenticationFilter;
     }
 
     @Bean
@@ -92,8 +97,10 @@ public class SecurityConfig {
         // Aggiungi il UserDetailsService per l'AuthenticationManager
         http.userDetailsService(userDetailsService);
 
-        // Aggiungi il filtro JWT prima del filtro standard di username/password
+        // JWT filter → standard username/password filter
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
+        // API Key filter runs before JWT (JWT filter skips if auth already set)
+        http.addFilterBefore(apiKeyAuthenticationFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }

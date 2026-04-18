@@ -13,6 +13,8 @@ import java.util.concurrent.Executor;
 
 @Configuration
 @EnableAsync
+@org.springframework.retry.annotation.EnableRetry
+@org.springframework.scheduling.annotation.EnableScheduling
 public class AsyncConfig implements AsyncConfigurer {
 
     private static final Logger logger = LoggerFactory.getLogger(AsyncConfig.class);

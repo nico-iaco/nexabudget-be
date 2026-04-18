@@ -25,4 +25,6 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
 
     @Query("SELECT c FROM Category c WHERE (c.user = :user OR c.user IS NULL)")
     List<Category> findByUserOrDefault(User user);
+
+    boolean existsByUserAndNameAndTransactionType(User user, String name, TransactionType transactionType);
 }

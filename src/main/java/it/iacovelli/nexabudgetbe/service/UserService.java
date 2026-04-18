@@ -67,6 +67,20 @@ public class UserService {
         return userRepository.save(user);
     }
 
+    public User updateUserProfile(User existingUser, String newUsername, String newEmail, String rawPassword) {
+        logger.info("Aggiornamento profilo utente: {} (ID: {})", existingUser.getUsername(), existingUser.getId());
+        if (newUsername != null) {
+            existingUser.setUsername(newUsername);
+        }
+        if (newEmail != null) {
+            existingUser.setEmail(newEmail);
+        }
+        if (rawPassword != null) {
+            existingUser.setPasswordHash(passwordEncoder.encode(rawPassword));
+        }
+        return userRepository.save(existingUser);
+    }
+
     public void deleteUser(UUID userId) {
         logger.info("Eliminazione utente con ID: {}", userId);
         userRepository.deleteById(userId);

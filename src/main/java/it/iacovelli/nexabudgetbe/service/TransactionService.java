@@ -9,6 +9,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -22,17 +25,19 @@ import java.util.stream.Collectors;
 public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final UserService userService;
-
     private final AiCategorizationService aiCategorizationService;
+    private final ExchangeRateService exchangeRateService;
 
     private final Logger logger = LoggerFactory.getLogger(TransactionService.class);
 
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    public TransactionService(TransactionRepository transactionRepository, UserService userService, AiCategorizationService aiCategorizationService) {
+    public TransactionService(TransactionRepository transactionRepository, UserService userService,
+                              AiCategorizationService aiCategorizationService, ExchangeRateService exchangeRateService) {
         this.transactionRepository = transactionRepository;
         this.userService = userService;
         this.aiCategorizationService = aiCategorizationService;
+        this.exchangeRateService = exchangeRateService;
     }
 
     @Transactional
@@ -60,6 +65,22 @@ public class TransactionService {
         User user = userService.getUserById(sourceAccount.getUser().getId())
                 .orElseThrow(() -> new IllegalStateException("Utente non trovato per il conto di origine"));
 
+        String sourceCurrency = sourceAccount.getCurrency();
+        String destCurrency = destinationAccount.getCurrency();
+        boolean multiCurrency = sourceCurrency != null && destCurrency != null
+                && !sourceCurrency.equalsIgnoreCase(destCurrency);
+
+        BigDecimal convertedAmount = amount;
+        BigDecimal appliedRate = null;
+        if (multiCurrency) {
+            appliedRate = exchangeRateService.getRate(sourceCurrency, destCurrency)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Tasso di cambio non disponibile: " + sourceCurrency + " -> " + destCurrency));
+            convertedAmount = amount.multiply(appliedRate).setScale(4, java.math.RoundingMode.HALF_UP);
+            logger.info("Trasferimento multi-valuta: {} {} -> {} {} (rate: {})",
+                    amount, sourceCurrency, convertedAmount, destCurrency, appliedRate);
+        }
+
         Transaction outTransaction = Transaction.builder()
                 .user(user)
                 .account(sourceAccount)
@@ -71,16 +92,21 @@ public class TransactionService {
                 .transferId(transferId)
                 .build();
 
-        Transaction inTransaction = Transaction.builder()
+        Transaction.TransactionBuilder inBuilder = Transaction.builder()
                 .user(user)
                 .account(destinationAccount)
-                .amount(amount)
+                .amount(convertedAmount)
                 .type(TransactionType.IN)
                 .description("Trasferimento da " + sourceAccount.getName() + ": " + description)
                 .date(transferDate)
                 .note(notes)
-                .transferId(transferId)
-                .build();
+                .transferId(transferId);
+        if (multiCurrency) {
+            inBuilder.exchangeRate(appliedRate)
+                    .originalCurrency(sourceCurrency)
+                    .originalAmount(amount);
+        }
+        Transaction inTransaction = inBuilder.build();
 
         Transaction savedOut = transactionRepository.save(outTransaction);
         Transaction savedIn = transactionRepository.save(inTransaction);
@@ -147,6 +173,12 @@ public class TransactionService {
         return transactionRepository.findByUser(user).stream()
                 .map(this::mapTransactionToResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<TransactionDto.TransactionResponse> getTransactionsByUserPaged(User user, Pageable pageable) {
+        return transactionRepository.findByUserPaged(user, pageable)
+                .map(this::mapTransactionToResponse);
     }
 
     @Transactional(readOnly = true)
@@ -235,16 +267,25 @@ public class TransactionService {
 
     @Transactional
     public void deleteTransaction(Transaction transaction) {
-        // Se la transazione fa parte di un trasferimento, elimina anche le altre collegate
+        LocalDateTime now = LocalDateTime.now();
+        // Se la transazione fa parte di un trasferimento, soft-elimina anche le altre collegate
         if (transaction.getTransferId() != null) {
             List<Transaction> transferTransactions = transactionRepository.findByTransferIdAndUser(transaction.getTransferId(), transaction.getUser());
-            if (!transferTransactions.isEmpty()) {
-                transactionRepository.deleteAll(transferTransactions);
+            for (Transaction t : transferTransactions) {
+                transactionRepository.softDeleteById(t.getId(), now);
             }
         } else {
-            // Altrimenti, elimina solo la singola transazione
-            transactionRepository.delete(transaction);
+            transactionRepository.softDeleteById(transaction.getId(), now);
         }
+    }
+
+    @Transactional
+    public void softDeleteAllTransactionByAccount(Account account) {
+        transactionRepository.softDeleteAllByAccountId(account.getId(), LocalDateTime.now());
+    }
+
+    public void deleteAllTransactionByAccount(Account account) {
+        transactionRepository.deleteAllByAccount(account);
     }
 
     public BigDecimal getIncomeForAccountInPeriod(Account account, LocalDateTime start, LocalDateTime end) {
@@ -309,10 +350,6 @@ public class TransactionService {
         return transactionRepository.calculateBalanceForAccount(account);
     }
 
-    public void deleteAllTransactionByAccount(Account account) {
-        transactionRepository.deleteAllByAccount(account);
-    }
-
     private TransactionDto.TransactionResponse mapTransactionToResponse(Transaction transaction) {
         return TransactionDto.TransactionResponse.builder()
                 .id(transaction.getId())
@@ -326,7 +363,9 @@ public class TransactionService {
                 .date(transaction.getDate())
                 .note(transaction.getNote())
                 .transferId(transaction.getTransferId())
+                .exchangeRate(transaction.getExchangeRate())
+                .originalCurrency(transaction.getOriginalCurrency())
+                .originalAmount(transaction.getOriginalAmount())
                 .build();
-
     }
 }

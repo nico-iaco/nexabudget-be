@@ -1,12 +1,12 @@
 package it.iacovelli.nexabudgetbe.service;
 
-import it.iacovelli.nexabudgetbe.dto.TransactionDto;
 import it.iacovelli.nexabudgetbe.model.Budget;
 import it.iacovelli.nexabudgetbe.model.Category;
-import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.repository.BudgetRepository;
+import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -15,19 +15,24 @@ import java.util.*;
 @Service
 public class BudgetService {
     private final BudgetRepository budgetRepository;
-    private final TransactionService transactionService;
+    private final TransactionRepository transactionRepository;
 
-    public BudgetService(BudgetRepository budgetRepository, TransactionService transactionService) {
+    public BudgetService(BudgetRepository budgetRepository, TransactionRepository transactionRepository) {
         this.budgetRepository = budgetRepository;
-        this.transactionService = transactionService;
+        this.transactionRepository = transactionRepository;
     }
 
     public Budget createBudget(Budget budget) {
+        validateBudgetDates(budget);
         return budgetRepository.save(budget);
     }
 
     public Optional<Budget> getBudgetById(UUID id) {
         return budgetRepository.findById(id);
+    }
+
+    public Optional<Budget> getBudgetByIdAndUser(UUID id, User user) {
+        return budgetRepository.findByIdAndUser(id, user);
     }
 
     public List<Budget> getAllBudgets() {
@@ -55,13 +60,22 @@ public class BudgetService {
     }
 
     public Budget updateBudget(Budget budget) {
+        validateBudgetDates(budget);
         return budgetRepository.save(budget);
+    }
+
+    private void validateBudgetDates(Budget budget) {
+        if (budget.getEndDate() != null && budget.getEndDate().isBefore(budget.getStartDate())) {
+            throw new IllegalArgumentException(
+                    "La data di fine budget non può essere precedente alla data di inizio");
+        }
     }
 
     public void deleteBudget(UUID budgetId) {
         budgetRepository.deleteById(budgetId);
     }
 
+    @Transactional(readOnly = true)
     public Map<Budget, BigDecimal> getBudgetUsage(User user, LocalDate date) {
         List<Budget> activeBudgets = getActiveBudgets(user, date);
         Map<Budget, BigDecimal> budgetUsage = new HashMap<>();
@@ -71,23 +85,15 @@ public class BudgetService {
 
         for (Budget budget : activeBudgets) {
             Category category = budget.getCategory();
-
-            // Trova tutte le transazioni di tipo OUT per questa categoria in questo periodo
-            List<TransactionDto.TransactionResponse> transactions = transactionService.findByUserAndDateBetween(user, startOfMonth, endOfMonth)
-                    .stream()
-                    .filter(t -> t.getType() == TransactionType.OUT && category.getName().equals(t.getCategoryName()))
-                    .toList();
-
-            BigDecimal spent = transactions.stream()
-                    .map(TransactionDto.TransactionResponse::getAmount)
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-
-            budgetUsage.put(budget, spent);
+            BigDecimal spent = transactionRepository.sumOutByUserAndCategoryAndDateRange(
+                    user, category, startOfMonth, endOfMonth);
+            budgetUsage.put(budget, spent != null ? spent : BigDecimal.ZERO);
         }
 
         return budgetUsage;
     }
 
+    @Transactional(readOnly = true)
     public Map<Budget, BigDecimal> getRemainingBudgets(User user, LocalDate date) {
         Map<Budget, BigDecimal> budgetUsage = getBudgetUsage(user, date);
         Map<Budget, BigDecimal> remainingBudgets = new HashMap<>();

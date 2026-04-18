@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.prompt.Prompt;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.HttpServerErrorException;
 
 import java.util.List;
 import java.util.Optional;
@@ -76,9 +78,18 @@ public class AiCategorizationService {
                     .filter(c -> c.getName().equalsIgnoreCase(finalAiResponseText))
                     .findFirst();
 
+        } catch (HttpClientErrorException e) {
+            if (e.getStatusCode().value() == 429) {
+                log.warn("Quota Gemini API esaurita, categorizzazione saltata per: {}", description);
+            } else {
+                log.error("Errore HTTP client nella categorizzazione AI ({}): {}", e.getStatusCode(), e.getMessage());
+            }
+            return Optional.empty();
+        } catch (HttpServerErrorException e) {
+            log.error("Errore server Gemini ({}), categorizzazione saltata: {}", e.getStatusCode(), e.getMessage());
+            return Optional.empty();
         } catch (Exception e) {
-            // Logga l'errore (e.g., API key non valida, quota superata, ecc.)
-            log.error("Errore durante la categorizzazione AI: {}", e.getMessage());
+            log.error("Errore inatteso nella categorizzazione AI: {}", e.getMessage());
             return Optional.empty();
         }
     }

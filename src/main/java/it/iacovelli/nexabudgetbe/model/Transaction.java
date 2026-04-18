@@ -2,6 +2,7 @@ package it.iacovelli.nexabudgetbe.model;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.SQLRestriction;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -14,7 +15,12 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "transactions")
+@SQLRestriction("deleted = false")
+@Table(name = "transactions", indexes = {
+        @Index(name = "idx_transaction_user_date", columnList = "user_id, transaction_date"),
+        @Index(name = "idx_transaction_account_date", columnList = "account_id, transaction_date"),
+        @Index(name = "idx_transaction_category", columnList = "category_id")
+})
 public class Transaction {
 
     @Id
@@ -59,8 +65,28 @@ public class Transaction {
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
+    @Column(name = "exchange_rate", precision = 20, scale = 8)
+    private BigDecimal exchangeRate;
+
+    @Column(name = "original_currency", length = 3)
+    private String originalCurrency;
+
+    @Column(name = "original_amount", precision = 19, scale = 4)
+    private BigDecimal originalAmount;
+
+    @Column(name = "import_hash", length = 64)
+    private String importHash;
+
+    @Column(nullable = false)
+    @Builder.Default
+    private Boolean deleted = false;
+
+    @Column(name = "deleted_at")
+    private LocalDateTime deletedAt;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
+        if (deleted == null) deleted = false;
     }
 }

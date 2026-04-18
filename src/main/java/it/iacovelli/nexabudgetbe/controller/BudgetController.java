@@ -128,9 +128,11 @@ public class BudgetController {
                     Budget budget = entry.getKey();
                     BigDecimal spent = entry.getValue();
                     BigDecimal remaining = budget.getBudgetLimit().subtract(spent);
-                    double percentageUsed = spent.multiply(BigDecimal.valueOf(100))
-                            .divide(budget.getBudgetLimit(), 2, RoundingMode.HALF_UP)
-                            .doubleValue();
+                    double percentageUsed = budget.getBudgetLimit().compareTo(BigDecimal.ZERO) == 0
+                            ? 0.0
+                            : spent.multiply(BigDecimal.valueOf(100))
+                                    .divide(budget.getBudgetLimit(), 2, RoundingMode.HALF_UP)
+                                    .doubleValue();
 
                     return BudgetDto.UsageResponse.builder()
                             .budgetId(budget.getId())
@@ -163,9 +165,11 @@ public class BudgetController {
                     Budget budget = entry.getKey();
                     BigDecimal remaining = entry.getValue();
                     BigDecimal spent = budget.getBudgetLimit().subtract(remaining);
-                    double percentageUsed = spent.multiply(BigDecimal.valueOf(100))
-                            .divide(budget.getBudgetLimit(), 2, RoundingMode.HALF_UP)
-                            .doubleValue();
+                    double percentageUsed = budget.getBudgetLimit().compareTo(BigDecimal.ZERO) == 0
+                            ? 0.0
+                            : spent.multiply(BigDecimal.valueOf(100))
+                                    .divide(budget.getBudgetLimit(), 2, RoundingMode.HALF_UP)
+                                    .doubleValue();
 
                     return BudgetDto.UsageResponse.builder()
                             .budgetId(budget.getId())
@@ -185,8 +189,13 @@ public class BudgetController {
     @Operation(summary = "Aggiorna budget", description = "Aggiorna i dati di un budget esistente")
     public ResponseEntity<BudgetDto.BudgetResponse> updateBudget(
             @Parameter(description = "ID budget") @PathVariable UUID id,
-            @Valid @RequestBody BudgetDto.BudgetRequest budgetRequest) {
-        Budget existingBudget = budgetService.getBudgetById(id)
+            @Valid @RequestBody BudgetDto.BudgetRequest budgetRequest,
+            @AuthenticationPrincipal User currentUser) {
+
+        User user = userService.getUserById(currentUser.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
+
+        Budget existingBudget = budgetService.getBudgetByIdAndUser(id, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget non trovato"));
 
         Category category = categoryService.getCategoryById(budgetRequest.getCategoryId())
@@ -203,7 +212,16 @@ public class BudgetController {
 
     @DeleteMapping("/{id}")
     @Operation(summary = "Elimina budget", description = "Elimina un budget per ID")
-    public ResponseEntity<Void> deleteBudget(@Parameter(description = "ID budget") @PathVariable UUID id) {
+    public ResponseEntity<Void> deleteBudget(
+            @Parameter(description = "ID budget") @PathVariable UUID id,
+            @AuthenticationPrincipal User currentUser) {
+
+        User user = userService.getUserById(currentUser.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
+
+        budgetService.getBudgetByIdAndUser(id, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget non trovato"));
+
         budgetService.deleteBudget(id);
         return ResponseEntity.noContent().build();
     }

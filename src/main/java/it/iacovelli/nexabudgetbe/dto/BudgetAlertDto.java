@@ -1,0 +1,46 @@
+package it.iacovelli.nexabudgetbe.dto;
+
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.Min;
+import jakarta.validation.constraints.NotNull;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Data;
+import lombok.NoArgsConstructor;
+
+import java.math.BigDecimal;
+import java.time.LocalDateTime;
+import java.util.UUID;
+
+public class BudgetAlertDto {
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class BudgetAlertRequest {
+        @NotNull(message = "L'ID del budget è obbligatorio")
+        private UUID budgetId;
+
+        @NotNull(message = "La soglia è obbligatoria")
+        @Min(value = 1, message = "La soglia deve essere almeno 1%")
+        @Max(value = 100, message = "La soglia non può superare il 100%")
+        private Integer thresholdPercentage;
+
+        private Boolean active;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class BudgetAlertResponse {
+        private UUID id;
+        private UUID budgetId;
+        private String categoryName;
+        private BigDecimal budgetLimit;
+        private Integer thresholdPercentage;
+        private Boolean active;
+        private LocalDateTime lastNotifiedAt;
+    }
+}
