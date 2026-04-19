@@ -39,6 +39,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
     @Query("SELECT t FROM Transaction t JOIN FETCH t.account LEFT JOIN FETCH t.category WHERE t.account = :account")
     List<Transaction> findByAccount(Account account);
 
+    @Query(value = "SELECT t FROM Transaction t JOIN FETCH t.account LEFT JOIN FETCH t.category WHERE t.account = :account ORDER BY t.date DESC",
+           countQuery = "SELECT COUNT(t) FROM Transaction t WHERE t.account = :account")
+    Page<Transaction> findByAccountPaged(@Param("account") Account account, Pageable pageable);
+
+    @Query(value = "SELECT t FROM Transaction t JOIN FETCH t.account LEFT JOIN FETCH t.category WHERE t.account = :account AND t.date BETWEEN :start AND :end ORDER BY t.date DESC",
+           countQuery = "SELECT COUNT(t) FROM Transaction t WHERE t.account = :account AND t.date BETWEEN :start AND :end")
+    Page<Transaction> findByAccountAndDateRangePaged(@Param("account") Account account, @Param("start") LocalDate start, @Param("end") LocalDate end, Pageable pageable);
+
     List<Transaction> findByCategoryAndUser(Category category, User user);
     List<Transaction> findByTransferIdAndUser(String transferId, User user);
 

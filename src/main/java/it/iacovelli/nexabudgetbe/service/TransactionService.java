@@ -189,6 +189,12 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
+    public Page<TransactionDto.TransactionResponse> getTransactionsByAccountPaged(Account account, Pageable pageable) {
+        return transactionRepository.findByAccountPaged(account, pageable)
+                .map(this::mapTransactionToResponse);
+    }
+
+    @Transactional(readOnly = true)
     public List<TransactionDto.TransactionResponse> getTransactionsByCategoryAndUser(Category category, User user) {
         return transactionRepository.findByCategoryAndUser(category, user).stream()
                 .map(this::mapTransactionToResponse)
@@ -214,6 +220,12 @@ public class TransactionService {
         return transactionRepository.findByAccountAndDateRangeOrderByDateDesc(account, start, end).stream()
                 .map(this::mapTransactionToResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<TransactionDto.TransactionResponse> getTransactionsByAccountAndDateRangePaged(Account account, LocalDate start, LocalDate end, Pageable pageable) {
+        return transactionRepository.findByAccountAndDateRangePaged(account, start, end, pageable)
+                .map(this::mapTransactionToResponse);
     }
 
     @Transactional

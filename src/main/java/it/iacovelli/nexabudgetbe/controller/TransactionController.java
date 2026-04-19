@@ -161,13 +161,25 @@ public class TransactionController {
                                                                                                @AuthenticationPrincipal User currentUser) {
         User user = userService.getUserById(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
-        // Usa getAccountEntityByIdAndUser per ottenere l'entità
         Account account = accountService.getAccountEntityByIdAndUser(accountId, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
-
-        // Chiama direttamente il metodo che restituisce DTO
         List<TransactionDto.TransactionResponse> transactions = transactionService.getTransactionsByAccount(account);
         return ResponseEntity.ok(transactions);
+    }
+
+    @GetMapping("/account/{accountId}/paged")
+    @Operation(summary = "Transazioni conto (paginate)", description = "Transazioni associate ad un conto, con paginazione")
+    public ResponseEntity<Page<TransactionDto.TransactionResponse>> getTransactionsByAccountIdPaged(
+            @Parameter(description = "ID conto") @PathVariable UUID accountId,
+            @Parameter(description = "Numero pagina") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Dimensione pagina") @RequestParam(defaultValue = "20") int size,
+            @AuthenticationPrincipal User currentUser) {
+        User user = userService.getUserById(currentUser.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
+        Account account = accountService.getAccountEntityByIdAndUser(accountId, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
+        return ResponseEntity.ok(transactionService.getTransactionsByAccountPaged(
+                account, PageRequest.of(page, size)));
     }
 
     @GetMapping("/category/{categoryId}")
@@ -222,14 +234,28 @@ public class TransactionController {
 
         User user = userService.getUserById(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
-
-        // Usa getAccountEntityByIdAndUser per ottenere l'entità
         Account account = accountService.getAccountEntityByIdAndUser(accountId, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
-
-        // Chiama direttamente il metodo che restituisce DTO
         List<TransactionDto.TransactionResponse> transactions = transactionService.getTransactionsByAccountAndDateRange(account, start, end);
         return ResponseEntity.ok(transactions);
+    }
+
+    @GetMapping("/account/{accountId}/daterange/paged")
+    @Operation(summary = "Transazioni per periodo (conto, paginate)", description = "Transazioni di un conto in un intervallo temporale, con paginazione")
+    public ResponseEntity<Page<TransactionDto.TransactionResponse>> getTransactionsByAccountAndDateRangePaged(
+            @Parameter(description = "ID conto") @PathVariable UUID accountId,
+            @AuthenticationPrincipal User currentUser,
+            @Parameter(description = "Data inizio (ISO)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @Parameter(description = "Data fine (ISO)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end,
+            @Parameter(description = "Numero pagina") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "Dimensione pagina") @RequestParam(defaultValue = "20") int size) {
+
+        User user = userService.getUserById(currentUser.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
+        Account account = accountService.getAccountEntityByIdAndUser(accountId, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
+        return ResponseEntity.ok(transactionService.getTransactionsByAccountAndDateRangePaged(
+                account, start, end, PageRequest.of(page, size)));
     }
 
     @GetMapping("/account/{accountId}/income")
