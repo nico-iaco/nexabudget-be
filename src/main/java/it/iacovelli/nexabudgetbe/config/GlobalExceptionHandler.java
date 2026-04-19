@@ -3,10 +3,12 @@ package it.iacovelli.nexabudgetbe.config;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotWritableException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
@@ -139,6 +141,28 @@ public class GlobalExceptionHandler {
         );
 
         return new ResponseEntity<>(errorResponse, HttpStatus.CONFLICT);
+    }
+
+    /**
+     * Broken pipe / client disconnect: the client closed the connection before the response
+     * was fully written. Not a server error — log at DEBUG and return nothing.
+     */
+    @ExceptionHandler({ClientAbortException.class, HttpMessageNotWritableException.class})
+    public ResponseEntity<ErrorResponse> handleClientAbort(Exception ex, WebRequest request) {
+        Throwable root = ex;
+        while (root.getCause() != null) root = root.getCause();
+        boolean brokenPipe = root instanceof ClientAbortException
+                || (root.getMessage() != null && root.getMessage().contains("Broken pipe"));
+        if (brokenPipe) {
+            logger.debug("Client disconnected during response write: {}", request.getDescription(false));
+            return null;
+        }
+        logger.error("Errore scrittura risposta: {}, richiesta: {}",
+                ex.getMessage(), request.getDescription(false), ex);
+        return new ResponseEntity<>(
+                new ErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
+                        "Si è verificato un errore interno del server", LocalDateTime.now()),
+                HttpStatus.INTERNAL_SERVER_ERROR);
     }
 
     /**

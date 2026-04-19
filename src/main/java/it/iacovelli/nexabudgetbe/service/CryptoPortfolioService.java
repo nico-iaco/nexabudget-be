@@ -150,11 +150,18 @@ public class CryptoPortfolioService {
                 .distinct()
                 .toList();
 
-        // Mappa Simbolo -> Prezzo USD
+        // Recupera tutti i prezzi in batch (1 chiamata API invece di N)
+        Map<String, BigDecimal> batchPrices = binanceService.getAllTickerPricesUsdt();
+
+        // Mappa Simbolo -> Prezzo USD, con fallback per simboli non in batch
         Map<String, BigDecimal> pricesMap = uniqueSymbols.stream()
                 .collect(Collectors.toMap(
                         symbol -> symbol,
                         symbol -> {
+                            BigDecimal batchPrice = batchPrices.get(symbol);
+                            if (batchPrice != null) {
+                                return batchPrice;
+                            }
                             try {
                                 return binanceService.getTickerPrice(symbol).orElse(BigDecimal.ZERO);
                             } catch (Exception e) {

@@ -3,6 +3,7 @@ package it.iacovelli.nexabudgetbe.security;
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import it.iacovelli.nexabudgetbe.model.User;
+import jakarta.annotation.PostConstruct;
 import org.apache.logging.log4j.LogManager;
 import org.apache.logging.log4j.Logger;
 import org.springframework.beans.factory.annotation.Value;
@@ -21,7 +22,21 @@ public class JwtTokenProvider {
     @Value("${app.jwtSecret}")
     private String jwtSecret;
 
+    private static final String DEV_DEFAULT_SECRET = "default_jwt_secret_for_dev_env_only_123456789012";
+
     private final Logger logger = LogManager.getLogger(JwtTokenProvider.class);
+
+    @PostConstruct
+    public void validateSecrets() {
+        if (DEV_DEFAULT_SECRET.equals(jwtSecret)) {
+            throw new IllegalStateException(
+                    "JWT_SECRET usa il valore di default non sicuro! Configura la variabile d'ambiente JWT_SECRET.");
+        }
+        if (jwtSecret.length() < 32) {
+            throw new IllegalStateException(
+                    "JWT_SECRET deve essere di almeno 32 caratteri (HMAC-SHA256 richiede 256 bit).");
+        }
+    }
 
     private SecretKey getSigningKey() {
         byte[] keyBytes = jwtSecret.getBytes(StandardCharsets.UTF_8);

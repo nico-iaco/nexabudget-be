@@ -33,17 +33,11 @@ public class UserController {
         User existingUser = userService.getUserById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
 
-        if (updateRequest.getUsername() != null) {
-            existingUser.setUsername(updateRequest.getUsername());
-        }
-        if (updateRequest.getEmail() != null) {
-            existingUser.setEmail(updateRequest.getEmail());
-        }
-        if (updateRequest.getPassword() != null) {
-            existingUser.setPasswordHash(updateRequest.getPassword());
-        }
-
-        User updatedUser = userService.updateUser(existingUser);
+        User updatedUser = userService.updateUserProfile(
+                existingUser,
+                updateRequest.getUsername(),
+                updateRequest.getEmail(),
+                updateRequest.getPassword());
         return ResponseEntity.ok(mapUserToResponse(updatedUser));
     }
 

@@ -1,20 +1,21 @@
 package it.iacovelli.nexabudgetbe;
 
-import it.iacovelli.nexabudgetbe.model.Category;
-import it.iacovelli.nexabudgetbe.model.TransactionType;
-import it.iacovelli.nexabudgetbe.model.User;
-import it.iacovelli.nexabudgetbe.repository.CategoryRepository;
-import it.iacovelli.nexabudgetbe.repository.UserRepository;
+import it.iacovelli.nexabudgetbe.config.TestConfig;
+import it.iacovelli.nexabudgetbe.model.*;
+import it.iacovelli.nexabudgetbe.repository.*;
 import it.iacovelli.nexabudgetbe.service.CategoryService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.ActiveProfiles;
 import org.springframework.context.annotation.Import;
-import it.iacovelli.nexabudgetbe.config.TestConfig;
+import org.springframework.test.context.ActiveProfiles;
 
+import org.springframework.transaction.annotation.Transactional;
+
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,6 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
 @SpringBootTest
 @ActiveProfiles("test")
 @Import(TestConfig.class)
+@org.springframework.transaction.annotation.Transactional
 class CategoryServiceTest {
 
     @Autowired
@@ -34,10 +36,18 @@ class CategoryServiceTest {
     @Autowired
     private UserRepository userRepository;
 
+    @Autowired
+    private TransactionRepository transactionRepository;
+
+    @Autowired
+    private AccountRepository accountRepository;
+
     private User testUser;
 
     @BeforeEach
     void setUp() {
+        transactionRepository.hardDeleteAll();
+        accountRepository.hardDeleteAll();
         categoryRepository.deleteAll();
         userRepository.deleteAll();
 
@@ -51,6 +61,8 @@ class CategoryServiceTest {
 
     @AfterEach
     void tearDown() {
+        transactionRepository.hardDeleteAll();
+        accountRepository.hardDeleteAll();
         categoryRepository.deleteAll();
         userRepository.deleteAll();
     }
@@ -222,6 +234,41 @@ class CategoryServiceTest {
     }
 
     @Test
+    void testCreateCategory_DuplicateUserCategory_Throws() {
+        Category category1 = Category.builder()
+                .name("Duplicato")
+                .transactionType(TransactionType.OUT)
+                .user(testUser)
+                .build();
+        categoryService.createCategory(category1);
+
+        Category category2 = Category.builder()
+                .name("Duplicato")
+                .transactionType(TransactionType.OUT)
+                .user(testUser)
+                .build();
+
+        assertThrows(IllegalStateException.class, () -> categoryService.createCategory(category2));
+    }
+
+    @Test
+    void testCreateCategory_SameNameDifferentType_Allowed() {
+        Category expense = Category.builder()
+                .name("Varia")
+                .transactionType(TransactionType.OUT)
+                .user(testUser)
+                .build();
+        Category income = Category.builder()
+                .name("Varia")
+                .transactionType(TransactionType.IN)
+                .user(testUser)
+                .build();
+
+        assertDoesNotThrow(() -> categoryService.createCategory(expense));
+        assertDoesNotThrow(() -> categoryService.createCategory(income));
+    }
+
+    @Test
     void testCreateDefaultCategories_NotDuplicated() {
         categoryService.createDefaultCategories();
         int firstCount = categoryService.getDefaultCategories().size();
@@ -230,5 +277,75 @@ class CategoryServiceTest {
         int secondCount = categoryService.getDefaultCategories().size();
 
         assertEquals(firstCount, secondCount);
+    }
+
+    @Test
+    void testMergeCategories_MovesTransactionsAndDeletesSource() {
+        Category source = categoryService.createCategory(Category.builder()
+                .name("Da Unire")
+                .transactionType(TransactionType.OUT)
+                .user(testUser)
+                .build());
+
+        Category target = categoryService.createCategory(Category.builder()
+                .name("Destinazione")
+                .transactionType(TransactionType.OUT)
+                .user(testUser)
+                .build());
+
+        Account account = accountRepository.save(Account.builder()
+                .name("Conto Test")
+                .type(AccountType.CONTO_CORRENTE)
+                .currency("EUR")
+                .user(testUser)
+                .build());
+
+        Transaction t = transactionRepository.save(Transaction.builder()
+                .user(testUser)
+                .account(account)
+                .category(source)
+                .amount(new BigDecimal("50.00"))
+                .type(TransactionType.OUT)
+                .description("Transazione da spostare")
+                .date(LocalDate.now())
+                .build());
+
+        categoryService.mergeCategories(source.getId(), target.getId(), testUser);
+
+        assertFalse(categoryService.getCategoryById(source.getId()).isPresent());
+        assertTrue(categoryService.getCategoryById(target.getId()).isPresent());
+
+        Transaction updated = transactionRepository.findById(t.getId()).orElseThrow();
+        assertEquals(target.getId(), updated.getCategory().getId());
+    }
+
+    @Test
+    void testMergeCategories_DifferentType_Throws() {
+        Category expenseCategory = categoryService.createCategory(Category.builder()
+                .name("Uscita")
+                .transactionType(TransactionType.OUT)
+                .user(testUser)
+                .build());
+
+        Category incomeCategory = categoryService.createCategory(Category.builder()
+                .name("Entrata")
+                .transactionType(TransactionType.IN)
+                .user(testUser)
+                .build());
+
+        assertThrows(IllegalArgumentException.class, () ->
+                categoryService.mergeCategories(expenseCategory.getId(), incomeCategory.getId(), testUser));
+    }
+
+    @Test
+    void testMergeCategories_SameId_Throws() {
+        Category category = categoryService.createCategory(Category.builder()
+                .name("Categoria")
+                .transactionType(TransactionType.OUT)
+                .user(testUser)
+                .build());
+
+        assertThrows(IllegalArgumentException.class, () ->
+                categoryService.mergeCategories(category.getId(), category.getId(), testUser));
     }
 }

@@ -10,7 +10,9 @@ import it.iacovelli.nexabudgetbe.service.AccountService;
 import it.iacovelli.nexabudgetbe.service.GocardlessService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -51,7 +53,9 @@ public class GocardlessController {
         String institutionId = body.getInstitutionId();
         UUID localAccountId = body.getLocalAccountId();
         logger.debug("Received request to get bank link for institutionId: {} and localAccountId: {}", institutionId, localAccountId);
-        GocardlessCreateWebToken bankLink = gocardlessService.generateBankLinkForToken(institutionId, localAccountId);
+        GocardlessCreateWebToken bankLink = gocardlessService.generateBankLinkForToken(institutionId, localAccountId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                        "Servizio GoCardless non disponibile, riprovare più tardi"));
         accountService.addRequisitionIdToAccount(localAccountId, bankLink.getRequisitionId());
         return ResponseEntity.ok(bankLink.getLink());
     }

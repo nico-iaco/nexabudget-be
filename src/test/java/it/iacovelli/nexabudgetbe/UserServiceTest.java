@@ -222,4 +222,58 @@ class UserServiceTest {
 
         assertFalse(isValid);
     }
+
+    @Test
+    void testUpdateUserProfile_UsernameAndEmail() {
+        User user = User.builder()
+                .username("original")
+                .email("original@example.com")
+                .passwordHash("password")
+                .build();
+
+        User created = userService.createUser(user);
+
+        User updated = userService.updateUserProfile(created, "updated", "updated@example.com", null);
+
+        assertEquals("updated", updated.getUsername());
+        assertEquals("updated@example.com", updated.getEmail());
+    }
+
+    @Test
+    void testUpdateUserProfile_PasswordIsEncoded() {
+        User user = User.builder()
+                .username("pwdupdate")
+                .email("pwdupdate@example.com")
+                .passwordHash("oldpassword")
+                .build();
+
+        User created = userService.createUser(user);
+        String oldHash = created.getPasswordHash();
+
+        User updated = userService.updateUserProfile(created, null, null, "newpassword");
+
+        // La nuova hash deve essere diversa dalla vecchia e non uguale alla password in chiaro
+        assertNotEquals(oldHash, updated.getPasswordHash());
+        assertNotEquals("newpassword", updated.getPasswordHash());
+        // Deve essere verificabile con BCrypt
+        assertTrue(userService.verifyPassword(updated, "newpassword"));
+    }
+
+    @Test
+    void testUpdateUserProfile_NullFieldsNotOverwritten() {
+        User user = User.builder()
+                .username("keepme")
+                .email("keepme@example.com")
+                .passwordHash("keeppassword")
+                .build();
+
+        User created = userService.createUser(user);
+
+        User updated = userService.updateUserProfile(created, null, null, null);
+
+        assertEquals("keepme", updated.getUsername());
+        assertEquals("keepme@example.com", updated.getEmail());
+        // La password non deve cambiare
+        assertTrue(userService.verifyPassword(updated, "keeppassword"));
+    }
 }

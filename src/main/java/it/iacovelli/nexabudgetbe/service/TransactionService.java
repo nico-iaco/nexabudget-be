@@ -9,6 +9,9 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -22,17 +25,19 @@ import java.util.stream.Collectors;
 public class TransactionService {
     private final TransactionRepository transactionRepository;
     private final UserService userService;
-
     private final AiCategorizationService aiCategorizationService;
+    private final ExchangeRateService exchangeRateService;
 
     private final Logger logger = LoggerFactory.getLogger(TransactionService.class);
 
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
-    public TransactionService(TransactionRepository transactionRepository, UserService userService, AiCategorizationService aiCategorizationService) {
+    public TransactionService(TransactionRepository transactionRepository, UserService userService,
+                              AiCategorizationService aiCategorizationService, ExchangeRateService exchangeRateService) {
         this.transactionRepository = transactionRepository;
         this.userService = userService;
         this.aiCategorizationService = aiCategorizationService;
+        this.exchangeRateService = exchangeRateService;
     }
 
     @Transactional
@@ -60,6 +65,22 @@ public class TransactionService {
         User user = userService.getUserById(sourceAccount.getUser().getId())
                 .orElseThrow(() -> new IllegalStateException("Utente non trovato per il conto di origine"));
 
+        String sourceCurrency = sourceAccount.getCurrency();
+        String destCurrency = destinationAccount.getCurrency();
+        boolean multiCurrency = sourceCurrency != null && destCurrency != null
+                && !sourceCurrency.equalsIgnoreCase(destCurrency);
+
+        BigDecimal convertedAmount = amount;
+        BigDecimal appliedRate = null;
+        if (multiCurrency) {
+            appliedRate = exchangeRateService.getRate(sourceCurrency, destCurrency)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Tasso di cambio non disponibile: " + sourceCurrency + " -> " + destCurrency));
+            convertedAmount = amount.multiply(appliedRate).setScale(4, java.math.RoundingMode.HALF_UP);
+            logger.info("Trasferimento multi-valuta: {} {} -> {} {} (rate: {})",
+                    amount, sourceCurrency, convertedAmount, destCurrency, appliedRate);
+        }
+
         Transaction outTransaction = Transaction.builder()
                 .user(user)
                 .account(sourceAccount)
@@ -71,16 +92,21 @@ public class TransactionService {
                 .transferId(transferId)
                 .build();
 
-        Transaction inTransaction = Transaction.builder()
+        Transaction.TransactionBuilder inBuilder = Transaction.builder()
                 .user(user)
                 .account(destinationAccount)
-                .amount(amount)
+                .amount(convertedAmount)
                 .type(TransactionType.IN)
                 .description("Trasferimento da " + sourceAccount.getName() + ": " + description)
                 .date(transferDate)
                 .note(notes)
-                .transferId(transferId)
-                .build();
+                .transferId(transferId);
+        if (multiCurrency) {
+            inBuilder.exchangeRate(appliedRate)
+                    .originalCurrency(sourceCurrency)
+                    .originalAmount(amount);
+        }
+        Transaction inTransaction = inBuilder.build();
 
         Transaction savedOut = transactionRepository.save(outTransaction);
         Transaction savedIn = transactionRepository.save(inTransaction);
@@ -150,10 +176,22 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
+    public Page<TransactionDto.TransactionResponse> getTransactionsByUserPaged(User user, Pageable pageable) {
+        return transactionRepository.findByUserPaged(user, pageable)
+                .map(this::mapTransactionToResponse);
+    }
+
+    @Transactional(readOnly = true)
     public List<TransactionDto.TransactionResponse> getTransactionsByAccount(Account account) {
         return transactionRepository.findByAccount(account).stream()
                 .map(this::mapTransactionToResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<TransactionDto.TransactionResponse> getTransactionsByAccountPaged(Account account, Pageable pageable) {
+        return transactionRepository.findByAccountPaged(account, pageable)
+                .map(this::mapTransactionToResponse);
     }
 
     @Transactional(readOnly = true)
@@ -182,6 +220,12 @@ public class TransactionService {
         return transactionRepository.findByAccountAndDateRangeOrderByDateDesc(account, start, end).stream()
                 .map(this::mapTransactionToResponse)
                 .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
+    public Page<TransactionDto.TransactionResponse> getTransactionsByAccountAndDateRangePaged(Account account, LocalDate start, LocalDate end, Pageable pageable) {
+        return transactionRepository.findByAccountAndDateRangePaged(account, start, end, pageable)
+                .map(this::mapTransactionToResponse);
     }
 
     @Transactional
@@ -216,7 +260,9 @@ public class TransactionService {
             aiCategorizationService.updateSemanticCache(
                     oldTransaction.getDescription(),
                     oldTransaction.getCategory(),
-                    newCategory
+                    newCategory,
+                    oldTransaction.getUser(),
+                    newType
             );
         }
 
@@ -235,16 +281,25 @@ public class TransactionService {
 
     @Transactional
     public void deleteTransaction(Transaction transaction) {
-        // Se la transazione fa parte di un trasferimento, elimina anche le altre collegate
+        LocalDateTime now = LocalDateTime.now();
+        // Se la transazione fa parte di un trasferimento, soft-elimina anche le altre collegate
         if (transaction.getTransferId() != null) {
             List<Transaction> transferTransactions = transactionRepository.findByTransferIdAndUser(transaction.getTransferId(), transaction.getUser());
-            if (!transferTransactions.isEmpty()) {
-                transactionRepository.deleteAll(transferTransactions);
+            for (Transaction t : transferTransactions) {
+                transactionRepository.softDeleteById(t.getId(), now);
             }
         } else {
-            // Altrimenti, elimina solo la singola transazione
-            transactionRepository.delete(transaction);
+            transactionRepository.softDeleteById(transaction.getId(), now);
         }
+    }
+
+    @Transactional
+    public void softDeleteAllTransactionByAccount(Account account) {
+        transactionRepository.softDeleteAllByAccountId(account.getId(), LocalDateTime.now());
+    }
+
+    public void deleteAllTransactionByAccount(Account account) {
+        transactionRepository.deleteAllByAccount(account);
     }
 
     public BigDecimal getIncomeForAccountInPeriod(Account account, LocalDateTime start, LocalDateTime end) {
@@ -270,16 +325,19 @@ public class TransactionService {
                     if (transactionRepository.findByExternalId(gt.getTransactionId()).isEmpty()) {
                         logger.debug("Importing Gocardless Transaction: {}", gt.getTransactionId());
                         BigDecimal rawAmount = new BigDecimal(gt.getTransactionAmount().getAmount());
+                        TransactionType txType = rawAmount.signum() > 0 ? TransactionType.IN : TransactionType.OUT;
+                        String description = resolveGocardlessDescription(gt, txType);
+
                         Transaction t = new Transaction();
                         t.setExternalId(gt.getTransactionId());
                         t.setAmount(rawAmount.abs());
-                        t.setType(rawAmount.signum() > 0 ? TransactionType.IN : TransactionType.OUT);
+                        t.setType(txType);
                         t.setUser(user);
-                        t.setDescription(gt.getPayeeName());
+                        t.setDescription(description);
                         t.setDate(LocalDate.parse(gt.getValueDate(), formatter));
                         t.setAccount(account);
 
-                        Optional<Category> foundCategory = aiCategorizationService.categorizeTransaction(gt.getPayeeName(), user, t.getType());
+                        Optional<Category> foundCategory = aiCategorizationService.categorizeTransaction(description, user, t.getType());
 
                         if (foundCategory.isPresent()) {
                             t.setCategory(foundCategory.get());
@@ -309,8 +367,25 @@ public class TransactionService {
         return transactionRepository.calculateBalanceForAccount(account);
     }
 
-    public void deleteAllTransactionByAccount(Account account) {
-        transactionRepository.deleteAllByAccount(account);
+    /**
+     * Builds the best available description from a GoCardless transaction.
+     * Priority: creditorName (OUT) / debtorName (IN) → remittanceInformation → payeeName.
+     */
+    private String resolveGocardlessDescription(GocardlessTransaction gt, TransactionType type) {
+        if (type == TransactionType.OUT && gt.getCreditorName() != null && !gt.getCreditorName().isBlank()) {
+            return gt.getCreditorName();
+        }
+        if (type == TransactionType.IN && gt.getDebtorName() != null && !gt.getDebtorName().isBlank()) {
+            return gt.getDebtorName();
+        }
+        List<String> remittance = gt.getRemittanceInformationUnstructuredArray();
+        if (remittance != null && !remittance.isEmpty() && remittance.get(0) != null && !remittance.get(0).isBlank()) {
+            return remittance.get(0);
+        }
+        if (gt.getPayeeName() != null && !gt.getPayeeName().isBlank()) {
+            return gt.getPayeeName();
+        }
+        return "";
     }
 
     private TransactionDto.TransactionResponse mapTransactionToResponse(Transaction transaction) {
@@ -326,7 +401,9 @@ public class TransactionService {
                 .date(transaction.getDate())
                 .note(transaction.getNote())
                 .transferId(transaction.getTransferId())
+                .exchangeRate(transaction.getExchangeRate())
+                .originalCurrency(transaction.getOriginalCurrency())
+                .originalAmount(transaction.getOriginalAmount())
                 .build();
-
     }
 }

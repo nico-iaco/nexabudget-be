@@ -16,7 +16,9 @@ import java.util.UUID;
 @NoArgsConstructor
 @AllArgsConstructor
 @Entity
-@Table(name = "budgets")
+@Table(name = "budgets", indexes = {
+        @Index(name = "idx_budget_user_dates", columnList = "user_id, start_date, end_date")
+})
 public class Budget {
 
     @Id

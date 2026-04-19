@@ -96,5 +96,8 @@ public class TransactionDto {
         private LocalDate date;
         private String note;
         private String transferId;
+        private BigDecimal exchangeRate;
+        private String originalCurrency;
+        private BigDecimal originalAmount;
     }
 }

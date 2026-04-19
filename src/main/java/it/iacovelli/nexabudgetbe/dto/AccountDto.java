@@ -10,6 +10,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 public class AccountDto {
@@ -45,5 +46,17 @@ public class AccountDto {
         private boolean isLinkedToExternal;
         private boolean isSynchronizing;
         private String createdAt;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class TrashAccountResponse {
+        private UUID id;
+        private String name;
+        private AccountType type;
+        private String currency;
+        private LocalDateTime deletedAt;
     }
 }

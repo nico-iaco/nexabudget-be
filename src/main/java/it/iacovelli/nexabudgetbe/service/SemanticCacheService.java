@@ -1,5 +1,6 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import it.iacovelli.nexabudgetbe.model.TransactionType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
@@ -10,6 +11,7 @@ import org.springframework.stereotype.Service;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 
 @Service
 public class SemanticCacheService {
@@ -18,67 +20,64 @@ public class SemanticCacheService {
 
     private final VectorStore vectorStore;
 
-
-    // Limite di similarità: consideriamo "uguali" i prompt con similarità > 0.80
-    private static final double SIMILARITY_THRESHOLD = 0.80;
+    // Soglia di similarità: valori > 0.82 considerati semanticamente equivalenti
+    private static final double SIMILARITY_THRESHOLD = 0.82;
 
     public SemanticCacheService(VectorStore vectorStore) {
         this.vectorStore = vectorStore;
     }
 
     /**
-     * Cerca una risposta semanticamente simile nella cache.
+     * Cerca una risposta semanticamente simile nella cache, filtrata per utente e tipo transazione.
      */
-    public Optional<String> findSimilar(String userPrompt) {
+    public Optional<String> findSimilar(String description, UUID userId, TransactionType type) {
         try {
+            String filter = "userId == '%s' && transactionType == '%s'"
+                    .formatted(userId.toString(), type.name());
+
             List<Document> results = vectorStore.similaritySearch(
-                    SearchRequest
-                            .builder()
-                            .query(userPrompt)
+                    SearchRequest.builder()
+                            .query(description)
                             .similarityThreshold(SIMILARITY_THRESHOLD)
                             .topK(1)
+                            .filterExpression(filter)
                             .build()
             );
+
             if (results.isEmpty()) {
-                log.debug("Nessuna corrispondenza semantica trovata per: {}", userPrompt);
+                log.debug("Cache miss per: '{}'", description);
                 return Optional.empty();
             }
 
-            String response = results.getFirst().getMetadata().get("category").toString();
-            log.debug("Cache hit semantico per prompt simile. Risposta: {}", response);
-            return Optional.ofNullable(response);
+            Object categoryMeta = results.getFirst().getMetadata().get("category");
+            if (categoryMeta == null) return Optional.empty();
+
+            log.debug("Cache hit per: '{}' → '{}'", description, categoryMeta);
+            return Optional.of(categoryMeta.toString());
+
         } catch (Exception e) {
-            log.error("Errore durante la ricerca semantica nella cache: {}", e.getMessage());
-            return Optional.empty(); // ✅ Fallback sicuro
+            log.warn("Errore ricerca cache semantica: {}", e.getMessage());
+            return Optional.empty();
         }
     }
 
-
     /**
-     * Salva una nuova coppia prompt/risposta nella cache.
-     * Prima controlla se esiste già un prompt identico per evitare duplicati.
+     * Salva una coppia descrizione/categoria in cache, con scope utente e tipo.
      */
-    public void saveToCache(String prompt, String response) {
+    public void saveToCache(String description, String categoryName, UUID userId, TransactionType type) {
         try {
             Document document = Document.builder()
-                    .text(prompt)
-                    .metadata(Map.of("category", response))
+                    .text(description)
+                    .metadata(Map.of(
+                            "category", categoryName,
+                            "userId", userId.toString(),
+                            "transactionType", type.name()
+                    ))
                     .build();
             vectorStore.add(List.of(document));
-            log.debug("Saved new entry in semantic cache: {}", prompt);
+            log.debug("Cache salvata: '{}' → '{}' (user={}, type={})", description, categoryName, userId, type);
         } catch (Exception e) {
-            log.error("Errore durante la salvataggio nella cache semantica: {}", e.getMessage());
+            log.warn("Errore salvataggio cache semantica: {}", e.getMessage());
         }
-
     }
-
-    /**
-     * Aggiorna la cache con una nuova risposta.
-     */
-    public void updateCache(String prompt, String newResponse) {
-        // Ripensare logica per update cache semantica in caso l'utente indichi manualmente la categoria
-        saveToCache(prompt, newResponse);
-    }
-
-
 }

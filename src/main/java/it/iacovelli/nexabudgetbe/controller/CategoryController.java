@@ -107,6 +107,17 @@ public class CategoryController {
         return ResponseEntity.noContent().build();
     }
 
+    @PostMapping("/{sourceId}/merge-into/{targetId}")
+    @Operation(summary = "Unisci categorie",
+               description = "Unisce la categoria source nella target, spostando tutte le transazioni e i budget associati. La categoria source viene eliminata.")
+    public ResponseEntity<Void> mergeCategories(
+            @Parameter(description = "ID categoria da unire (verrà eliminata)") @PathVariable UUID sourceId,
+            @Parameter(description = "ID categoria destinazione") @PathVariable UUID targetId,
+            @AuthenticationPrincipal User currentUser) {
+        categoryService.mergeCategories(sourceId, targetId, currentUser);
+        return ResponseEntity.noContent().build();
+    }
+
     private CategoryDto.CategoryResponse mapCategoryToResponse(Category category) {
         return CategoryDto.CategoryResponse.builder()
                 .id(category.getId())

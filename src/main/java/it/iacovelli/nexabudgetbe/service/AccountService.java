@@ -125,15 +125,15 @@ public class AccountService {
 
     @Transactional
     public void deleteAccount(UUID accountId) {
-        logger.info("Eliminazione account ID: {}", accountId);
+        logger.info("Soft-eliminazione account ID: {}", accountId);
 
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
 
-        transactionService.deleteAllTransactionByAccount(account);
-        accountRepository.delete(account);
+        transactionService.softDeleteAllTransactionByAccount(account);
+        accountRepository.softDeleteById(accountId, java.time.LocalDateTime.now());
 
-        logger.info("Account eliminato con successo: {} (ID: {})", account.getName(), accountId);
+        logger.info("Account soft-eliminato: {} (ID: {})", account.getName(), accountId);
     }
 
     public BigDecimal getTotalBalance(User user, String currency) {
@@ -172,6 +172,11 @@ public class AccountService {
         return account.getRequisitionId();
     }
 
+    @Transactional
+    public boolean tryAcquireSyncLock(UUID accountId) {
+        return accountRepository.markSynchronizing(accountId) > 0;
+    }
+
     @Async
     public void syncAccountTransactionWithGocardless(UUID accountId, User user, SyncBankTransactionsRequest request) {
         logger.info("Sincronizzazione asincrona transazioni GoCardless per account ID: {}", accountId);
@@ -181,18 +186,18 @@ public class AccountService {
 
         LocalDateTime lastExternalSync = account.getLastExternalSync();
 
-        if (account.getIsSynchronizing()) {
-            logger.info("C'è già una sincronizzazione in corso per account ID: {}, ignorata", accountId);
-            return;
-        }
-
         if (lastExternalSync != null && lastExternalSync.isAfter(LocalDateTime.now().minusHours(6))) {
             logger.info("Account ID: {} già sincronizzato di recente, skip sincronizzazione", accountId);
             return;
         }
 
-        account.setIsSynchronizing(true);
-        account = accountRepository.save(account);
+        if (!tryAcquireSyncLock(accountId)) {
+            logger.info("C'è già una sincronizzazione in corso per account ID: {}, ignorata", accountId);
+            return;
+        }
+
+        account = accountRepository.findByIdAndUser(accountId, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
 
         LocalDate startDate = lastExternalSync != null ? lastExternalSync.toLocalDate() : null;
 
