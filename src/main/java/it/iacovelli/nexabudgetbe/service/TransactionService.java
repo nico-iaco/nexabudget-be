@@ -248,7 +248,9 @@ public class TransactionService {
             aiCategorizationService.updateSemanticCache(
                     oldTransaction.getDescription(),
                     oldTransaction.getCategory(),
-                    newCategory
+                    newCategory,
+                    oldTransaction.getUser(),
+                    newType
             );
         }
 
@@ -311,16 +313,19 @@ public class TransactionService {
                     if (transactionRepository.findByExternalId(gt.getTransactionId()).isEmpty()) {
                         logger.debug("Importing Gocardless Transaction: {}", gt.getTransactionId());
                         BigDecimal rawAmount = new BigDecimal(gt.getTransactionAmount().getAmount());
+                        TransactionType txType = rawAmount.signum() > 0 ? TransactionType.IN : TransactionType.OUT;
+                        String description = resolveGocardlessDescription(gt, txType);
+
                         Transaction t = new Transaction();
                         t.setExternalId(gt.getTransactionId());
                         t.setAmount(rawAmount.abs());
-                        t.setType(rawAmount.signum() > 0 ? TransactionType.IN : TransactionType.OUT);
+                        t.setType(txType);
                         t.setUser(user);
-                        t.setDescription(gt.getPayeeName());
+                        t.setDescription(description);
                         t.setDate(LocalDate.parse(gt.getValueDate(), formatter));
                         t.setAccount(account);
 
-                        Optional<Category> foundCategory = aiCategorizationService.categorizeTransaction(gt.getPayeeName(), user, t.getType());
+                        Optional<Category> foundCategory = aiCategorizationService.categorizeTransaction(description, user, t.getType());
 
                         if (foundCategory.isPresent()) {
                             t.setCategory(foundCategory.get());
@@ -348,6 +353,27 @@ public class TransactionService {
     @Transactional(readOnly = true)
     public BigDecimal calculateBalanceForAccount(Account account) {
         return transactionRepository.calculateBalanceForAccount(account);
+    }
+
+    /**
+     * Builds the best available description from a GoCardless transaction.
+     * Priority: creditorName (OUT) / debtorName (IN) → remittanceInformation → payeeName.
+     */
+    private String resolveGocardlessDescription(GocardlessTransaction gt, TransactionType type) {
+        if (type == TransactionType.OUT && gt.getCreditorName() != null && !gt.getCreditorName().isBlank()) {
+            return gt.getCreditorName();
+        }
+        if (type == TransactionType.IN && gt.getDebtorName() != null && !gt.getDebtorName().isBlank()) {
+            return gt.getDebtorName();
+        }
+        List<String> remittance = gt.getRemittanceInformationUnstructuredArray();
+        if (remittance != null && !remittance.isEmpty() && remittance.get(0) != null && !remittance.get(0).isBlank()) {
+            return remittance.get(0);
+        }
+        if (gt.getPayeeName() != null && !gt.getPayeeName().isBlank()) {
+            return gt.getPayeeName();
+        }
+        return "";
     }
 
     private TransactionDto.TransactionResponse mapTransactionToResponse(Transaction transaction) {

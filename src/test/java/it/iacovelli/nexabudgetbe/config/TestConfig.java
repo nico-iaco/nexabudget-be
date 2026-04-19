@@ -1,6 +1,8 @@
 package it.iacovelli.nexabudgetbe.config;
 
 import it.iacovelli.nexabudgetbe.model.Category;
+import it.iacovelli.nexabudgetbe.model.TransactionType;
+import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.repository.AccountRepository;
 import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
 import it.iacovelli.nexabudgetbe.service.AiCategorizationService;
@@ -18,6 +20,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.Optional;
+import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -70,9 +73,8 @@ public class TestConfig {
     public SemanticCacheService semanticCacheService() {
         SemanticCacheService mockService = Mockito.mock(SemanticCacheService.class);
 
-        doNothing().when(mockService).saveToCache(anyString(), anyString());
-        doNothing().when(mockService).updateCache(anyString(), anyString());
-        when(mockService.findSimilar(anyString())).thenReturn(Optional.empty());
+        doNothing().when(mockService).saveToCache(anyString(), anyString(), any(UUID.class), any(TransactionType.class));
+        when(mockService.findSimilar(anyString(), any(UUID.class), any(TransactionType.class))).thenReturn(Optional.empty());
 
         return mockService;
     }
@@ -82,7 +84,8 @@ public class TestConfig {
     public AiCategorizationService aiCategorizationService() {
         AiCategorizationService mockService = Mockito.mock(AiCategorizationService.class);
 
-        doNothing().when(mockService).updateSemanticCache(anyString(), any(Category.class), any(Category.class));
+        doNothing().when(mockService).updateSemanticCache(
+                anyString(), any(Category.class), any(Category.class), any(User.class), any(TransactionType.class));
         when(mockService.categorizeTransaction(anyString(), any(), any())).thenReturn(Optional.empty());
 
         return mockService;

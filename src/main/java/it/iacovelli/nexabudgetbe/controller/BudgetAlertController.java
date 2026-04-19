@@ -9,6 +9,7 @@ import it.iacovelli.nexabudgetbe.model.BudgetAlert;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.BudgetAlertService;
 import it.iacovelli.nexabudgetbe.service.BudgetService;
+import it.iacovelli.nexabudgetbe.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,85 +22,113 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/budget-alerts")
-@Tag(name = "Alert Budget", description = "Notifiche automatiche quando il budget si avvicina al limite")
+@Tag(name = "Alert Budget", description = "Notifiche automatiche quando la spesa di un budget si avvicina al limite")
 public class BudgetAlertController {
 
     private final BudgetAlertService budgetAlertService;
     private final BudgetService budgetService;
+    private final UserService userService;
 
-    public BudgetAlertController(BudgetAlertService budgetAlertService, BudgetService budgetService) {
+    public BudgetAlertController(BudgetAlertService budgetAlertService,
+                                  BudgetService budgetService,
+                                  UserService userService) {
         this.budgetAlertService = budgetAlertService;
         this.budgetService = budgetService;
+        this.userService = userService;
     }
 
     @PostMapping
-    @Operation(summary = "Crea alert", description = "Crea un alert per un budget quando supera una soglia percentuale")
+    @Operation(summary = "Crea alert", description = "Crea un alert per un budget specifico")
     public ResponseEntity<BudgetAlertDto.BudgetAlertResponse> createAlert(
             @Valid @RequestBody BudgetAlertDto.BudgetAlertRequest request,
             @AuthenticationPrincipal User currentUser) {
 
-        Budget budget = budgetService.getBudgetByIdAndUser(request.getBudgetId(), currentUser)
+        User user = resolveUser(currentUser);
+        Budget budget = budgetService.getBudgetByIdAndUserId(request.getBudgetId(), user.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget non trovato"));
 
         BudgetAlert alert = BudgetAlert.builder()
-                .user(currentUser)
                 .budget(budget)
+                .user(user)
                 .thresholdPercentage(request.getThresholdPercentage())
                 .active(request.getActive() != null ? request.getActive() : true)
                 .build();
 
-        BudgetAlert saved = budgetAlertService.createAlert(alert);
-        return ResponseEntity.status(HttpStatus.CREATED).body(mapToResponse(saved));
+        return ResponseEntity.status(HttpStatus.CREATED).body(mapToResponse(budgetAlertService.createAlert(alert)));
     }
 
     @GetMapping
     @Operation(summary = "Lista alert", description = "Tutti gli alert dell'utente")
     public ResponseEntity<List<BudgetAlertDto.BudgetAlertResponse>> getAlerts(
             @AuthenticationPrincipal User currentUser) {
-        List<BudgetAlertDto.BudgetAlertResponse> alerts = budgetAlertService.getAlertsByUser(currentUser)
-                .stream().map(this::mapToResponse).toList();
-        return ResponseEntity.ok(alerts);
+
+        User user = resolveUser(currentUser);
+        return ResponseEntity.ok(budgetAlertService.getAlertsByUser(user)
+                .stream().map(this::mapToResponse).toList());
+    }
+
+    @GetMapping("/{id}")
+    @Operation(summary = "Dettaglio alert")
+    public ResponseEntity<BudgetAlertDto.BudgetAlertResponse> getAlert(
+            @Parameter(description = "ID alert") @PathVariable UUID id,
+            @AuthenticationPrincipal User currentUser) {
+
+        User user = resolveUser(currentUser);
+        BudgetAlert alert = budgetAlertService.getAlertByIdAndUser(id, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alert non trovato"));
+        return ResponseEntity.ok(mapToResponse(alert));
     }
 
     @PutMapping("/{id}")
-    @Operation(summary = "Aggiorna alert", description = "Aggiorna la soglia o lo stato di un alert")
+    @Operation(summary = "Aggiorna alert", description = "Aggiorna soglia e stato dell'alert")
     public ResponseEntity<BudgetAlertDto.BudgetAlertResponse> updateAlert(
             @Parameter(description = "ID alert") @PathVariable UUID id,
             @Valid @RequestBody BudgetAlertDto.BudgetAlertRequest request,
             @AuthenticationPrincipal User currentUser) {
 
-        BudgetAlert existing = budgetAlertService.getAlertByIdAndUser(id, currentUser)
+        User user = resolveUser(currentUser);
+        BudgetAlert existing = budgetAlertService.getAlertByIdAndUser(id, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alert non trovato"));
 
-        Budget budget = budgetService.getBudgetByIdAndUser(request.getBudgetId(), currentUser)
+        Budget budget = budgetService.getBudgetByIdAndUserId(request.getBudgetId(), user.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget non trovato"));
 
         existing.setBudget(budget);
         existing.setThresholdPercentage(request.getThresholdPercentage());
         if (request.getActive() != null) existing.setActive(request.getActive());
 
-        BudgetAlert updated = budgetAlertService.updateAlert(existing);
-        return ResponseEntity.ok(mapToResponse(updated));
+        return ResponseEntity.ok(mapToResponse(budgetAlertService.updateAlert(existing)));
     }
 
     @DeleteMapping("/{id}")
-    @Operation(summary = "Elimina alert", description = "Elimina un alert budget")
+    @Operation(summary = "Elimina alert")
     public ResponseEntity<Void> deleteAlert(
             @Parameter(description = "ID alert") @PathVariable UUID id,
             @AuthenticationPrincipal User currentUser) {
-        budgetAlertService.deleteAlert(id, currentUser);
+
+        budgetAlertService.deleteAlert(id, resolveUser(currentUser));
         return ResponseEntity.noContent().build();
     }
 
+    // ─── Helpers ────────────────────────────────────────────────────────────────
+
+    private User resolveUser(User currentUser) {
+        return userService.getUserById(currentUser.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
+    }
+
     private BudgetAlertDto.BudgetAlertResponse mapToResponse(BudgetAlert alert) {
+        Budget budget = alert.getBudget();
         return BudgetAlertDto.BudgetAlertResponse.builder()
                 .id(alert.getId())
-                .budgetId(alert.getBudget().getId())
-                .categoryName(alert.getBudget().getCategory().getName())
-                .budgetLimit(alert.getBudget().getBudgetLimit())
+                .budgetId(budget.getId())
+                .categoryId(budget.getCategory() != null ? budget.getCategory().getId() : null)
+                .categoryName(budget.getCategory() != null ? budget.getCategory().getName() : null)
+                .budgetLimit(budget.getBudgetLimit())
                 .thresholdPercentage(alert.getThresholdPercentage())
                 .active(alert.getActive())
                 .lastNotifiedAt(alert.getLastNotifiedAt())
+                .createdAt(alert.getCreatedAt())
                 .build();
     }
 }

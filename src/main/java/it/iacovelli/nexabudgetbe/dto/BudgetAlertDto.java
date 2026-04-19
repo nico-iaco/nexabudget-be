@@ -19,7 +19,7 @@ public class BudgetAlertDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class BudgetAlertRequest {
-        @NotNull(message = "L'ID del budget è obbligatorio")
+        @NotNull(message = "Il budget è obbligatorio")
         private UUID budgetId;
 
         @NotNull(message = "La soglia è obbligatoria")
@@ -37,10 +37,12 @@ public class BudgetAlertDto {
     public static class BudgetAlertResponse {
         private UUID id;
         private UUID budgetId;
+        private UUID categoryId;
         private String categoryName;
         private BigDecimal budgetLimit;
         private Integer thresholdPercentage;
         private Boolean active;
         private LocalDateTime lastNotifiedAt;
+        private LocalDateTime createdAt;
     }
 }

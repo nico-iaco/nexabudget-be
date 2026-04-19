@@ -35,6 +35,10 @@ public class BudgetService {
         return budgetRepository.findByIdAndUser(id, user);
     }
 
+    public Optional<Budget> getBudgetByIdAndUserId(UUID id, UUID userId) {
+        return budgetRepository.findByIdAndUserId(id, userId);
+    }
+
     public List<Budget> getAllBudgets() {
         return budgetRepository.findAll();
     }

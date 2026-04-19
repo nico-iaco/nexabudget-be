@@ -72,7 +72,7 @@ public class BudgetAlertService {
     }
 
     /**
-     * Checks active budget alerts every hour and records notification time when threshold is exceeded.
+     * Checks active alerts every hour.
      */
     @Scheduled(fixedRate = 3_600_000)
     @Transactional
@@ -85,7 +85,6 @@ public class BudgetAlertService {
         for (BudgetAlert alert : activeAlerts) {
             Budget budget = alert.getBudget();
 
-            // Skip if budget is not currently active
             if (budget.getStartDate().isAfter(today) ||
                     (budget.getEndDate() != null && budget.getEndDate().isBefore(today))) {
                 continue;
@@ -105,14 +104,13 @@ public class BudgetAlertService {
                     .multiply(BigDecimal.valueOf(100)).doubleValue();
 
             if (usagePercent >= alert.getThresholdPercentage()) {
-                // Only notify if not already notified in the last 24h
                 if (alert.getLastNotifiedAt() == null ||
                         alert.getLastNotifiedAt().isBefore(LocalDateTime.now().minusHours(24))) {
                     alert.setLastNotifiedAt(LocalDateTime.now());
                     budgetAlertRepository.save(alert);
-                    logger.warn("Alert budget: utente {}, categoria '{}', soglia {}% raggiunta",
-                            budget.getUser().getId(), budget.getCategory().getName(),
-                            alert.getThresholdPercentage());
+                    logger.warn("Budget alert {}: utente={}, categoria='{}', utilizzo={:.1f}% (soglia {}%)",
+                            alert.getId(), budget.getUser().getId(),
+                            budget.getCategory().getName(), usagePercent, alert.getThresholdPercentage());
                 }
             }
         }
