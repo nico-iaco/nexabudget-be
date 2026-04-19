@@ -7,6 +7,7 @@ import it.iacovelli.nexabudgetbe.dto.TransactionDto;
 import it.iacovelli.nexabudgetbe.model.Account;
 import it.iacovelli.nexabudgetbe.model.Category;
 import it.iacovelli.nexabudgetbe.model.Transaction;
+import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.AccountService;
 import it.iacovelli.nexabudgetbe.service.CategoryService;
@@ -143,16 +144,23 @@ public class TransactionController {
     }
 
     @GetMapping("/paged")
-    @Operation(summary = "Transazioni utente (paginato)", description = "Transazioni dell'utente con paginazione, ordinate per data decrescente")
+    @Operation(summary = "Transazioni utente (paginato)", description = "Transazioni dell'utente con paginazione, filtri e ordinamento opzionali")
     public ResponseEntity<Page<TransactionDto.TransactionResponse>> getTransactionsByUserIdPaged(
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "Numero pagina (0-based)") @RequestParam(defaultValue = "0") int page,
-            @Parameter(description = "Dimensione pagina") @RequestParam(defaultValue = "20") int size) {
+            @Parameter(description = "Dimensione pagina") @RequestParam(defaultValue = "20") int size,
+            @Parameter(description = "Campo ordinamento: date, amount, description, type") @RequestParam(defaultValue = "date") String sortBy,
+            @Parameter(description = "Direzione: ASC o DESC") @RequestParam(defaultValue = "DESC") Sort.Direction sortDir,
+            @Parameter(description = "Tipo transazione (IN/OUT)") @RequestParam(required = false) TransactionType type,
+            @Parameter(description = "ID categoria") @RequestParam(required = false) UUID categoryId,
+            @Parameter(description = "Data inizio (ISO)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @Parameter(description = "Data fine (ISO)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @Parameter(description = "Testo libero su descrizione o conto") @RequestParam(required = false) String search) {
         User user = userService.getUserById(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
-        Page<TransactionDto.TransactionResponse> transactions = transactionService.getTransactionsByUserPaged(
-                user, PageRequest.of(page, size, Sort.by(Sort.Direction.DESC, "date")));
-        return ResponseEntity.ok(transactions);
+        return ResponseEntity.ok(transactionService.getTransactionsFiltered(
+                user.getId(), null, type, categoryId, startDate, endDate, search,
+                PageRequest.of(page, size, Sort.by(sortDir, resolveTransactionSortField(sortBy)))));
     }
 
     @GetMapping("/account/{accountId}")
@@ -168,18 +176,26 @@ public class TransactionController {
     }
 
     @GetMapping("/account/{accountId}/paged")
-    @Operation(summary = "Transazioni conto (paginate)", description = "Transazioni associate ad un conto, con paginazione")
+    @Operation(summary = "Transazioni conto (paginate)", description = "Transazioni di un conto con paginazione, filtri e ordinamento opzionali")
     public ResponseEntity<Page<TransactionDto.TransactionResponse>> getTransactionsByAccountIdPaged(
             @Parameter(description = "ID conto") @PathVariable UUID accountId,
             @Parameter(description = "Numero pagina") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "Dimensione pagina") @RequestParam(defaultValue = "20") int size,
+            @Parameter(description = "Campo ordinamento: date, amount, description, type") @RequestParam(defaultValue = "date") String sortBy,
+            @Parameter(description = "Direzione: ASC o DESC") @RequestParam(defaultValue = "DESC") Sort.Direction sortDir,
+            @Parameter(description = "Tipo transazione (IN/OUT)") @RequestParam(required = false) TransactionType type,
+            @Parameter(description = "ID categoria") @RequestParam(required = false) UUID categoryId,
+            @Parameter(description = "Data inizio (ISO)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @Parameter(description = "Data fine (ISO)") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @Parameter(description = "Testo libero su descrizione o conto") @RequestParam(required = false) String search,
             @AuthenticationPrincipal User currentUser) {
         User user = userService.getUserById(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
-        Account account = accountService.getAccountEntityByIdAndUser(accountId, user)
+        accountService.getAccountEntityByIdAndUser(accountId, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
-        return ResponseEntity.ok(transactionService.getTransactionsByAccountPaged(
-                account, PageRequest.of(page, size)));
+        return ResponseEntity.ok(transactionService.getTransactionsFiltered(
+                user.getId(), accountId, type, categoryId, startDate, endDate, search,
+                PageRequest.of(page, size, Sort.by(sortDir, resolveTransactionSortField(sortBy)))));
     }
 
     @GetMapping("/category/{categoryId}")
@@ -337,5 +353,17 @@ public class TransactionController {
 
         transactionService.deleteTransaction(transaction);
         return ResponseEntity.noContent().build();
+    }
+
+    // ─── Helpers ────────────────────────────────────────────────────────────────
+
+    private static final java.util.Set<String> ALLOWED_SORT_FIELDS =
+            java.util.Set.of("date", "amount", "description", "type");
+
+    private String resolveTransactionSortField(String sortBy) {
+        if (sortBy == null || !ALLOWED_SORT_FIELDS.contains(sortBy.toLowerCase())) {
+            return "date";
+        }
+        return sortBy.toLowerCase();
     }
 }

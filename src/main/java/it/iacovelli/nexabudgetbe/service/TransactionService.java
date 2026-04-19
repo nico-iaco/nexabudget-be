@@ -182,6 +182,17 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
+    public Page<TransactionDto.TransactionResponse> getTransactionsFiltered(
+            UUID userId, UUID accountId, TransactionType type, UUID categoryId, 
+            LocalDate startDate, LocalDate endDate, String search, Pageable pageable) {
+        String searchPattern = (search != null && !search.isBlank())
+                ? "%" + search.trim().toLowerCase() + "%" : null;
+        return transactionRepository.findByFilters(
+                userId, accountId, type, categoryId, startDate, endDate, searchPattern, pageable)
+                .map(this::mapTransactionToResponse);
+    }
+
+    @Transactional(readOnly = true)
     public List<TransactionDto.TransactionResponse> getTransactionsByAccount(Account account) {
         return transactionRepository.findByAccount(account).stream()
                 .map(this::mapTransactionToResponse)
