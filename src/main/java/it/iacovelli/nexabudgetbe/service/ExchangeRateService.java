@@ -49,7 +49,7 @@ public class ExchangeRateService {
      * I risultati vuoti (Optional.empty) non vengono cachati per permettere retry successivi.
      */
     @Cacheable(value = CacheConfig.EXCHANGE_RATES_CACHE, key = "#sourceCurrency + '|' + #targetCurrency",
-               unless = "#result == null || !#result.isPresent()")
+               unless = "#result == null")
     @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
     public Optional<BigDecimal> getRate(String sourceCurrency, String targetCurrency) {
         logger.info("Tasso non in cache: {} -> {}", sourceCurrency, targetCurrency);

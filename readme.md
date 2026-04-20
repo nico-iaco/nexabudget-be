@@ -362,6 +362,8 @@ Deleted accounts and transactions are soft-deleted and retained for 30 days befo
 - `GET /api/reports/category-breakdown?type=OUT&startDate=&endDate=` - Spending/income by category in a date range
 - `GET /api/reports/month-comparison?year=&month=` - Compare a month vs. the previous month
 - `GET /api/reports/monthly-projection` - Projected end-of-month totals based on current spending rate
+- `POST /api/reports/ai-analysis` - Start an asynchronous AI financial analysis job for a given date range (returns `jobId`)
+- `GET /api/reports/ai-analysis/{jobId}` - Check the status and retrieve the result of an AI analysis job
 
 ### Budget Templates (Protected)
 
@@ -477,6 +479,7 @@ Aggregate reports built directly on the transaction data:
 - **Category breakdown**: ranked spending/income by category for any date range.
 - **Month comparison**: compare totals for any month vs. the previous one.
 - **Monthly projection**: extrapolates end-of-month totals from the current daily spending rate.
+- **AI Asynchronous Analysis**: users can generate a deep analysis report of their transactions over a requested period using the `AiReportService`. The transactions are formatted as a CSV file and passed to Google Gemini AI as a multipart file attachment (Spring AI Media) instead of plain text, avoiding context prompt bloating. The endpoint returns a pending job ID that can be polled for the final markdown report.
 
 ### Budget Templates
 

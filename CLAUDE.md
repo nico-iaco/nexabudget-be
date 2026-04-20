@@ -47,6 +47,7 @@ Standard Spring Boot layered architecture: `controller` → `service` → `repos
 | **Google Gemini** | Transaction auto-categorization via `gemini-2.5-flash-lite`; embeddings via `gemini-embedding-001` |
 | **MongoDB Atlas** | Vector store for semantic caching of AI embeddings |
 | **Exchange Rate API** | Real-time currency conversion |
+| **Valkey/Redis** | Caching operations and jobs tracking temporary status |
 
 ## Databases
 
@@ -82,7 +83,7 @@ VIRTUAL_THREADS_ENABLED     # default: true
 - **Scheduling**: `@EnableScheduling` is on `AsyncConfig`. Budget template instantiation runs at `0 0 1 1 * ?` (1 AM on 1st of month). Budget alert checks run every hour (`fixedRate = 3_600_000`). Trash purge runs at `0 0 3 * * ?`.
 - **Budget templates**: `BudgetTemplate` entity with `RecurrenceType` (MONTHLY/QUARTERLY/YEARLY). Service creates `Budget` instances at the start of each period. `POST/GET/PUT/DELETE /api/budget-templates`.
 - **Budget alerts**: `BudgetAlert` entity stores per-budget threshold (1–100%). Scheduler checks hourly and sets `lastNotifiedAt` when threshold exceeded (24h cooldown). `POST/GET/PUT/DELETE /api/budget-alerts`.
-- **Financial reports**: `ReportService` uses JPQL `GROUP BY YEAR/MONTH` aggregate queries. Endpoints: `GET /api/reports/monthly-trend?months=12`, `/category-breakdown?type=&startDate=&endDate=`, `/month-comparison?year=&month=`, `/monthly-projection`.
+- **Financial reports**: `ReportService` uses JPQL `GROUP BY YEAR/MONTH` aggregate queries. Endpoints: `GET /api/reports/monthly-trend?months=12`, `/category-breakdown?type=&startDate=&endDate=`, `/month-comparison?year=&month=`, `/monthly-projection`. Nuova implementazione AI Asincrona tramite polling con timeout rate-limite a 1 Anno su endpoint in `AiReportService` (salvata in Valkey cache temporanea): `POST /api/reports/ai-analysis` e `GET /api/reports/ai-analysis/{jobId}`. Modello AI riceve CSV come allegato multipart reale (file `.csv` tramite Spring AI Media Attachment), non concatenato al testo del prompt. La chiamata è asincrona con generazione stato pending.
 - **Multi-currency transfers**: `TransactionService.createTransfer()` detects when source/destination account currencies differ, calls `ExchangeRateService.getRate()`, converts the amount, and stores `exchangeRate`, `originalCurrency`, `originalAmount` on the IN transaction.
 - **Audit log**: `AuditAspect` (`@Aspect @Component` in `config/`) intercepts service write methods via `@AfterReturning` and records to the `audit_logs` table via `AuditLogService`. User resolved from `SecurityContextHolder`; IP from `RequestContextHolder`. Endpoints: `GET /api/audit-log?page=0&size=20`, `GET /api/audit-log/{entityType}/{entityId}`.
 - **API Key auth**: `ApiKey` entity stores SHA-256 hash of the plaintext key (never stored plain). `ApiKeyAuthenticationFilter` reads `X-Api-Key` header, hashes it, looks up in DB, validates active + not expired, updates `lastUsedAt`. Filter runs before `JwtAuthenticationFilter`. Dual auth: JWT session OR API key. Endpoints: `POST/GET/PUT/DELETE /api/api-keys`. Key shown in plaintext **only** at creation.

@@ -28,8 +28,11 @@ public class CacheConfig {
         public static final String CRYPTO_PRICES_CACHE = "cryptoPrices";
         public static final String EXCHANGE_RATES_CACHE = "exchangeRates";
         public static final String PORTFOLIO_CACHE = "portfolio";
+        public static final String AI_REPORTS_CACHE = "aiReports";
+        public static final String AI_REPORTS_RESULTS_CACHE = "aiReportResults";
         public static final Duration CRYPTO_CACHE_TTL = Duration.ofMinutes(5);
         public static final Duration CACHE_TTL = Duration.ofHours(6);
+        public static final Duration AI_REPORT_RESULTS_TTL = Duration.ofDays(7);
 
         @Bean
         public CacheManager cacheManager(RedisConnectionFactory connectionFactory, ObjectMapper objectMapper) {
@@ -54,6 +57,8 @@ public class CacheConfig {
 
                 return RedisCacheManager.builder(connectionFactory)
                                 .cacheDefaults(config)
+                                .withCacheConfiguration(CRYPTO_PRICES_CACHE, config.entryTtl(CRYPTO_CACHE_TTL))
+                                .withCacheConfiguration(AI_REPORTS_RESULTS_CACHE, config.entryTtl(AI_REPORT_RESULTS_TTL))
                                 .build();
         }
 }
