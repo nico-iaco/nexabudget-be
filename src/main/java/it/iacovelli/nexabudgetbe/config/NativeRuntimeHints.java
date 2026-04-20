@@ -92,6 +92,23 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
             hints.reflection().registerType(dto, MemberCategory.values());
         }
 
+        // ─── Logging & Logback Appenders/Encoders ────────────────────────────────
+        List<String> loggingClasses = List.of(
+                "ch.qos.logback.core.ConsoleAppender",
+                "ch.qos.logback.core.rolling.RollingFileAppender",
+                "ch.qos.logback.classic.AsyncAppender",
+                "net.logstash.logback.encoder.LogstashEncoder",
+                "net.logstash.logback.stacktrace.ShortenedThrowableConverter",
+                "ch.qos.logback.core.status.OnConsoleStatusListener"
+        );
+        for (String className : loggingClasses) {
+            try {
+                hints.reflection().registerType(TypeReference.of(className), MemberCategory.values());
+            } catch (Exception e) {
+                log.warn("Could not register logging hint for {}: {}", className, e.getMessage());
+            }
+        }
+
         // ─── Apache Commons CSV ──────────────────────────────────────────────────
         // CSVFormat uses an internal Predicate via lambda — register the top-level class
         // and its nested Builder to avoid missing-method errors at runtime.
