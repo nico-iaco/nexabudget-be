@@ -16,6 +16,8 @@ import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.support.NoOpCacheManager;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -93,6 +95,10 @@ public class TestConfig {
 
     @Bean
     @Primary
+    public CacheManager cacheManager() {
+        return new NoOpCacheManager();
+    }
+
     public ExchangeRateService exchangeRateService() {
         ExchangeRateService mockService = Mockito.mock(ExchangeRateService.class);
         when(mockService.getRate(anyString(), anyString())).thenReturn(Optional.empty());
