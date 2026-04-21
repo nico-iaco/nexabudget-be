@@ -1,5 +1,7 @@
 package it.iacovelli.nexabudgetbe.dto;
 
+import it.iacovelli.nexabudgetbe.model.RecurrenceType;
+import it.iacovelli.nexabudgetbe.model.TransactionType;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -19,8 +21,8 @@ public class BudgetAlertDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class BudgetAlertRequest {
-        @NotNull(message = "Il budget è obbligatorio")
-        private UUID budgetId;
+        @NotNull(message = "Il template è obbligatorio")
+        private UUID templateId;
 
         @NotNull(message = "La soglia è obbligatoria")
         @Min(value = 1, message = "La soglia deve essere almeno 1%")
@@ -36,10 +38,12 @@ public class BudgetAlertDto {
     @AllArgsConstructor
     public static class BudgetAlertResponse {
         private UUID id;
-        private UUID budgetId;
+        private UUID templateId;
         private UUID categoryId;
         private String categoryName;
+        private TransactionType categoryType;
         private BigDecimal budgetLimit;
+        private RecurrenceType recurrenceType;
         private Integer thresholdPercentage;
         private Boolean active;
         private LocalDateTime lastNotifiedAt;

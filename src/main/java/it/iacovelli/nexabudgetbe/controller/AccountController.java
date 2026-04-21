@@ -110,12 +110,20 @@ public class AccountController {
     }
 
     @GetMapping("/total-balance")
-    @Operation(summary = "Saldo totale per valuta", description = "Calcola il saldo totale di tutti i conti per una data valuta")
+    @Operation(summary = "Saldo totale per valuta", description = "Calcola il saldo totale di tutti i conti per una data valuta (senza conversione)")
     public ResponseEntity<BigDecimal> getTotalBalance(
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "Valuta per il calcolo del saldo") @RequestParam String currency) {
 
         BigDecimal totalBalance = accountService.getTotalBalance(currentUser, currency);
+        return ResponseEntity.ok(totalBalance);
+    }
+
+    @GetMapping("/total-balance/preferred")
+    @Operation(summary = "Saldo totale convertito", description = "Calcola il saldo totale di tutti i conti convertiti nella valuta predefinita dell'utente")
+    public ResponseEntity<BigDecimal> getTotalConvertedBalance(@AuthenticationPrincipal User currentUser) {
+
+        BigDecimal totalBalance = accountService.getTotalConvertedBalance(currentUser);
         return ResponseEntity.ok(totalBalance);
     }
 

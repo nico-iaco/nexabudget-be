@@ -28,6 +28,9 @@ public class UserDto {
         @NotBlank(message = "Password è obbligatoria")
         @Size(min = 8, message = "Password deve essere almeno 8 caratteri")
         private String password;
+
+        @Size(min = 3, max = 3, message = "La valuta di default deve essere di 3 caratteri (es. EUR, USD)")
+        private String defaultCurrency;
     }
 
     @Data
@@ -38,6 +41,7 @@ public class UserDto {
         private UUID id;
         private String username;
         private String email;
+        private String defaultCurrency;
         private String createdAt;
         private String updatedAt;
     }
@@ -52,6 +56,9 @@ public class UserDto {
 
         @Email(message = "Email deve essere valida")
         private String email;
+
+        @Size(min = 3, max = 3, message = "La valuta di default deve essere di 3 caratteri (es. EUR, USD)")
+        private String defaultCurrency;
 
         @Size(min = 8, message = "Password deve essere almeno 8 caratteri")
         private String password;

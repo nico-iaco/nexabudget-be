@@ -293,7 +293,7 @@ The API provides the following endpoints:
 ### Users (Protected)
 
 - `GET /api/users/me` - Get current user profile
-- `PUT /api/users/me` - Update current user profile
+- `PUT /api/users/` - Update current user profile (partial update - only provided fields are changed)
 
 ### Accounts (Protected)
 
@@ -302,6 +302,7 @@ The API provides the following endpoints:
 - `GET /api/accounts/{id}` - Get account details
 - `PUT /api/accounts/{id}` - Update account
 - `DELETE /api/accounts/{id}` - Delete account
+- `GET /api/accounts/total-balance/preferred` - Get total balance of all accounts, converted to the user's preferred currency
 
 ### Transactions (Protected)
 

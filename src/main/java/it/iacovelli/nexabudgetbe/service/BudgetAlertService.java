@@ -2,6 +2,7 @@ package it.iacovelli.nexabudgetbe.service;
 
 import it.iacovelli.nexabudgetbe.model.Budget;
 import it.iacovelli.nexabudgetbe.model.BudgetAlert;
+import it.iacovelli.nexabudgetbe.model.BudgetTemplate;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.repository.BudgetAlertRepository;
 import it.iacovelli.nexabudgetbe.repository.BudgetRepository;
@@ -67,35 +68,36 @@ public class BudgetAlertService {
     }
 
     @Transactional
-    public void deleteAlertsByBudget(Budget budget) {
-        budgetAlertRepository.deleteByBudget(budget);
+    public void deleteAlertsByBudgetTemplate(BudgetTemplate template) {
+        budgetAlertRepository.deleteByBudgetTemplate(template);
     }
 
     /**
      * Checks active alerts every hour.
+     * For each alert, finds the currently active Budget for the linked template's user+category
+     * and compares spending against the threshold.
      */
     @Scheduled(fixedRate = 3_600_000)
     @Transactional
     public void checkAlerts() {
         LocalDate today = LocalDate.now();
-        LocalDate monthStart = today.withDayOfMonth(1);
-        LocalDate monthEnd = today.withDayOfMonth(today.lengthOfMonth());
 
         List<BudgetAlert> activeAlerts = budgetAlertRepository.findByActive(true);
         for (BudgetAlert alert : activeAlerts) {
-            Budget budget = alert.getBudget();
+            BudgetTemplate template = alert.getBudgetTemplate();
 
-            if (budget.getStartDate().isAfter(today) ||
-                    (budget.getEndDate() != null && budget.getEndDate().isBefore(today))) {
+            Optional<Budget> budgetOpt = budgetRepository.findActiveBudgetByUserAndCategoryAndDate(
+                    template.getUser(), template.getCategory(), today);
+
+            if (budgetOpt.isEmpty()) {
                 continue;
             }
 
-            LocalDate periodStart = budget.getStartDate().isAfter(monthStart) ? budget.getStartDate() : monthStart;
-            LocalDate periodEnd = budget.getEndDate() != null && budget.getEndDate().isBefore(monthEnd)
-                    ? budget.getEndDate() : monthEnd;
+            Budget budget = budgetOpt.get();
 
             BigDecimal spent = transactionRepository.sumOutByUserAndCategoryAndDateRange(
-                    budget.getUser(), budget.getCategory(), periodStart, periodEnd);
+                    budget.getUser(), budget.getCategory(), budget.getStartDate(),
+                    budget.getEndDate() != null ? budget.getEndDate() : today);
             if (spent == null) spent = BigDecimal.ZERO;
 
             if (budget.getBudgetLimit().compareTo(BigDecimal.ZERO) == 0) continue;
@@ -109,8 +111,8 @@ public class BudgetAlertService {
                     alert.setLastNotifiedAt(LocalDateTime.now());
                     budgetAlertRepository.save(alert);
                     logger.warn("Budget alert {}: utente={}, categoria='{}', utilizzo={:.1f}% (soglia {}%)",
-                            alert.getId(), budget.getUser().getId(),
-                            budget.getCategory().getName(), usagePercent, alert.getThresholdPercentage());
+                            alert.getId(), template.getUser().getId(),
+                            template.getCategory().getName(), usagePercent, alert.getThresholdPercentage());
                 }
             }
         }

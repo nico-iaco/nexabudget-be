@@ -8,6 +8,7 @@ import it.iacovelli.nexabudgetbe.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -26,18 +27,19 @@ public class UserController {
         this.userService = userService;
     }
 
-    @PutMapping("/{id}")
-    @Operation(summary = "Aggiorna utente", description = "Aggiorna i dati di un utente esistente (username, email, password)")
-    public ResponseEntity<UserDto.UserResponse> updateUser(@PathVariable UUID id,
+    @PutMapping("/")
+    @Operation(summary = "Aggiorna utente", description = "Aggiorna parzialmente i dati dell'utente loggato. Vengono aggiornati solo i campi presenti nella richiesta.")
+    public ResponseEntity<UserDto.UserResponse> updateUser(@AuthenticationPrincipal User currentUser,
                                                            @Valid @RequestBody UserDto.UpdateUserRequest updateRequest) {
-        User existingUser = userService.getUserById(id)
+        User existingUser = userService.getUserById(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
 
         User updatedUser = userService.updateUserProfile(
                 existingUser,
                 updateRequest.getUsername(),
                 updateRequest.getEmail(),
-                updateRequest.getPassword());
+                updateRequest.getPassword(),
+                updateRequest.getDefaultCurrency());
         return ResponseEntity.ok(mapUserToResponse(updatedUser));
     }
 
@@ -46,6 +48,7 @@ public class UserController {
                 .id(user.getId())
                 .username(user.getUsername())
                 .email(user.getEmail())
+                .defaultCurrency(user.getDefaultCurrency())
                 .createdAt(user.getCreatedAt() != null ? user.getCreatedAt().format(formatter) : null)
                 .updatedAt(user.getUpdatedAt() != null ? user.getUpdatedAt().format(formatter) : null)
                 .build();

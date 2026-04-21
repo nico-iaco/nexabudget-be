@@ -1,6 +1,7 @@
 package it.iacovelli.nexabudgetbe.service;
 
 import it.iacovelli.nexabudgetbe.model.*;
+import it.iacovelli.nexabudgetbe.repository.BudgetAlertRepository;
 import it.iacovelli.nexabudgetbe.repository.BudgetRepository;
 import it.iacovelli.nexabudgetbe.repository.BudgetTemplateRepository;
 import org.slf4j.Logger;
@@ -23,16 +24,23 @@ public class BudgetTemplateService {
 
     private final BudgetTemplateRepository budgetTemplateRepository;
     private final BudgetRepository budgetRepository;
+    private final BudgetAlertRepository budgetAlertRepository;
 
     public BudgetTemplateService(BudgetTemplateRepository budgetTemplateRepository,
-                                  BudgetRepository budgetRepository) {
+                                  BudgetRepository budgetRepository,
+                                  BudgetAlertRepository budgetAlertRepository) {
         this.budgetTemplateRepository = budgetTemplateRepository;
         this.budgetRepository = budgetRepository;
+        this.budgetAlertRepository = budgetAlertRepository;
     }
 
     @Transactional
     public BudgetTemplate createTemplate(BudgetTemplate template) {
-        return budgetTemplateRepository.save(template);
+        BudgetTemplate saved = budgetTemplateRepository.save(template);
+        if (Boolean.TRUE.equals(saved.getActive())) {
+            createBudgetForPeriod(saved, LocalDate.now());
+        }
+        return saved;
     }
 
     @Transactional(readOnly = true)
@@ -54,6 +62,7 @@ public class BudgetTemplateService {
     public void deleteTemplate(UUID id, User user) {
         BudgetTemplate template = budgetTemplateRepository.findByIdAndUser(id, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Template non trovato"));
+        budgetAlertRepository.deleteByBudgetTemplate(template);
         budgetTemplateRepository.delete(template);
     }
 
@@ -81,21 +90,25 @@ public class BudgetTemplateService {
 
     private void instantiateForType(RecurrenceType type, LocalDate today) {
         List<BudgetTemplate> templates = budgetTemplateRepository.findByActiveAndRecurrenceType(true, type);
-        LocalDate endDate = computeEndDate(type, today);
 
         for (BudgetTemplate template : templates) {
-            Budget budget = Budget.builder()
-                    .user(template.getUser())
-                    .category(template.getCategory())
-                    .budgetLimit(template.getBudgetLimit())
-                    .startDate(today)
-                    .endDate(endDate)
-                    .build();
-            budgetRepository.save(budget);
+            createBudgetForPeriod(template, today);
             logger.debug("Budget creato da template {} per utente {}", template.getId(), template.getUser().getId());
         }
 
         logger.info("Istanziati {} budget {} per {}", templates.size(), type, today);
+    }
+
+    private void createBudgetForPeriod(BudgetTemplate template, LocalDate startDate) {
+        LocalDate endDate = computeEndDate(template.getRecurrenceType(), startDate);
+        Budget budget = Budget.builder()
+                .user(template.getUser())
+                .category(template.getCategory())
+                .budgetLimit(template.getBudgetLimit())
+                .startDate(startDate)
+                .endDate(endDate)
+                .build();
+        budgetRepository.save(budget);
     }
 
     private LocalDate computeEndDate(RecurrenceType type, LocalDate start) {

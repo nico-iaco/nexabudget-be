@@ -233,7 +233,7 @@ class UserServiceTest {
 
         User created = userService.createUser(user);
 
-        User updated = userService.updateUserProfile(created, "updated", "updated@example.com", null);
+        User updated = userService.updateUserProfile(created, "updated", "updated@example.com", null, "USD");
 
         assertEquals("updated", updated.getUsername());
         assertEquals("updated@example.com", updated.getEmail());
@@ -250,7 +250,7 @@ class UserServiceTest {
         User created = userService.createUser(user);
         String oldHash = created.getPasswordHash();
 
-        User updated = userService.updateUserProfile(created, null, null, "newpassword");
+        User updated = userService.updateUserProfile(created, null, null, "newpassword", null);
 
         // La nuova hash deve essere diversa dalla vecchia e non uguale alla password in chiaro
         assertNotEquals(oldHash, updated.getPasswordHash());
@@ -269,7 +269,7 @@ class UserServiceTest {
 
         User created = userService.createUser(user);
 
-        User updated = userService.updateUserProfile(created, null, null, null);
+        User updated = userService.updateUserProfile(created, null, null, null, null);
 
         assertEquals("keepme", updated.getUsername());
         assertEquals("keepme@example.com", updated.getEmail());

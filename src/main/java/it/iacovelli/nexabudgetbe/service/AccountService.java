@@ -29,15 +29,18 @@ public class AccountService {
     private final TransactionService transactionService;
     private final GocardlessService gocardlessService;
     private final UserService userService;
+    private final CurrencyConversionService currencyConversionService;
 
     public AccountService(AccountRepository accountRepository,
                           TransactionService transactionService,
                           GocardlessService gocardlessService,
-                          UserService userService) {
+                          UserService userService,
+                          CurrencyConversionService currencyConversionService) {
         this.accountRepository = accountRepository;
         this.transactionService = transactionService;
         this.gocardlessService = gocardlessService;
         this.userService = userService;
+        this.currencyConversionService = currencyConversionService;
     }
 
     @Transactional
@@ -143,6 +146,22 @@ public class AccountService {
         for (Account account : accounts) {
             BigDecimal balance = transactionService.calculateBalanceForAccount(account);
             totalBalance = totalBalance.add(balance);
+        }
+
+        return totalBalance;
+    }
+
+    public BigDecimal getTotalConvertedBalance(User user) {
+        List<Account> accounts = accountRepository.findByUser(user);
+        BigDecimal totalBalance = BigDecimal.ZERO;
+        String defaultCurrency = user.getDefaultCurrency() != null ? user.getDefaultCurrency() : "EUR";
+
+        for (Account account : accounts) {
+            BigDecimal balance = transactionService.calculateBalanceForAccount(account);
+            if (balance.compareTo(BigDecimal.ZERO) != 0) {
+                BigDecimal convertedBalance = currencyConversionService.convert(balance, account.getCurrency(), defaultCurrency);
+                totalBalance = totalBalance.add(convertedBalance);
+            }
         }
 
         return totalBalance;

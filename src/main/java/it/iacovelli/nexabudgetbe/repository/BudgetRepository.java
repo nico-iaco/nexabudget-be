@@ -35,6 +35,9 @@ public interface BudgetRepository extends JpaRepository<Budget, UUID> {
     @Query("SELECT b FROM Budget b JOIN FETCH b.category WHERE b.user = :user AND b.startDate <= :date AND (b.endDate IS NULL OR b.endDate >= :date)")
     List<Budget> findActiveBudgetsByUserAndDate(@Param("user") User user, @Param("date") LocalDate date);
 
+    @Query("SELECT b FROM Budget b JOIN FETCH b.category WHERE b.user = :user AND b.category = :category AND b.startDate <= :date AND (b.endDate IS NULL OR b.endDate >= :date)")
+    Optional<Budget> findActiveBudgetByUserAndCategoryAndDate(@Param("user") User user, @Param("category") Category category, @Param("date") LocalDate date);
+
     @Query("SELECT b FROM Budget b JOIN FETCH b.category WHERE b.user = :user AND " +
             "((b.startDate BETWEEN :start AND :end) OR " +
             "(b.endDate BETWEEN :start AND :end) OR " +

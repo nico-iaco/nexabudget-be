@@ -67,7 +67,7 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    public User updateUserProfile(User existingUser, String newUsername, String newEmail, String rawPassword) {
+    public User updateUserProfile(User existingUser, String newUsername, String newEmail, String rawPassword, String defaultCurrency) {
         logger.info("Aggiornamento profilo utente: {} (ID: {})", existingUser.getUsername(), existingUser.getId());
         if (newUsername != null) {
             existingUser.setUsername(newUsername);
@@ -77,6 +77,9 @@ public class UserService {
         }
         if (rawPassword != null) {
             existingUser.setPasswordHash(passwordEncoder.encode(rawPassword));
+        }
+        if (defaultCurrency != null) {
+            existingUser.setDefaultCurrency(defaultCurrency.toUpperCase());
         }
         return userRepository.save(existingUser);
     }

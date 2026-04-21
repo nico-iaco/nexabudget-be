@@ -4,11 +4,11 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.BudgetAlertDto;
-import it.iacovelli.nexabudgetbe.model.Budget;
 import it.iacovelli.nexabudgetbe.model.BudgetAlert;
+import it.iacovelli.nexabudgetbe.model.BudgetTemplate;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.BudgetAlertService;
-import it.iacovelli.nexabudgetbe.service.BudgetService;
+import it.iacovelli.nexabudgetbe.service.BudgetTemplateService;
 import it.iacovelli.nexabudgetbe.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -22,33 +22,33 @@ import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/budget-alerts")
-@Tag(name = "Alert Budget", description = "Notifiche automatiche quando la spesa di un budget si avvicina al limite")
+@Tag(name = "Alert Budget", description = "Notifiche automatiche quando la spesa di un budget template si avvicina al limite")
 public class BudgetAlertController {
 
     private final BudgetAlertService budgetAlertService;
-    private final BudgetService budgetService;
+    private final BudgetTemplateService budgetTemplateService;
     private final UserService userService;
 
     public BudgetAlertController(BudgetAlertService budgetAlertService,
-                                  BudgetService budgetService,
+                                  BudgetTemplateService budgetTemplateService,
                                   UserService userService) {
         this.budgetAlertService = budgetAlertService;
-        this.budgetService = budgetService;
+        this.budgetTemplateService = budgetTemplateService;
         this.userService = userService;
     }
 
     @PostMapping
-    @Operation(summary = "Crea alert", description = "Crea un alert per un budget specifico")
+    @Operation(summary = "Crea alert", description = "Crea un alert per un budget template specifico")
     public ResponseEntity<BudgetAlertDto.BudgetAlertResponse> createAlert(
             @Valid @RequestBody BudgetAlertDto.BudgetAlertRequest request,
             @AuthenticationPrincipal User currentUser) {
 
         User user = resolveUser(currentUser);
-        Budget budget = budgetService.getBudgetByIdAndUserId(request.getBudgetId(), user.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget non trovato"));
+        BudgetTemplate template = budgetTemplateService.getTemplateByIdAndUser(request.getTemplateId(), user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Template non trovato"));
 
         BudgetAlert alert = BudgetAlert.builder()
-                .budget(budget)
+                .budgetTemplate(template)
                 .user(user)
                 .thresholdPercentage(request.getThresholdPercentage())
                 .active(request.getActive() != null ? request.getActive() : true)
@@ -90,10 +90,10 @@ public class BudgetAlertController {
         BudgetAlert existing = budgetAlertService.getAlertByIdAndUser(id, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Alert non trovato"));
 
-        Budget budget = budgetService.getBudgetByIdAndUserId(request.getBudgetId(), user.getId())
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget non trovato"));
+        BudgetTemplate template = budgetTemplateService.getTemplateByIdAndUser(request.getTemplateId(), user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Template non trovato"));
 
-        existing.setBudget(budget);
+        existing.setBudgetTemplate(template);
         existing.setThresholdPercentage(request.getThresholdPercentage());
         if (request.getActive() != null) existing.setActive(request.getActive());
 
@@ -118,13 +118,15 @@ public class BudgetAlertController {
     }
 
     private BudgetAlertDto.BudgetAlertResponse mapToResponse(BudgetAlert alert) {
-        Budget budget = alert.getBudget();
+        BudgetTemplate template = alert.getBudgetTemplate();
         return BudgetAlertDto.BudgetAlertResponse.builder()
                 .id(alert.getId())
-                .budgetId(budget.getId())
-                .categoryId(budget.getCategory() != null ? budget.getCategory().getId() : null)
-                .categoryName(budget.getCategory() != null ? budget.getCategory().getName() : null)
-                .budgetLimit(budget.getBudgetLimit())
+                .templateId(template.getId())
+                .categoryId(template.getCategory() != null ? template.getCategory().getId() : null)
+                .categoryName(template.getCategory() != null ? template.getCategory().getName() : null)
+                .categoryType(template.getCategory() != null ? template.getCategory().getTransactionType() : null)
+                .budgetLimit(template.getBudgetLimit())
+                .recurrenceType(template.getRecurrenceType())
                 .thresholdPercentage(alert.getThresholdPercentage())
                 .active(alert.getActive())
                 .lastNotifiedAt(alert.getLastNotifiedAt())

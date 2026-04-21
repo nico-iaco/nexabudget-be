@@ -51,6 +51,7 @@ public class AuthService {
                     .token(token)
                     .userId(userDetails.getId())
                     .username(userDetails.getUsername())
+                    .defaultCurrency(userDetails.getDefaultCurrency())
                     .build();
         } catch (Exception e) {
             logger.warn("Login fallito per l'utente: {}, motivo: {}", loginRequest.getUsername(), e.getMessage());
@@ -67,6 +68,7 @@ public class AuthService {
                     .username(userRequest.getUsername())
                     .email(userRequest.getEmail())
                     .passwordHash(userRequest.getPassword())
+                    .defaultCurrency(userRequest.getDefaultCurrency() != null ? userRequest.getDefaultCurrency().toUpperCase() : "EUR")
                     .build();
 
             User savedUser = userService.createUser(user);
@@ -79,6 +81,7 @@ public class AuthService {
                     .token(token)
                     .userId(savedUser.getId())
                     .username(savedUser.getUsername())
+                    .defaultCurrency(savedUser.getDefaultCurrency())
                     .build();
         } catch (Exception e) {
             logger.error("Errore durante la registrazione dell'utente: {}, motivo: {}", 

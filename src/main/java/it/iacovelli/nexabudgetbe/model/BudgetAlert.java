@@ -20,8 +20,8 @@ public class BudgetAlert {
     private UUID id;
 
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "budget_id", nullable = false)
-    private Budget budget;
+    @JoinColumn(name = "budget_template_id", nullable = false)
+    private BudgetTemplate budgetTemplate;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id", nullable = false)

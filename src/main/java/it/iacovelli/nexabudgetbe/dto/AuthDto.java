@@ -30,5 +30,6 @@ public class AuthDto {
         private String token;
         private UUID userId;
         private String username;
+        private String defaultCurrency;
     }
 }
