@@ -8,7 +8,7 @@ patches:
 configMapGenerator:
   - name: nexabudget-be-config
     literals:
-      - spring.profiles.active=prod
+      - SPRING_PROFILES_ACTIVE=prod
       - spring.datasource.url=jdbc:postgresql://nexabudget-db:5432/nexabudget
       - spring.datasource.username=${DB_USERNAME}
 
