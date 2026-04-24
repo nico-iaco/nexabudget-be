@@ -1,5 +1,6 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import it.iacovelli.nexabudgetbe.dto.BudgetAlertEmailContext;
 import it.iacovelli.nexabudgetbe.model.Budget;
 import it.iacovelli.nexabudgetbe.model.BudgetAlert;
 import it.iacovelli.nexabudgetbe.model.User;
@@ -29,37 +30,46 @@ public class EmailService {
     private String fromEmail;
 
     @Async
-    public void sendBudgetAlertEmail(User user, BudgetAlert alert, Budget budget, BigDecimal usagePercent) {
+    public void sendBudgetAlertEmail(BudgetAlertEmailContext context) {
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
             helper.setFrom(fromEmail);
-            helper.setTo(user.getEmail());
-            helper.setSubject("⚠️ Avviso Budget: Hai superato la soglia per " + budget.getCategory().getName());
+            helper.setTo(context.getUserEmail());
+            
+            String sanitizedCategory = context.getCategoryName()
+                .replaceAll("[\\r\\n]+", " ")
+                .trim();
+            if (sanitizedCategory.length() > 50) {
+                sanitizedCategory = sanitizedCategory.substring(0, 47) + "...";
+            }
+            
+            helper.setSubject("⚠️ Avviso Budget: Hai superato la soglia per " + sanitizedCategory);
 
-            String htmlContent = generateBudgetAlertHtml(user, alert, budget, usagePercent);
+            String htmlContent = generateBudgetAlertHtml(context);
             helper.setText(htmlContent, true);
 
             mailSender.send(message);
-            log.info("Email di avviso budget inviata con successo a {} per la categoria {}", user.getEmail(), budget.getCategory().getName());
+            log.info("Email di avviso budget inviata con successo a {} per la categoria {}", context.getUserEmail(), context.getCategoryName());
         } catch (MessagingException e) {
-            log.error("Errore durante l'invio dell'email di avviso budget a {} per la categoria {}", user.getEmail(), budget.getCategory().getName(), e);
+            log.error("Errore durante l'invio dell'email di avviso budget a {}: {}", context.getUserEmail(), e.getMessage());
         } catch (Exception e) {
-            log.error("Errore imprevisto durante l'invio dell'email di avviso budget a {} per la categoria {}", user.getEmail(), budget.getCategory().getName(), e);
+            log.error("Errore imprevisto durante l'invio dell'email: {}", e.getMessage());
         }
     }
 
-    private String generateBudgetAlertHtml(User user, BudgetAlert alert, Budget budget, BigDecimal usagePercent) {
+    private String generateBudgetAlertHtml(BudgetAlertEmailContext context) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
-        String period = budget.getEndDate() != null ? 
-            String.format("dal %s al %s", budget.getStartDate().format(formatter), budget.getEndDate().format(formatter)) :
-            String.format("a partire dal %s", budget.getStartDate().format(formatter));
+        String period = context.getEndDate() != null ? 
+            String.format("dal %s al %s", context.getStartDate().format(formatter), context.getEndDate().format(formatter)) :
+            String.format("a partire dal %s", context.getStartDate().format(formatter));
 
-        String currency = user.getDefaultCurrency();
+        String currency = context.getCurrency();
         
-        String escapedUsername = HtmlUtils.htmlEscape(user.getUsername());
-        String escapedCategoryName = HtmlUtils.htmlEscape(budget.getCategory().getName());
+        String escapedUsername = HtmlUtils.htmlEscape(context.getUsername());
+        String escapedCategoryName = HtmlUtils.htmlEscape(context.getCategoryName());
+        String escapedCurrency = HtmlUtils.htmlEscape(currency);
         
         return String.format("""
             <!DOCTYPE html>
@@ -95,10 +105,10 @@ public class EmailService {
             escapedUsername,
             escapedCategoryName,
             period,
-            alert.getThresholdPercentage(),
-            usagePercent.setScale(1, RoundingMode.HALF_UP).toString(),
-            budget.getBudgetLimit().setScale(2, RoundingMode.HALF_UP).toString(),
-            currency
+            context.getThresholdPercentage(),
+            context.getUsagePercent().setScale(1, RoundingMode.HALF_UP).toString(),
+            context.getBudgetLimit().setScale(2, RoundingMode.HALF_UP).toString(),
+            escapedCurrency
         );
     }
 }

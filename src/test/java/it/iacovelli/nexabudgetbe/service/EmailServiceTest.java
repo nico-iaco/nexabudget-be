@@ -1,5 +1,6 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import it.iacovelli.nexabudgetbe.dto.BudgetAlertEmailContext;
 import it.iacovelli.nexabudgetbe.model.*;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -38,33 +39,22 @@ class EmailServiceTest {
     @Test
     void sendBudgetAlertEmail_ShouldSendEmail() {
         // Given
-        User user = User.builder()
+        BudgetAlertEmailContext context = BudgetAlertEmailContext.builder()
+                .userEmail("test@example.com")
                 .username("testuser")
-                .email("test@example.com")
-                .defaultCurrency("EUR")
-                .build();
-
-        Category category = Category.builder()
-                .name("Alimentari")
-                .build();
-
-        Budget budget = Budget.builder()
-                .category(category)
+                .categoryName("Alimentari")
                 .budgetLimit(new BigDecimal("500.00"))
+                .currency("EUR")
                 .startDate(LocalDate.now().withDayOfMonth(1))
                 .endDate(LocalDate.now().withDayOfMonth(28))
-                .build();
-
-        BudgetAlert alert = BudgetAlert.builder()
                 .thresholdPercentage(80)
+                .usagePercent(new BigDecimal("85.5"))
                 .build();
-
-        BigDecimal usagePercent = new BigDecimal("85.5");
 
         when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
 
         // When
-        emailService.sendBudgetAlertEmail(user, alert, budget, usagePercent);
+        emailService.sendBudgetAlertEmail(context);
 
         // Then
         verify(mailSender, times(1)).createMimeMessage();
@@ -74,19 +64,20 @@ class EmailServiceTest {
     @Test
     void sendBudgetAlertEmail_WhenMailSenderFails_ShouldLogAndNotThrow() {
         // Given
-        User user = User.builder().username("testuser").email("test@example.com").build();
-        Category category = Category.builder().name("Test").build();
-        Budget budget = Budget.builder()
-                .category(category)
+        BudgetAlertEmailContext context = BudgetAlertEmailContext.builder()
+                .userEmail("test@example.com")
+                .username("testuser")
+                .categoryName("Test")
                 .budgetLimit(BigDecimal.TEN)
                 .startDate(LocalDate.now())
+                .thresholdPercentage(50)
+                .usagePercent(BigDecimal.valueOf(60))
                 .build();
-        BudgetAlert alert = BudgetAlert.builder().thresholdPercentage(50).build();
         
         when(mailSender.createMimeMessage()).thenThrow(new RuntimeException("Mail server down"));
 
         // When & Then
-        emailService.sendBudgetAlertEmail(user, alert, budget, BigDecimal.valueOf(60));
+        emailService.sendBudgetAlertEmail(context);
         
         verify(mailSender, never()).send(any(MimeMessage.class));
     }

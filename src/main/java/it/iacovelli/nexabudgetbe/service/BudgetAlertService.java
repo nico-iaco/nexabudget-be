@@ -1,5 +1,6 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import it.iacovelli.nexabudgetbe.dto.BudgetAlertEmailContext;
 import it.iacovelli.nexabudgetbe.model.Budget;
 import it.iacovelli.nexabudgetbe.model.BudgetAlert;
 import it.iacovelli.nexabudgetbe.model.BudgetTemplate;
@@ -116,8 +117,21 @@ public class BudgetAlertService {
                             alert.getId(), template.getUser().getId(),
                             template.getCategory().getName(), usagePercent, alert.getThresholdPercentage());
 
+                    // Create DTO to avoid LazyInitializationException in Async thread
+                    BudgetAlertEmailContext emailContext = BudgetAlertEmailContext.builder()
+                            .userEmail(template.getUser().getEmail())
+                            .username(template.getUser().getUsername())
+                            .categoryName(template.getCategory().getName())
+                            .budgetLimit(budget.getBudgetLimit())
+                            .currency(template.getUser().getDefaultCurrency())
+                            .startDate(budget.getStartDate())
+                            .endDate(budget.getEndDate())
+                            .thresholdPercentage(alert.getThresholdPercentage())
+                            .usagePercent(BigDecimal.valueOf(usagePercent))
+                            .build();
+
                     // Send email notification (Async)
-                    emailService.sendBudgetAlertEmail(template.getUser(), alert, budget, BigDecimal.valueOf(usagePercent));
+                    emailService.sendBudgetAlertEmail(emailContext);
                     
                     // Update notification timestamp after trigger
                     alert.setLastNotifiedAt(LocalDateTime.now());
