@@ -44,9 +44,9 @@ public class EmailService {
             mailSender.send(message);
             log.info("Email di avviso budget inviata con successo a {} per la categoria {}", user.getEmail(), budget.getCategory().getName());
         } catch (MessagingException e) {
-            log.error("Errore durante l'invio dell'email di avviso budget a {}: {}", user.getEmail(), e.getMessage());
+            log.error("Errore durante l'invio dell'email di avviso budget a {} per la categoria {}", user.getEmail(), budget.getCategory().getName(), e);
         } catch (Exception e) {
-            log.error("Errore imprevisto durante l'invio dell'email: {}", e.getMessage());
+            log.error("Errore imprevisto durante l'invio dell'email di avviso budget a {} per la categoria {}", user.getEmail(), budget.getCategory().getName(), e);
         }
     }
 
@@ -64,7 +64,7 @@ public class EmailService {
         return String.format("""
             <!DOCTYPE html>
             <html>
-            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333 text-align: left;">
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; text-align: left;">
                 <div style="max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
                     <h2 style="color: #d9534f;">⚠️ Avviso Superamento Budget</h2>
                     <p>Ciao <strong>%s</strong>,</p>
