@@ -31,13 +31,16 @@ public class BudgetAlertService {
     private final BudgetAlertRepository budgetAlertRepository;
     private final BudgetRepository budgetRepository;
     private final TransactionRepository transactionRepository;
+    private final EmailService emailService;
 
     public BudgetAlertService(BudgetAlertRepository budgetAlertRepository,
                                BudgetRepository budgetRepository,
-                               TransactionRepository transactionRepository) {
+                               TransactionRepository transactionRepository,
+                               EmailService emailService) {
         this.budgetAlertRepository = budgetAlertRepository;
         this.budgetRepository = budgetRepository;
         this.transactionRepository = transactionRepository;
+        this.emailService = emailService;
     }
 
     @Transactional
@@ -113,6 +116,9 @@ public class BudgetAlertService {
                     logger.warn("Budget alert {}: utente={}, categoria='{}', utilizzo={:.1f}% (soglia {}%)",
                             alert.getId(), template.getUser().getId(),
                             template.getCategory().getName(), usagePercent, alert.getThresholdPercentage());
+
+                    // Send email notification
+                    emailService.sendBudgetAlertEmail(template.getUser(), alert, budget, BigDecimal.valueOf(usagePercent));
                 }
             }
         }
