@@ -72,11 +72,15 @@ class EmailServiceTest {
     }
 
     @Test
-    void sendBudgetAlertEmail_WhenMessagingException_ShouldLogAndNotThrow() {
+    void sendBudgetAlertEmail_WhenMailSenderFails_ShouldLogAndNotThrow() {
         // Given
-        User user = User.builder().email("test@example.com").build();
+        User user = User.builder().username("testuser").email("test@example.com").build();
         Category category = Category.builder().name("Test").build();
-        Budget budget = Budget.builder().category(category).budgetLimit(BigDecimal.TEN).startDate(LocalDate.now()).build();
+        Budget budget = Budget.builder()
+                .category(category)
+                .budgetLimit(BigDecimal.TEN)
+                .startDate(LocalDate.now())
+                .build();
         BudgetAlert alert = BudgetAlert.builder().thresholdPercentage(50).build();
         
         when(mailSender.createMimeMessage()).thenThrow(new RuntimeException("Mail server down"));

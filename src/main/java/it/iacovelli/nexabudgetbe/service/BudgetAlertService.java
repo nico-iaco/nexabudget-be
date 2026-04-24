@@ -111,14 +111,17 @@ public class BudgetAlertService {
             if (usagePercent >= alert.getThresholdPercentage()) {
                 if (alert.getLastNotifiedAt() == null ||
                         alert.getLastNotifiedAt().isBefore(LocalDateTime.now().minusHours(24))) {
-                    alert.setLastNotifiedAt(LocalDateTime.now());
-                    budgetAlertRepository.save(alert);
+                    
                     logger.warn("Budget alert {}: utente={}, categoria='{}', utilizzo={:.1f}% (soglia {}%)",
                             alert.getId(), template.getUser().getId(),
                             template.getCategory().getName(), usagePercent, alert.getThresholdPercentage());
 
-                    // Send email notification
+                    // Send email notification (Async)
                     emailService.sendBudgetAlertEmail(template.getUser(), alert, budget, BigDecimal.valueOf(usagePercent));
+                    
+                    // Update notification timestamp after trigger
+                    alert.setLastNotifiedAt(LocalDateTime.now());
+                    budgetAlertRepository.save(alert);
                 }
             }
         }

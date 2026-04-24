@@ -10,7 +10,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.web.util.HtmlUtils;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -26,6 +28,7 @@ public class EmailService {
     @Value("${app.mail.from:noreply@nexabudget.it}")
     private String fromEmail;
 
+    @Async
     public void sendBudgetAlertEmail(User user, BudgetAlert alert, Budget budget, BigDecimal usagePercent) {
         try {
             MimeMessage message = mailSender.createMimeMessage();
@@ -54,6 +57,9 @@ public class EmailService {
             String.format("a partire dal %s", budget.getStartDate().format(formatter));
 
         String currency = user.getDefaultCurrency();
+        
+        String escapedUsername = HtmlUtils.htmlEscape(user.getUsername());
+        String escapedCategoryName = HtmlUtils.htmlEscape(budget.getCategory().getName());
         
         return String.format("""
             <!DOCTYPE html>
@@ -86,8 +92,8 @@ public class EmailService {
             </body>
             </html>
             """, 
-            user.getUsername(),
-            budget.getCategory().getName(),
+            escapedUsername,
+            escapedCategoryName,
             period,
             alert.getThresholdPercentage(),
             usagePercent.setScale(1, RoundingMode.HALF_UP).toString(),
