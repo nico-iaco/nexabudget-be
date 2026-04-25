@@ -490,9 +490,11 @@ Define recurring budget templates (`MONTHLY`, `QUARTERLY`, `YEARLY`) that automa
 - Quarterly templates fire on the **1st of January, April, July, October**.
 - Yearly templates fire on **January 1st**.
 
+Creating or updating a template **during the month** immediately creates or updates the current period's budget with `startDate` set to the **1st of the current month**, so all transactions from the start of the month are included in threshold calculations.
+
 ### Budget Alerts
 
-Set percentage-based thresholds on any budget. An hourly scheduler checks all active alerts and logs a warning when `spent / limit ≥ thresholdPercentage`. Alerts suppress repeated notifications within a **24-hour cooldown window**.
+Set percentage-based thresholds on any budget. An hourly scheduler checks all active alerts and sends an HTML email notification when `spent / limit ≥ thresholdPercentage`. Each alert fires **at most once per budget period**: a notification is suppressed if `lastNotifiedAt ≥ budget.startDate`, so the alert resets automatically when the next period's budget is created.
 
 ### Multi-Currency Transfers
 
@@ -594,6 +596,13 @@ The application supports compilation to a native executable using GraalVM, provi
 | `JWT_SECRET`                    | JWT signing secret (min 32 chars, must not equal dev default) | **Yes** | — (app fails to start without it) |
 | `app.jwtExpirationInMs`         | JWT token expiration time in milliseconds   | No       | 86400000 (24 hours)                                            |
 | `gocardless.integrator.baseUrl` | GoCardless integrator service URL           | No       | <http://localhost:3000>                                          |
+| `SMTP_HOST`                     | SMTP server hostname                        | No       | localhost (Mailhog in dev)                                     |
+| `SMTP_PORT`                     | SMTP server port                            | No       | 1025 (Mailhog in dev)                                          |
+| `SMTP_USER`                     | SMTP username                               | Yes (prod) | -                                                            |
+| `SMTP_PWD`                      | SMTP password                               | Yes (prod) | -                                                            |
+| `SMTP_AUTH`                     | Enable SMTP authentication                  | No       | false (set to `true` for Gmail/real SMTP)                      |
+| `SMTP_STARTTLS`                 | Enable STARTTLS                             | No       | false (set to `true` for Gmail/real SMTP)                      |
+| `MAIL_FROM`                     | Sender address for email notifications      | No       | noreply@nexabudget.it                                          |
 
 ## Development
 
