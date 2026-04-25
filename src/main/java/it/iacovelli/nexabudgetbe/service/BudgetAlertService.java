@@ -127,8 +127,9 @@ public class BudgetAlertService {
                     String.format("%.1f", usagePercent), alert.getThresholdPercentage());
 
             if (usagePercent >= alert.getThresholdPercentage()) {
-                if (alert.getLastNotifiedAt() == null ||
-                        alert.getLastNotifiedAt().isBefore(LocalDateTime.now().minusHours(24))) {
+                boolean alreadyNotifiedThisPeriod = alert.getLastNotifiedAt() != null &&
+                        !alert.getLastNotifiedAt().isBefore(budget.getStartDate().atStartOfDay());
+                if (!alreadyNotifiedThisPeriod) {
 
                     logger.warn("[BudgetAlert] SOGLIA SUPERATA - invio notifica email a {} per categoria='{}' ({}% >= {}%)",
                             userEmail, categoryName,
@@ -154,7 +155,7 @@ public class BudgetAlertService {
                     alert.setLastNotifiedAt(LocalDateTime.now());
                     budgetAlertRepository.save(alert);
                 } else {
-                    logger.info("[BudgetAlert] Alert {}: soglia superata ma cooldown attivo (ultima notifica: {})",
+                    logger.info("[BudgetAlert] Alert {}: soglia superata ma già notificato per questo periodo (ultima notifica: {})",
                             alert.getId(), alert.getLastNotifiedAt());
                 }
             } else {
