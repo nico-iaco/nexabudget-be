@@ -55,10 +55,10 @@ public class EmailService {
                     context.getUserEmail(), context.getCategoryName());
             return true;
         } catch (MessagingException e) {
-            log.error("[EmailService] Errore durante l'invio dell'email a {}: {}", context.getUserEmail(), e.getMessage());
+            log.error("[EmailService] Errore MessagingException per {}: {}", context.getUserEmail(), e.getMessage(), e);
             return false;
         } catch (Exception e) {
-            log.error("[EmailService] Errore imprevisto durante l'invio dell'email a {}: {}", context.getUserEmail(), e.getMessage());
+            log.error("[EmailService] Errore imprevisto per {}: {}", context.getUserEmail(), e.getMessage(), e);
             return false;
         }
     }
