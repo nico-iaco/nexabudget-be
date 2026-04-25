@@ -11,7 +11,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.HtmlUtils;
 
@@ -29,8 +28,7 @@ public class EmailService {
     @Value("${app.mail.from:noreply@nexabudget.it}")
     private String fromEmail;
 
-    @Async
-    public void sendBudgetAlertEmail(BudgetAlertEmailContext context) {
+    public boolean sendBudgetAlertEmail(BudgetAlertEmailContext context) {
         log.info("[EmailService] Tentativo invio email budget alert a {} per categoria '{}'",
                 context.getUserEmail(), context.getCategoryName());
         try {
@@ -39,25 +37,29 @@ public class EmailService {
 
             helper.setFrom(fromEmail);
             helper.setTo(context.getUserEmail());
-            
+
             String sanitizedCategory = context.getCategoryName()
                 .replaceAll("[\\r\\n]+", " ")
                 .trim();
             if (sanitizedCategory.length() > 50) {
                 sanitizedCategory = sanitizedCategory.substring(0, 47) + "...";
             }
-            
+
             helper.setSubject("⚠️ Avviso Budget: Hai superato la soglia per " + sanitizedCategory);
 
             String htmlContent = generateBudgetAlertHtml(context);
             helper.setText(htmlContent, true);
 
             mailSender.send(message);
-            log.info("Email di avviso budget inviata con successo a {} per la categoria {}", context.getUserEmail(), context.getCategoryName());
+            log.info("[EmailService] Email inviata con successo a {} per la categoria '{}'",
+                    context.getUserEmail(), context.getCategoryName());
+            return true;
         } catch (MessagingException e) {
-            log.error("Errore durante l'invio dell'email di avviso budget a {}: {}", context.getUserEmail(), e.getMessage());
+            log.error("[EmailService] Errore durante l'invio dell'email a {}: {}", context.getUserEmail(), e.getMessage());
+            return false;
         } catch (Exception e) {
-            log.error("Errore imprevisto durante l'invio dell'email: {}", e.getMessage());
+            log.error("[EmailService] Errore imprevisto durante l'invio dell'email a {}: {}", context.getUserEmail(), e.getMessage());
+            return false;
         }
     }
 

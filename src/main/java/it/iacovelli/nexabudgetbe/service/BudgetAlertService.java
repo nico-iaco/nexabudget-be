@@ -148,12 +148,14 @@ public class BudgetAlertService {
                             .usagePercent(BigDecimal.valueOf(usagePercent))
                             .build();
 
-                    // Send email notification (Async)
-                    emailService.sendBudgetAlertEmail(emailContext);
-
-                    // Update notification timestamp after trigger
-                    alert.setLastNotifiedAt(LocalDateTime.now());
-                    budgetAlertRepository.save(alert);
+                    boolean sent = emailService.sendBudgetAlertEmail(emailContext);
+                    if (sent) {
+                        alert.setLastNotifiedAt(LocalDateTime.now());
+                        budgetAlertRepository.save(alert);
+                    } else {
+                        logger.warn("[BudgetAlert] Alert {}: invio email fallito, lastNotifiedAt non aggiornato — verrà ritentato al prossimo check",
+                                alert.getId());
+                    }
                 } else {
                     logger.info("[BudgetAlert] Alert {}: soglia superata ma già notificato per questo periodo (ultima notifica: {})",
                             alert.getId(), alert.getLastNotifiedAt());
