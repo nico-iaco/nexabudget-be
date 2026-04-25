@@ -31,6 +31,8 @@ public class EmailService {
 
     @Async
     public void sendBudgetAlertEmail(BudgetAlertEmailContext context) {
+        log.info("[EmailService] Tentativo invio email budget alert a {} per categoria '{}'",
+                context.getUserEmail(), context.getCategoryName());
         try {
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
