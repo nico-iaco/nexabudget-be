@@ -172,36 +172,35 @@ class AiCategorizationServiceTest {
         assertEquals("Trasporti", result.get().getName());
     }
 
-    // ─── AI: risposta normalizzata (accenti) ─────────────────────────────────────
+    // ─── AI: risposta con accento diverso non matcha (serve nome esatto) ──────────
 
     @Test
-    void aiResponseWithDifferentAccents_stillMatches() {
+    void aiResponseWithDifferentAccents_doesNotMatch() {
         Category salute = Category.builder().id(UUID.randomUUID()).name("Salute e Farmacìa").transactionType(TransactionType.OUT).build();
         when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
                 .thenReturn(List.of(salute));
         when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("Salute e Farmacia"); // senza accento
+                .thenReturn("Salute e Farmacia"); // senza accento — non corrisponde esattamente
 
         Optional<Category> result = service.categorizeTransaction("FARMACIA CENTRALE", user, TransactionType.OUT);
 
-        assertTrue(result.isPresent());
+        assertFalse(result.isPresent());
     }
 
-    // ─── AI: containment match ────────────────────────────────────────────────────
+    // ─── AI: risposta parziale non matcha (serve nome esatto) ────────────────────
 
     @Test
-    void aiReturnsPartialName_matchesByContainment() {
+    void aiReturnsPartialName_doesNotMatch() {
         when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
                 .thenReturn(List.of(alimentari)); // "Alimentari e Supermercati"
         when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("Alimentari"); // partial
+                .thenReturn("Alimentari"); // parziale — non corrisponde esattamente
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
 
-        assertTrue(result.isPresent());
-        assertEquals("Alimentari e Supermercati", result.get().getName());
+        assertFalse(result.isPresent());
     }
 
     // ─── AI: NONE e risposta non matchante ──────────────────────────────────────
