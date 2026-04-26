@@ -148,6 +148,52 @@ public class BudgetController {
         return ResponseEntity.ok(response);
     }
 
+    @GetMapping("/monthly-summary")
+    @Operation(summary = "Riepilogo mensile budget", description = "Tabella dashboard: budget attivi del mese con transazioni di categoria, residuo e percentuale di utilizzo")
+    public ResponseEntity<List<BudgetDto.MonthlySummaryResponse>> getBudgetMonthlySummary(
+            @AuthenticationPrincipal User currentUser,
+            @Parameter(description = "Data di riferimento (ISO yyyy-MM-dd), default oggi") @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate date) {
+
+        User user = userService.getUserById(currentUser.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
+
+        LocalDate targetDate = date != null ? date : LocalDate.now();
+        LocalDate periodStart = targetDate.withDayOfMonth(1);
+        LocalDate periodEnd = targetDate.withDayOfMonth(targetDate.lengthOfMonth());
+
+        Map<Budget, BigDecimal> budgetUsage = budgetService.getBudgetUsage(user, targetDate);
+
+        List<BudgetDto.MonthlySummaryResponse> response = budgetUsage.entrySet().stream()
+                .map(entry -> {
+                    Budget budget = entry.getKey();
+                    BigDecimal spent = entry.getValue();
+                    BigDecimal remaining = budget.getBudgetLimit().subtract(spent);
+                    double percentageUsed = budget.getBudgetLimit().compareTo(BigDecimal.ZERO) == 0
+                            ? 0.0
+                            : spent.multiply(BigDecimal.valueOf(100))
+                                    .divide(budget.getBudgetLimit(), 2, RoundingMode.HALF_UP)
+                                    .doubleValue();
+
+                    return BudgetDto.MonthlySummaryResponse.builder()
+                            .budgetId(budget.getId())
+                            .categoryId(budget.getCategory().getId())
+                            .categoryName(budget.getCategory().getName())
+                            .categoryType(budget.getCategory().getTransactionType())
+                            .limit(budget.getBudgetLimit())
+                            .spent(spent)
+                            .remaining(remaining)
+                            .percentageUsed(percentageUsed)
+                            .budgetStartDate(budget.getStartDate())
+                            .budgetEndDate(budget.getEndDate())
+                            .periodStart(periodStart)
+                            .periodEnd(periodEnd)
+                            .build();
+                })
+                .collect(Collectors.toList());
+
+        return ResponseEntity.ok(response);
+    }
+
     @GetMapping("/remaining")
     @Operation(summary = "Residuo budgets", description = "Residuo dei budgets attivi alla data (oggi se omessa)")
     public ResponseEntity<List<BudgetDto.UsageResponse>> getRemainingBudgets(

@@ -58,4 +58,23 @@ public class BudgetDto {
         private BigDecimal remaining;
         private double percentageUsed;
     }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class MonthlySummaryResponse {
+        private UUID budgetId;
+        private UUID categoryId;
+        private String categoryName;
+        private TransactionType categoryType;
+        private BigDecimal limit;
+        private BigDecimal spent;
+        private BigDecimal remaining;
+        private double percentageUsed;
+        private LocalDate budgetStartDate;
+        private LocalDate budgetEndDate;
+        private LocalDate periodStart;
+        private LocalDate periodEnd;
+    }
 }
