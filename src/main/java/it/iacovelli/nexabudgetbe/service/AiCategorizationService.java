@@ -66,8 +66,8 @@ public class AiCategorizationService {
                     .getOutput()
                     .getText();
 
-            String aiResponse = raw != null ? raw.trim() : NONE;
-            aiResponse = aiResponse.replaceAll("[*_`\"']+", "").trim();
+            String rawResponse = raw != null ? raw.trim() : NONE;
+            String aiResponse = rawResponse.replaceAll("[*_`\"']+", "").trim();
 
             log.debug("Risposta AI per '{}': '{}'", description, aiResponse);
 
