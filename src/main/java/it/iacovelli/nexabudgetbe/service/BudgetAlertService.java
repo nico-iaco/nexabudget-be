@@ -1,5 +1,6 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import it.iacovelli.nexabudgetbe.dto.BudgetAlertEmailContext;
 import it.iacovelli.nexabudgetbe.model.Budget;
 import it.iacovelli.nexabudgetbe.model.BudgetAlert;
 import it.iacovelli.nexabudgetbe.model.BudgetTemplate;
@@ -31,13 +32,16 @@ public class BudgetAlertService {
     private final BudgetAlertRepository budgetAlertRepository;
     private final BudgetRepository budgetRepository;
     private final TransactionRepository transactionRepository;
+    private final EmailService emailService;
 
     public BudgetAlertService(BudgetAlertRepository budgetAlertRepository,
                                BudgetRepository budgetRepository,
-                               TransactionRepository transactionRepository) {
+                               TransactionRepository transactionRepository,
+                               EmailService emailService) {
         this.budgetAlertRepository = budgetAlertRepository;
         this.budgetRepository = budgetRepository;
         this.transactionRepository = transactionRepository;
+        this.emailService = emailService;
     }
 
     @Transactional
@@ -81,15 +85,25 @@ public class BudgetAlertService {
     @Transactional
     public void checkAlerts() {
         LocalDate today = LocalDate.now();
+        logger.info("[BudgetAlert] Avvio controllo alert budget - data odierna: {}", today);
 
         List<BudgetAlert> activeAlerts = budgetAlertRepository.findByActive(true);
+        logger.info("[BudgetAlert] Alert attivi trovati: {}", activeAlerts.size());
+
         for (BudgetAlert alert : activeAlerts) {
             BudgetTemplate template = alert.getBudgetTemplate();
+            String categoryName = template.getCategory().getName();
+            String userEmail = template.getUser().getEmail();
+
+            logger.debug("[BudgetAlert] Controllo alert {} - utente={}, categoria='{}', soglia={}%",
+                    alert.getId(), userEmail, categoryName, alert.getThresholdPercentage());
 
             Optional<Budget> budgetOpt = budgetRepository.findActiveBudgetByUserAndCategoryAndDate(
                     template.getUser(), template.getCategory(), today);
 
             if (budgetOpt.isEmpty()) {
+                logger.info("[BudgetAlert] Alert {}: nessun budget attivo trovato per utente={}, categoria='{}'",
+                        alert.getId(), userEmail, categoryName);
                 continue;
             }
 
@@ -100,21 +114,57 @@ public class BudgetAlertService {
                     budget.getEndDate() != null ? budget.getEndDate() : today);
             if (spent == null) spent = BigDecimal.ZERO;
 
-            if (budget.getBudgetLimit().compareTo(BigDecimal.ZERO) == 0) continue;
+            if (budget.getBudgetLimit().compareTo(BigDecimal.ZERO) == 0) {
+                logger.warn("[BudgetAlert] Alert {}: limite budget è 0 per categoria='{}', skip", alert.getId(), categoryName);
+                continue;
+            }
 
             double usagePercent = spent.divide(budget.getBudgetLimit(), 4, RoundingMode.HALF_UP)
                     .multiply(BigDecimal.valueOf(100)).doubleValue();
 
+            logger.info("[BudgetAlert] Alert {}: utente={}, categoria='{}', utilizzo={}% (soglia {}%)",
+                    alert.getId(), userEmail, categoryName,
+                    String.format("%.1f", usagePercent), alert.getThresholdPercentage());
+
             if (usagePercent >= alert.getThresholdPercentage()) {
-                if (alert.getLastNotifiedAt() == null ||
-                        alert.getLastNotifiedAt().isBefore(LocalDateTime.now().minusHours(24))) {
-                    alert.setLastNotifiedAt(LocalDateTime.now());
-                    budgetAlertRepository.save(alert);
-                    logger.warn("Budget alert {}: utente={}, categoria='{}', utilizzo={:.1f}% (soglia {}%)",
-                            alert.getId(), template.getUser().getId(),
-                            template.getCategory().getName(), usagePercent, alert.getThresholdPercentage());
+                boolean alreadyNotifiedThisPeriod = alert.getLastNotifiedAt() != null &&
+                        !alert.getLastNotifiedAt().isBefore(budget.getStartDate().atStartOfDay());
+                if (!alreadyNotifiedThisPeriod) {
+
+                    logger.warn("[BudgetAlert] SOGLIA SUPERATA - invio notifica email a {} per categoria='{}' ({}% >= {}%)",
+                            userEmail, categoryName,
+                            String.format("%.1f", usagePercent), alert.getThresholdPercentage());
+
+                    // Create DTO to avoid LazyInitializationException in Async thread
+                    BudgetAlertEmailContext emailContext = BudgetAlertEmailContext.builder()
+                            .userEmail(userEmail)
+                            .username(template.getUser().getUsername())
+                            .categoryName(categoryName)
+                            .budgetLimit(budget.getBudgetLimit())
+                            .currency(template.getUser().getDefaultCurrency())
+                            .startDate(budget.getStartDate())
+                            .endDate(budget.getEndDate())
+                            .thresholdPercentage(alert.getThresholdPercentage())
+                            .usagePercent(BigDecimal.valueOf(usagePercent))
+                            .build();
+
+                    boolean sent = emailService.sendBudgetAlertEmail(emailContext);
+                    if (sent) {
+                        alert.setLastNotifiedAt(LocalDateTime.now());
+                        budgetAlertRepository.save(alert);
+                    } else {
+                        logger.warn("[BudgetAlert] Alert {}: invio email fallito, lastNotifiedAt non aggiornato — verrà ritentato al prossimo check",
+                                alert.getId());
+                    }
+                } else {
+                    logger.info("[BudgetAlert] Alert {}: soglia superata ma già notificato per questo periodo (ultima notifica: {})",
+                            alert.getId(), alert.getLastNotifiedAt());
                 }
+            } else {
+                logger.debug("[BudgetAlert] Alert {}: utilizzo sotto soglia, nessuna notifica", alert.getId());
             }
         }
+
+        logger.info("[BudgetAlert] Controllo alert completato");
     }
 }

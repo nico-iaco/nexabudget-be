@@ -26,6 +26,7 @@ public interface BudgetAlertRepository extends JpaRepository<BudgetAlert, UUID> 
     @Query("""
             SELECT DISTINCT ba FROM BudgetAlert ba
             JOIN FETCH ba.budgetTemplate bt
+            JOIN FETCH bt.user
             JOIN FETCH bt.category
             WHERE ba.active = :active
             """)

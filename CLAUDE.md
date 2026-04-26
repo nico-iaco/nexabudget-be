@@ -48,6 +48,7 @@ Standard Spring Boot layered architecture: `controller` → `service` → `repos
 | **MongoDB Atlas** | Vector store for semantic caching of AI embeddings |
 | **Exchange Rate API** | Real-time currency conversion |
 | **Valkey/Redis** | Caching operations and jobs tracking temporary status |
+| **Spring Mail** | Budget alert notifications via SMTP |
 
 ## Databases
 
@@ -67,6 +68,9 @@ REDIS_HOST, REDIS_PORT
 REDIS_USERNAME, REDIS_PASSWORD  # optional
 REDIS_SSL_ENABLED           # default: false
 VIRTUAL_THREADS_ENABLED     # default: true
+SMTP_HOST, SMTP_PORT        # optional, defaults for dev
+SMTP_USER, SMTP_PWD         # required in prod
+MAIL_FROM                   # optional, default: noreply@nexabudget.it
 ```
 
 ## Security & Validation Behaviours
@@ -81,9 +85,10 @@ VIRTUAL_THREADS_ENABLED     # default: true
 - **Soft delete**: `Transaction` and `Account` use `@SQLRestriction("deleted = false")`. DELETE endpoints now soft-delete (set `deleted=true, deleted_at=now`). Hard delete never happens via normal endpoints. All `@Modifying` native queries use `clearAutomatically = true, flushAutomatically = true` to keep the Hibernate L1 cache consistent. `TransactionRepository.hardDeleteAll()` and `AccountRepository.hardDeleteAll()` exist for test teardown only.
 - **Trash recovery**: `GET /api/trash/transactions`, `GET /api/trash/accounts`, `POST /api/trash/{type}/{id}/restore`. `TrashService.purgeExpiredItems()` hard-deletes items older than 30 days (cron `0 0 3 * * ?`).
 - **Scheduling**: `@EnableScheduling` is on `AsyncConfig`. Budget template instantiation runs at `0 0 1 1 * ?` (1 AM on 1st of month). Budget alert checks run every hour (`fixedRate = 3_600_000`). Trash purge runs at `0 0 3 * * ?`.
-- **Budget templates**: `BudgetTemplate` entity with `RecurrenceType` (MONTHLY/QUARTERLY/YEARLY). Service creates `Budget` instances at the start of each period. `POST/GET/PUT/DELETE /api/budget-templates`.
-- **Budget alerts**: `BudgetAlert` entity stores per-budget threshold (1–100%). Scheduler checks hourly and sets `lastNotifiedAt` when threshold exceeded (24h cooldown). `POST/GET/PUT/DELETE /api/budget-alerts`.
+- **Budget templates**: `BudgetTemplate` entity with `RecurrenceType` (MONTHLY/QUARTERLY/YEARLY). `createTemplate()` and `updateTemplate()` always set `startDate = first day of current month` via `upsertCurrentPeriodBudget()` — if an active budget already exists for that user+category it is updated in-place, otherwise a new one is created. The cron job `instantiateTemplates()` at `0 0 1 1 * ?` handles future months. `POST/GET/PUT/DELETE /api/budget-templates`.
+- **Budget alerts**: `BudgetAlert` entity stores per-budget threshold (1–100%). Scheduler checks hourly. Notification is sent **once per budget period**: the cooldown check compares `lastNotifiedAt` against `budget.startDate` (not a fixed 24h window) — if `lastNotifiedAt >= startDate` the alert is already consumed for that period. `POST/GET/PUT/DELETE /api/budget-alerts`. Email HTML via `EmailService` (async). Logs prefixed `[BudgetAlert]` trace every step: alerts found, budget missing, usage %, threshold crossed, cooldown active.
 - **Financial reports**: `ReportService` uses JPQL `GROUP BY YEAR/MONTH` aggregate queries. Endpoints: `GET /api/reports/monthly-trend?months=12`, `/category-breakdown?type=&startDate=&endDate=`, `/month-comparison?year=&month=`, `/monthly-projection`. Nuova implementazione AI Asincrona tramite polling con timeout rate-limite a 1 Anno su endpoint in `AiReportService` (salvata in Valkey cache temporanea): `POST /api/reports/ai-analysis` e `GET /api/reports/ai-analysis/{jobId}`. Modello AI riceve CSV come allegato multipart reale (file `.csv` tramite Spring AI Media Attachment), non concatenato al testo del prompt. La chiamata è asincrona con generazione stato pending.
+- **Email Notifications**: `EmailService` gestisce l'invio di email SMTP. In dev usa Mailhog (localhost:1025). Le email usano template HTML inline. Errori nell'invio vengono loggati ma non bloccano i processi chiamanti.
 - **Multi-currency transfers**: `TransactionService.createTransfer()` detects when source/destination account currencies differ, calls `ExchangeRateService.getRate()`, converts the amount, and stores `exchangeRate`, `originalCurrency`, `originalAmount` on the IN transaction. `AccountService.getTotalConvertedBalance()` aggregates the user's balances by converting via `CurrencyConversionService` to the user's `defaultCurrency`.
 - **Audit log**: `AuditAspect` (`@Aspect @Component` in `config/`) intercepts service write methods via `@AfterReturning` and records to the `audit_logs` table via `AuditLogService`. User resolved from `SecurityContextHolder`; IP from `RequestContextHolder`. Endpoints: `GET /api/audit-log?page=0&size=20`, `GET /api/audit-log/{entityType}/{entityId}`.
 - **API Key auth**: `ApiKey` entity stores SHA-256 hash of the plaintext key (never stored plain). `ApiKeyAuthenticationFilter` reads `X-Api-Key` header, hashes it, looks up in DB, validates active + not expired, updates `lastUsedAt`. Filter runs before `JwtAuthenticationFilter`. Dual auth: JWT session OR API key. Endpoints: `POST/GET/PUT/DELETE /api/api-keys`. Key shown in plaintext **only** at creation.

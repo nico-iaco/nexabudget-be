@@ -38,7 +38,7 @@ public class BudgetTemplateService {
     public BudgetTemplate createTemplate(BudgetTemplate template) {
         BudgetTemplate saved = budgetTemplateRepository.save(template);
         if (Boolean.TRUE.equals(saved.getActive())) {
-            createBudgetForPeriod(saved, LocalDate.now());
+            createBudgetForPeriod(saved, LocalDate.now().withDayOfMonth(1));
         }
         return saved;
     }
@@ -55,7 +55,12 @@ public class BudgetTemplateService {
 
     @Transactional
     public BudgetTemplate updateTemplate(BudgetTemplate template) {
-        return budgetTemplateRepository.save(template);
+        BudgetTemplate saved = budgetTemplateRepository.save(template);
+        if (Boolean.TRUE.equals(saved.getActive())) {
+            LocalDate firstOfMonth = LocalDate.now().withDayOfMonth(1);
+            upsertCurrentPeriodBudget(saved, firstOfMonth);
+        }
+        return saved;
     }
 
     @Transactional
@@ -97,6 +102,21 @@ public class BudgetTemplateService {
         }
 
         logger.info("Istanziati {} budget {} per {}", templates.size(), type, today);
+    }
+
+    private void upsertCurrentPeriodBudget(BudgetTemplate template, LocalDate startDate) {
+        LocalDate endDate = computeEndDate(template.getRecurrenceType(), startDate);
+        Optional<Budget> existing = budgetRepository.findActiveBudgetByUserAndCategoryAndDate(
+                template.getUser(), template.getCategory(), LocalDate.now());
+        if (existing.isPresent()) {
+            Budget budget = existing.get();
+            budget.setStartDate(startDate);
+            budget.setEndDate(endDate);
+            budget.setBudgetLimit(template.getBudgetLimit());
+            budgetRepository.save(budget);
+        } else {
+            createBudgetForPeriod(template, startDate);
+        }
     }
 
     private void createBudgetForPeriod(BudgetTemplate template, LocalDate startDate) {
