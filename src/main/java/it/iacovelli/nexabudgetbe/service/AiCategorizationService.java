@@ -11,7 +11,6 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.HttpServerErrorException;
 
-import java.text.Normalizer;
 import java.util.List;
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -53,7 +52,9 @@ public class AiCategorizationService {
         if (cached.isPresent()) {
             String cachedName = cached.get();
             log.debug("Cache hit per '{}': '{}'", description, cachedName);
-            return matchCategory(cachedName, availableCategories);
+            return availableCategories.stream()
+                    .filter(c -> c.getName().equalsIgnoreCase(cachedName))
+                    .findFirst();
         }
 
         // 2. Chiamata AI
@@ -66,8 +67,6 @@ public class AiCategorizationService {
                     .getText();
 
             String aiResponse = raw != null ? raw.trim() : NONE;
-
-            // Gemini può rispondere con markdown bold (**Nome**) o virgolette — puliamo
             aiResponse = aiResponse.replaceAll("[*_`\"']+", "").trim();
 
             log.debug("Risposta AI per '{}': '{}'", description, aiResponse);
@@ -77,14 +76,15 @@ public class AiCategorizationService {
                 return Optional.empty();
             }
 
-            Optional<Category> matched = matchCategory(aiResponse, availableCategories);
+            Optional<Category> matched = availableCategories.stream()
+                    .filter(c -> c.getName().equalsIgnoreCase(aiResponse))
+                    .findFirst();
 
-            // Salva in cache solo se la risposta corrisponde a una categoria reale
             if (matched.isPresent()) {
                 semanticCacheService.saveToCache(description, matched.get().getName(), user.getId(), type);
                 log.info("Transazione '{}' categorizzata come '{}' (AI)", description, matched.get().getName());
             } else {
-                log.debug("Risposta AI '{}' non corrisponde a nessuna categoria per '{}'", aiResponse, description);
+                log.warn("Risposta AI '{}' non corrisponde a nessuna categoria per '{}'", aiResponse, description);
             }
 
             return matched;
@@ -109,42 +109,6 @@ public class AiCategorizationService {
         semanticCacheService.saveToCache(description, newCategory.getName(), user.getId(), type);
     }
 
-    /**
-     * Cerca la categoria con strategia a cascata:
-     * 1. Corrispondenza esatta case-insensitive
-     * 2. Corrispondenza dopo normalizzazione (accenti, spazi multipli)
-     * 3. La risposta AI è contenuta nel nome categoria o viceversa
-     */
-    private Optional<Category> matchCategory(String aiResponse, List<Category> categories) {
-        // 1. Exact case-insensitive
-        Optional<Category> exact = categories.stream()
-                .filter(c -> c.getName().equalsIgnoreCase(aiResponse))
-                .findFirst();
-        if (exact.isPresent()) return exact;
-
-        // 2. Normalizzato (rimuove accenti, collassa spazi)
-        String normalizedResponse = normalize(aiResponse);
-        Optional<Category> normalized = categories.stream()
-                .filter(c -> normalize(c.getName()).equalsIgnoreCase(normalizedResponse))
-                .findFirst();
-        if (normalized.isPresent()) return normalized;
-
-        // 3. Containment (gestisce prefissi o risposte parziali dell'AI)
-        return categories.stream()
-                .filter(c -> normalize(c.getName()).contains(normalizedResponse)
-                        || normalizedResponse.contains(normalize(c.getName())))
-                .findFirst();
-    }
-
-    private String normalize(String s) {
-        if (s == null) return "";
-        String decomposed = Normalizer.normalize(s, Normalizer.Form.NFD);
-        return decomposed.replaceAll("\\p{M}", "")   // rimuove diacritici
-                         .replaceAll("\\s+", " ")
-                         .trim()
-                         .toLowerCase();
-    }
-
     private String buildPrompt(String description, List<Category> categories, TransactionType type) {
         String typeLabel = type == TransactionType.OUT ? "USCITA (spesa)" : "ENTRATA (accredito)";
         String categoryList = categories.stream()
@@ -152,28 +116,22 @@ public class AiCategorizationService {
                 .collect(Collectors.joining("\n- ", "- ", ""));
 
         return """
-                Sei un classificatore di transazioni bancarie italiane. Assegna la transazione alla categoria più appropriata.
+                Sei un classificatore di transazioni bancarie italiane.
 
-                REGOLE:
-                - Rispondi SOLO con il nome esatto di una categoria dalla lista
-                - Se nessuna categoria è adatta, rispondi esattamente: NONE
-                - Nessuna spiegazione, punteggiatura o testo aggiuntivo
+                REGOLE OBBLIGATORIE:
+                - Rispondi SOLO con il nome ESATTO di una delle categorie elencate sotto
+                - NON inventare categorie nuove o simili
+                - Se nessuna categoria è adatta alla transazione, rispondi esattamente: NONE
+                - Nessuna spiegazione, punteggiatura aggiuntiva o testo extra
+                - In caso di dubbio, preferisci NONE a una categoria sbagliata
 
-                ESEMPI:
-                Tipo: USCITA (spesa) | Descrizione: "ESSELUNGA SPA" → Alimentari e Supermercati
-                Tipo: USCITA (spesa) | Descrizione: "NETFLIX.COM" → Abbonamenti
-                Tipo: USCITA (spesa) | Descrizione: "Q8 CARBURANTE" → Trasporti
-                Tipo: ENTRATA (accredito) | Descrizione: "BONIFICO STIPENDIO" → Stipendio
-                Tipo: USCITA (spesa) | Descrizione: "FARMACIA CENTRALE" → Salute e Farmacia
-                Tipo: USCITA (spesa) | Descrizione: "RISTORANTE DA MARIO" → Ristoranti e Bar
+                CATEGORIE DISPONIBILI (scegli solo da questa lista):
+                %s
 
-                ---
+                TRANSAZIONE DA CLASSIFICARE:
                 Tipo: %s
                 Descrizione: "%s"
 
-                Categorie disponibili:
-                %s
-
-                Categoria:""".formatted(typeLabel, description, categoryList);
+                Categoria:""".formatted(categoryList, typeLabel, description);
     }
 }
