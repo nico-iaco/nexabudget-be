@@ -130,8 +130,20 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
        @Query(value = "DELETE FROM transactions", nativeQuery = true)
        void hardDeleteAll();
 
-       @Query(value = "SELECT * FROM transactions WHERE user_id = :userId AND deleted = true ORDER BY deleted_at DESC", nativeQuery = true)
-       List<Transaction> findDeletedByUserId(@Param("userId") UUID userId);
+       @Query(value = """
+                     SELECT t.id, t.account_id, a.name AS account_name,
+                            t.category_id, c.name AS category_name,
+                            t.amount, t.type, t.description,
+                            t.transaction_date AS date, t.note, t.transfer_id,
+                            t.exchange_rate, t.original_currency, t.original_amount,
+                            t.deleted_at
+                     FROM transactions t
+                     LEFT JOIN accounts a ON t.account_id = a.id
+                     LEFT JOIN categories c ON t.category_id = c.id
+                     WHERE t.user_id = :userId AND t.deleted = true
+                     ORDER BY t.deleted_at DESC
+                     """, nativeQuery = true)
+       List<TrashTransactionView> findDeletedByUserId(@Param("userId") UUID userId);
 
        @Query(value = "SELECT * FROM transactions WHERE id = :id AND user_id = :userId AND deleted = true", nativeQuery = true)
        Optional<Transaction> findDeletedByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);

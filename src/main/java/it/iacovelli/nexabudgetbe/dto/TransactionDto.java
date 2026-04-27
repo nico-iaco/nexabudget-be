@@ -12,6 +12,7 @@ import lombok.NoArgsConstructor;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.UUID;
 
 public class TransactionDto {
@@ -99,5 +100,6 @@ public class TransactionDto {
         private BigDecimal exchangeRate;
         private String originalCurrency;
         private BigDecimal originalAmount;
+        private LocalDateTime deletedAt;
     }
 }

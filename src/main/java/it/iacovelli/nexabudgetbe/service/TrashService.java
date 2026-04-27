@@ -1,9 +1,9 @@
 package it.iacovelli.nexabudgetbe.service;
 
 import it.iacovelli.nexabudgetbe.model.Account;
-import it.iacovelli.nexabudgetbe.model.Transaction;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.repository.AccountRepository;
+import it.iacovelli.nexabudgetbe.repository.TrashTransactionView;
 import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,7 +32,7 @@ public class TrashService {
     }
 
     @Transactional(readOnly = true)
-    public List<Transaction> getDeletedTransactions(User user) {
+    public List<TrashTransactionView> getDeletedTransactions(User user) {
         return transactionRepository.findDeletedByUserId(user.getId());
     }
 

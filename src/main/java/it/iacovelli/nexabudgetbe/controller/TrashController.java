@@ -6,8 +6,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.AccountDto;
 import it.iacovelli.nexabudgetbe.dto.TransactionDto;
 import it.iacovelli.nexabudgetbe.model.Account;
-import it.iacovelli.nexabudgetbe.model.Transaction;
+import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
+import it.iacovelli.nexabudgetbe.repository.TrashTransactionView;
 import it.iacovelli.nexabudgetbe.service.TrashService;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -31,20 +32,24 @@ public class TrashController {
     @Operation(summary = "Transazioni nel cestino", description = "Elenco delle transazioni soft-eliminate recuperabili")
     public ResponseEntity<List<TransactionDto.TransactionResponse>> getDeletedTransactions(
             @AuthenticationPrincipal User currentUser) {
-        List<Transaction> deleted = trashService.getDeletedTransactions(currentUser);
+        List<TrashTransactionView> deleted = trashService.getDeletedTransactions(currentUser);
         List<TransactionDto.TransactionResponse> response = deleted.stream()
                 .map(t -> TransactionDto.TransactionResponse.builder()
                         .id(t.getId())
-                        .accountId(t.getAccount() != null ? t.getAccount().getId() : null)
-                        .accountName(t.getAccount() != null ? t.getAccount().getName() : null)
-                        .categoryId(t.getCategory() != null ? t.getCategory().getId() : null)
-                        .categoryName(t.getCategory() != null ? t.getCategory().getName() : null)
+                        .accountId(t.getAccountId())
+                        .accountName(t.getAccountName())
+                        .categoryId(t.getCategoryId())
+                        .categoryName(t.getCategoryName())
                         .amount(t.getAmount())
-                        .type(t.getType())
+                        .type(t.getType() != null ? TransactionType.valueOf(t.getType()) : null)
                         .description(t.getDescription())
                         .date(t.getDate())
                         .note(t.getNote())
                         .transferId(t.getTransferId())
+                        .exchangeRate(t.getExchangeRate())
+                        .originalCurrency(t.getOriginalCurrency())
+                        .originalAmount(t.getOriginalAmount())
+                        .deletedAt(t.getDeletedAt())
                         .build())
                 .toList();
         return ResponseEntity.ok(response);
