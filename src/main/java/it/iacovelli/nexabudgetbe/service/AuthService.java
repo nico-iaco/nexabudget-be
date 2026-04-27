@@ -51,6 +51,7 @@ public class AuthService {
                     .token(token)
                     .userId(userDetails.getId())
                     .username(userDetails.getUsername())
+                    .email(userDetails.getEmail())
                     .defaultCurrency(userDetails.getDefaultCurrency())
                     .build();
         } catch (Exception e) {
@@ -81,6 +82,7 @@ public class AuthService {
                     .token(token)
                     .userId(savedUser.getId())
                     .username(savedUser.getUsername())
+                    .email(savedUser.getEmail())
                     .defaultCurrency(savedUser.getDefaultCurrency())
                     .build();
         } catch (Exception e) {
