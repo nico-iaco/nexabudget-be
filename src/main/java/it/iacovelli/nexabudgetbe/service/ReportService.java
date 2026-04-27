@@ -55,8 +55,15 @@ public class ReportService {
     @Transactional(readOnly = true)
     public ReportDto.CategoryBreakdownResponse getCategoryBreakdown(User user, LocalDate startDate, LocalDate endDate) {
         List<Object[]> rows = transactionRepository.findCategoryNetBreakdown(user, startDate, endDate);
-        BigDecimal grandTotal = rows.stream()
-                .map(r -> ((BigDecimal) r[2]).abs())
+
+        BigDecimal outGroupTotal = rows.stream()
+                .map(r -> (BigDecimal) r[2])
+                .filter(n -> n.compareTo(BigDecimal.ZERO) > 0)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal inGroupTotal = rows.stream()
+                .map(r -> (BigDecimal) r[2])
+                .filter(n -> n.compareTo(BigDecimal.ZERO) < 0)
+                .map(BigDecimal::abs)
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         List<ReportDto.CategoryBreakdownItem> categories = rows.stream()
@@ -64,9 +71,10 @@ public class ReportService {
                     UUID catId = r[0] != null ? UUID.fromString(r[0].toString()) : null;
                     String catName = r[1] != null ? r[1].toString() : "Senza categoria";
                     BigDecimal net = (BigDecimal) r[2];
-                    double percentage = grandTotal.compareTo(BigDecimal.ZERO) == 0 ? 0.0
-                            : net.abs().divide(grandTotal, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).doubleValue();
                     TransactionType inferredType = net.compareTo(BigDecimal.ZERO) > 0 ? TransactionType.OUT : TransactionType.IN;
+                    BigDecimal groupTotal = inferredType == TransactionType.OUT ? outGroupTotal : inGroupTotal;
+                    double percentage = groupTotal.compareTo(BigDecimal.ZERO) == 0 ? 0.0
+                            : net.abs().divide(groupTotal, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).doubleValue();
                     return ReportDto.CategoryBreakdownItem.builder()
                             .categoryId(catId).categoryName(catName)
                             .net(net.abs()).percentage(percentage).inferredType(inferredType)
@@ -76,7 +84,7 @@ public class ReportService {
 
         return ReportDto.CategoryBreakdownResponse.builder()
                 .startDate(startDate).endDate(endDate)
-                .grandTotal(grandTotal).categories(categories)
+                .grandTotal(outGroupTotal.add(inGroupTotal)).categories(categories)
                 .build();
     }
 
