@@ -66,10 +66,10 @@ public class ReportService {
                     BigDecimal net = (BigDecimal) r[2];
                     double percentage = grandTotal.compareTo(BigDecimal.ZERO) == 0 ? 0.0
                             : net.abs().divide(grandTotal, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).doubleValue();
-                    TransactionType inferredType = net.compareTo(BigDecimal.ZERO) > 0 ? TransactionType.IN : TransactionType.OUT;
+                    TransactionType inferredType = net.compareTo(BigDecimal.ZERO) > 0 ? TransactionType.OUT : TransactionType.IN;
                     return ReportDto.CategoryBreakdownItem.builder()
                             .categoryId(catId).categoryName(catName)
-                            .net(net).percentage(percentage).inferredType(inferredType)
+                            .net(net.abs()).percentage(percentage).inferredType(inferredType)
                             .build();
                 })
                 .toList();
