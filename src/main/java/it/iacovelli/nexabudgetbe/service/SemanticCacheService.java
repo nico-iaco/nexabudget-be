@@ -1,6 +1,5 @@
 package it.iacovelli.nexabudgetbe.service;
 
-import it.iacovelli.nexabudgetbe.model.TransactionType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.document.Document;
@@ -27,13 +26,9 @@ public class SemanticCacheService {
         this.vectorStore = vectorStore;
     }
 
-    /**
-     * Cerca una risposta semanticamente simile nella cache, filtrata per utente e tipo transazione.
-     */
-    public Optional<String> findSimilar(String description, UUID userId, TransactionType type) {
+    public Optional<String> findSimilar(String description, UUID userId) {
         try {
-            String filter = "userId == '%s' && transactionType == '%s'"
-                    .formatted(userId.toString(), type.name());
+            String filter = "userId == '%s'".formatted(userId.toString());
 
             List<Document> results = vectorStore.similaritySearch(
                     SearchRequest.builder()
@@ -61,21 +56,17 @@ public class SemanticCacheService {
         }
     }
 
-    /**
-     * Salva una coppia descrizione/categoria in cache, con scope utente e tipo.
-     */
-    public void saveToCache(String description, String categoryName, UUID userId, TransactionType type) {
+    public void saveToCache(String description, String categoryName, UUID userId) {
         try {
             Document document = Document.builder()
                     .text(description)
                     .metadata(Map.of(
                             "category", categoryName,
-                            "userId", userId.toString(),
-                            "transactionType", type.name()
+                            "userId", userId.toString()
                     ))
                     .build();
             vectorStore.add(List.of(document));
-            log.debug("Cache salvata: '{}' → '{}' (user={}, type={})", description, categoryName, userId, type);
+            log.debug("Cache salvata: '{}' → '{}' (user={})", description, categoryName, userId);
         } catch (Exception e) {
             log.warn("Errore salvataggio cache semantica: {}", e.getMessage());
         }

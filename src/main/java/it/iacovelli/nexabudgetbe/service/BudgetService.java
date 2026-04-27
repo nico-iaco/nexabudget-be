@@ -89,7 +89,7 @@ public class BudgetService {
 
         for (Budget budget : activeBudgets) {
             Category category = budget.getCategory();
-            BigDecimal spent = transactionRepository.sumOutByUserAndCategoryAndDateRange(
+            BigDecimal spent = transactionRepository.sumNetByUserAndCategoryAndDateRange(
                     user, category, startOfMonth, endOfMonth);
             budgetUsage.put(budget, spent != null ? spent : BigDecimal.ZERO);
         }

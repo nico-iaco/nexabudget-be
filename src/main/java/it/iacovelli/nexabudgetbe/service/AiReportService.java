@@ -149,34 +149,38 @@ public class AiReportService {
     private String buildAdditionalContext(User user, LocalDate startDate, LocalDate endDate) {
         StringBuilder sb = new StringBuilder();
         try {
-            var outBreakdown = reportService.getCategoryBreakdown(user, TransactionType.OUT, startDate, endDate);
-            var inBreakdown = reportService.getCategoryBreakdown(user, TransactionType.IN, startDate, endDate);
-            
-            // 0. Riepilogo Totale Periodo
-            BigDecimal totalIn = inBreakdown.getGrandTotal();
-            BigDecimal totalOut = outBreakdown.getGrandTotal();
+            var breakdown = reportService.getCategoryBreakdown(user, startDate, endDate);
+
+            BigDecimal totalOut = breakdown.getCategories().stream()
+                    .filter(c -> c.getInferredType() == TransactionType.OUT)
+                    .map(c -> c.getNet().abs())
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal totalIn = breakdown.getCategories().stream()
+                    .filter(c -> c.getInferredType() == TransactionType.IN)
+                    .map(c -> c.getNet().abs())
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
             BigDecimal netBalance = totalIn.subtract(totalOut);
-            
+
             sb.append("--- RIEPILOGO TOTALE PERIODO (").append(startDate).append(" al ").append(endDate).append(") ---\n");
             sb.append("Entrate Totali: ").append(totalIn).append(" EUR\n");
             sb.append("Uscite Totali: ").append(totalOut).append(" EUR\n");
             sb.append("Saldo Netto del Periodo: ").append(netBalance).append(" EUR\n\n");
 
-            // 1. Category Breakdown (Expenses)
             sb.append("--- RIEPILOGO USCITE PER CATEGORIA NEL PERIODO ---\n");
-            sb.append("Totale Uscite: ").append(outBreakdown.getGrandTotal()).append(" EUR\n");
-            for (var cat : outBreakdown.getCategories()) {
-                sb.append("- ").append(cat.getCategoryName()).append(": ").append(cat.getTotal())
-                  .append(" EUR (").append(String.format(java.util.Locale.US, "%.2f", cat.getPercentage())).append("%)\n");
+            for (var cat : breakdown.getCategories()) {
+                if (cat.getInferredType() == TransactionType.OUT) {
+                    sb.append("- ").append(cat.getCategoryName()).append(": ").append(cat.getNet().abs())
+                      .append(" EUR (").append(String.format(java.util.Locale.US, "%.2f", cat.getPercentage())).append("%)\n");
+                }
             }
             sb.append("\n");
 
-            // 2. Category Breakdown (Incomes)
             sb.append("--- RIEPILOGO ENTRATE PER CATEGORIA NEL PERIODO ---\n");
-            sb.append("Totale Entrate: ").append(inBreakdown.getGrandTotal()).append(" EUR\n");
-            for (var cat : inBreakdown.getCategories()) {
-                sb.append("- ").append(cat.getCategoryName()).append(": ").append(cat.getTotal())
-                  .append(" EUR (").append(String.format(java.util.Locale.US, "%.2f", cat.getPercentage())).append("%)\n");
+            for (var cat : breakdown.getCategories()) {
+                if (cat.getInferredType() == TransactionType.IN) {
+                    sb.append("- ").append(cat.getCategoryName()).append(": ").append(cat.getNet())
+                      .append(" EUR (").append(String.format(java.util.Locale.US, "%.2f", cat.getPercentage())).append("%)\n");
+                }
             }
             sb.append("\n");
             

@@ -77,7 +77,6 @@ class TransactionServiceTest {
 
         testCategory = Category.builder()
                 .name("Alimentari")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build();
         testCategory = categoryRepository.save(testCategory);

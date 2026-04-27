@@ -98,7 +98,6 @@ public class BudgetTemplateController {
                 .id(t.getId())
                 .categoryId(t.getCategory().getId())
                 .categoryName(t.getCategory().getName())
-                .categoryType(t.getCategory().getTransactionType())
                 .budgetLimit(t.getBudgetLimit())
                 .recurrenceType(t.getRecurrenceType())
                 .active(t.getActive())

@@ -53,29 +53,29 @@ public class ReportService {
     }
 
     @Transactional(readOnly = true)
-    public ReportDto.CategoryBreakdownResponse getCategoryBreakdown(User user, TransactionType type,
-                                                                     LocalDate startDate, LocalDate endDate) {
-        List<Object[]> rows = transactionRepository.findCategoryBreakdown(user, type, startDate, endDate);
+    public ReportDto.CategoryBreakdownResponse getCategoryBreakdown(User user, LocalDate startDate, LocalDate endDate) {
+        List<Object[]> rows = transactionRepository.findCategoryNetBreakdown(user, startDate, endDate);
         BigDecimal grandTotal = rows.stream()
-                .map(r -> (BigDecimal) r[2])
+                .map(r -> ((BigDecimal) r[2]).abs())
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         List<ReportDto.CategoryBreakdownItem> categories = rows.stream()
                 .map(r -> {
                     UUID catId = r[0] != null ? UUID.fromString(r[0].toString()) : null;
                     String catName = r[1] != null ? r[1].toString() : "Senza categoria";
-                    BigDecimal total = (BigDecimal) r[2];
+                    BigDecimal net = (BigDecimal) r[2];
                     double percentage = grandTotal.compareTo(BigDecimal.ZERO) == 0 ? 0.0
-                            : total.divide(grandTotal, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).doubleValue();
+                            : net.abs().divide(grandTotal, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).doubleValue();
+                    TransactionType inferredType = net.compareTo(BigDecimal.ZERO) > 0 ? TransactionType.IN : TransactionType.OUT;
                     return ReportDto.CategoryBreakdownItem.builder()
                             .categoryId(catId).categoryName(catName)
-                            .total(total).percentage(percentage)
+                            .net(net).percentage(percentage).inferredType(inferredType)
                             .build();
                 })
                 .toList();
 
         return ReportDto.CategoryBreakdownResponse.builder()
-                .type(type).startDate(startDate).endDate(endDate)
+                .startDate(startDate).endDate(endDate)
                 .grandTotal(grandTotal).categories(categories)
                 .build();
     }

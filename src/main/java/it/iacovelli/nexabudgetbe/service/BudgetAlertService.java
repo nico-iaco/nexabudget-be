@@ -109,7 +109,7 @@ public class BudgetAlertService {
 
             Budget budget = budgetOpt.get();
 
-            BigDecimal spent = transactionRepository.sumOutByUserAndCategoryAndDateRange(
+            BigDecimal spent = transactionRepository.sumNetByUserAndCategoryAndDateRange(
                     budget.getUser(), budget.getCategory(), budget.getStartDate(),
                     budget.getEndDate() != null ? budget.getEndDate() : today);
             if (spent == null) spent = BigDecimal.ZERO;

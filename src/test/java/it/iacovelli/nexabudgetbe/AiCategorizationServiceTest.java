@@ -40,6 +40,7 @@ class AiCategorizationServiceTest {
     private Category alimentari;
     private Category trasporti;
     private Category abbonamenti;
+    private Category stipendio;
 
     @BeforeEach
     void setUp() {
@@ -52,9 +53,10 @@ class AiCategorizationServiceTest {
                 .passwordHash("hash")
                 .build();
 
-        alimentari = Category.builder().id(UUID.randomUUID()).name("Alimentari e Supermercati").transactionType(TransactionType.OUT).build();
-        trasporti = Category.builder().id(UUID.randomUUID()).name("Trasporti").transactionType(TransactionType.OUT).build();
-        abbonamenti = Category.builder().id(UUID.randomUUID()).name("Abbonamenti").transactionType(TransactionType.OUT).build();
+        alimentari = Category.builder().id(UUID.randomUUID()).name("Alimentari e Supermercati").build();
+        trasporti = Category.builder().id(UUID.randomUUID()).name("Trasporti").build();
+        abbonamenti = Category.builder().id(UUID.randomUUID()).name("Abbonamenti").build();
+        stipendio = Category.builder().id(UUID.randomUUID()).name("Stipendio").build();
     }
 
     // ─── Guard: descrizioni non valide ──────────────────────────────────────────
@@ -75,7 +77,7 @@ class AiCategorizationServiceTest {
 
     @Test
     void noAvailableCategories_returnsEmpty() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT)).thenReturn(List.of());
+        when(categoryService.getAllAvailableCategoriesForUser(user)).thenReturn(List.of());
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
         assertTrue(result.isEmpty());
@@ -86,9 +88,9 @@ class AiCategorizationServiceTest {
 
     @Test
     void cacheHit_returnsMatchedCategoryWithoutCallingAI() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
+        when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari, trasporti));
-        when(semanticCacheService.findSimilar("Esselunga", user.getId(), TransactionType.OUT))
+        when(semanticCacheService.findSimilar("Esselunga", user.getId()))
                 .thenReturn(Optional.of("Alimentari e Supermercati"));
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
@@ -100,10 +102,10 @@ class AiCategorizationServiceTest {
 
     @Test
     void cacheHit_butCategoryNotInUserList_returnsEmpty() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
+        when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(trasporti));
-        when(semanticCacheService.findSimilar("Esselunga", user.getId(), TransactionType.OUT))
-                .thenReturn(Optional.of("Alimentari e Supermercati")); // non presente per questo utente
+        when(semanticCacheService.findSimilar("Esselunga", user.getId()))
+                .thenReturn(Optional.of("Alimentari e Supermercati"));
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
 
@@ -115,9 +117,9 @@ class AiCategorizationServiceTest {
 
     @Test
     void aiReturnsExactMatch_returnsCategoryAndSavesToCache() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
+        when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari, trasporti));
-        when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
                 .thenReturn("Alimentari e Supermercati");
 
@@ -125,14 +127,14 @@ class AiCategorizationServiceTest {
 
         assertTrue(result.isPresent());
         assertEquals("Alimentari e Supermercati", result.get().getName());
-        verify(semanticCacheService).saveToCache("ESSELUNGA SPA", "Alimentari e Supermercati", user.getId(), TransactionType.OUT);
+        verify(semanticCacheService).saveToCache("ESSELUNGA SPA", "Alimentari e Supermercati", user.getId());
     }
 
     @Test
     void aiReturnsCaseInsensitiveMatch() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
+        when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari, trasporti));
-        when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
                 .thenReturn("alimentari e supermercati");
 
@@ -142,13 +144,29 @@ class AiCategorizationServiceTest {
         assertEquals("Alimentari e Supermercati", result.get().getName());
     }
 
+    // ─── Categorizzazione mista IN/OUT sulla stessa lista ────────────────────────
+
+    @Test
+    void allCategoriesAvailableRegardlessOfTransactionFlow() {
+        when(categoryService.getAllAvailableCategoriesForUser(user))
+                .thenReturn(List.of(alimentari, trasporti, stipendio));
+        when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
+        when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
+                .thenReturn("Stipendio");
+
+        Optional<Category> result = service.categorizeTransaction("Bonifico stipendio", user, TransactionType.IN);
+
+        assertTrue(result.isPresent());
+        assertEquals("Stipendio", result.get().getName());
+    }
+
     // ─── AI: pulizia markdown ────────────────────────────────────────────────────
 
     @Test
     void aiResponseWrappedInMarkdownBold_stillMatches() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
+        when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari, abbonamenti));
-        when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
                 .thenReturn("**Abbonamenti**");
 
@@ -160,9 +178,9 @@ class AiCategorizationServiceTest {
 
     @Test
     void aiResponseWithTrailingWhitespace_stillMatches() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
+        when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(trasporti));
-        when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
                 .thenReturn("  Trasporti  \n");
 
@@ -176,12 +194,12 @@ class AiCategorizationServiceTest {
 
     @Test
     void aiResponseWithDifferentAccents_doesNotMatch() {
-        Category salute = Category.builder().id(UUID.randomUUID()).name("Salute e Farmacìa").transactionType(TransactionType.OUT).build();
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
+        Category salute = Category.builder().id(UUID.randomUUID()).name("Salute e Farmacìa").build();
+        when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(salute));
-        when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("Salute e Farmacia"); // senza accento — non corrisponde esattamente
+                .thenReturn("Salute e Farmacia");
 
         Optional<Category> result = service.categorizeTransaction("FARMACIA CENTRALE", user, TransactionType.OUT);
 
@@ -192,11 +210,11 @@ class AiCategorizationServiceTest {
 
     @Test
     void aiReturnsPartialName_doesNotMatch() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
-                .thenReturn(List.of(alimentari)); // "Alimentari e Supermercati"
-        when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(categoryService.getAllAvailableCategoriesForUser(user))
+                .thenReturn(List.of(alimentari));
+        when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("Alimentari"); // parziale — non corrisponde esattamente
+                .thenReturn("Alimentari");
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
 
@@ -207,73 +225,73 @@ class AiCategorizationServiceTest {
 
     @Test
     void aiReturnsNONE_returnsEmptyAndDoesNotSaveToCache() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
+        when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari));
-        when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
                 .thenReturn("NONE");
 
         Optional<Category> result = service.categorizeTransaction("Pagamento generico", user, TransactionType.OUT);
 
         assertTrue(result.isEmpty());
-        verify(semanticCacheService, never()).saveToCache(any(), any(), any(), any());
+        verify(semanticCacheService, never()).saveToCache(any(), any(), any());
     }
 
     @Test
     void aiReturnsBlankResponse_returnsEmptyAndDoesNotSaveToCache() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
+        when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari));
-        when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
                 .thenReturn("   ");
 
         Optional<Category> result = service.categorizeTransaction("Qualcosa", user, TransactionType.OUT);
 
         assertTrue(result.isEmpty());
-        verify(semanticCacheService, never()).saveToCache(any(), any(), any(), any());
+        verify(semanticCacheService, never()).saveToCache(any(), any(), any());
     }
 
     @Test
     void aiReturnsUnknownCategory_returnsEmptyAndDoesNotSaveToCache() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
+        when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari, trasporti));
-        when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
                 .thenReturn("Categoria Inventata");
 
         Optional<Category> result = service.categorizeTransaction("Descrizione strana", user, TransactionType.OUT);
 
         assertTrue(result.isEmpty());
-        verify(semanticCacheService, never()).saveToCache(any(), any(), any(), any());
+        verify(semanticCacheService, never()).saveToCache(any(), any(), any());
     }
 
     @Test
     void aiReturnsNull_returnsEmptyAndDoesNotSaveToCache() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
+        when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari));
-        when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
                 .thenReturn(null);
 
         Optional<Category> result = service.categorizeTransaction("Test", user, TransactionType.OUT);
 
         assertTrue(result.isEmpty());
-        verify(semanticCacheService, never()).saveToCache(any(), any(), any(), any());
+        verify(semanticCacheService, never()).saveToCache(any(), any(), any());
     }
 
     // ─── AI: errori ──────────────────────────────────────────────────────────────
 
     @Test
     void aiThrowsException_returnsEmptyAndDoesNotSaveToCache() {
-        when(categoryService.getAllAvailableCategoriesForUserAndType(user, TransactionType.OUT))
+        when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari));
-        when(semanticCacheService.findSimilar(anyString(), any(), any())).thenReturn(Optional.empty());
+        when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class))).thenThrow(new RuntimeException("Network error"));
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
 
         assertTrue(result.isEmpty());
-        verify(semanticCacheService, never()).saveToCache(any(), any(), any(), any());
+        verify(semanticCacheService, never()).saveToCache(any(), any(), any());
     }
 
     // ─── updateSemanticCache ─────────────────────────────────────────────────────
@@ -285,6 +303,6 @@ class AiCategorizationServiceTest {
 
         service.updateSemanticCache("Esselunga", oldCat, newCat, user, TransactionType.OUT);
 
-        verify(semanticCacheService).saveToCache("Esselunga", "Nuova", user.getId(), TransactionType.OUT);
+        verify(semanticCacheService).saveToCache("Esselunga", "Nuova", user.getId());
     }
 }

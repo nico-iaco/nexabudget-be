@@ -32,8 +32,9 @@ public class ReportDto {
     public static class CategoryBreakdownItem {
         private UUID categoryId;
         private String categoryName;
-        private BigDecimal total;
+        private BigDecimal net;
         private double percentage;
+        private TransactionType inferredType;
     }
 
     @Data
@@ -41,7 +42,6 @@ public class ReportDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class CategoryBreakdownResponse {
-        private TransactionType type;
         private LocalDate startDate;
         private LocalDate endDate;
         private BigDecimal grandTotal;

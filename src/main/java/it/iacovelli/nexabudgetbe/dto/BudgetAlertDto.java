@@ -1,7 +1,6 @@
 package it.iacovelli.nexabudgetbe.dto;
 
 import it.iacovelli.nexabudgetbe.model.RecurrenceType;
-import it.iacovelli.nexabudgetbe.model.TransactionType;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -41,7 +40,6 @@ public class BudgetAlertDto {
         private UUID templateId;
         private UUID categoryId;
         private String categoryName;
-        private TransactionType categoryType;
         private BigDecimal budgetLimit;
         private RecurrenceType recurrenceType;
         private Integer thresholdPercentage;

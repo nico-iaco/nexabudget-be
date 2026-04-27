@@ -1,6 +1,5 @@
 package it.iacovelli.nexabudgetbe.dto;
 
-import it.iacovelli.nexabudgetbe.model.TransactionType;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import lombok.AllArgsConstructor;
@@ -40,7 +39,6 @@ public class BudgetDto {
         private UUID id;
         private UUID categoryId;
         private String categoryName;
-        private TransactionType categoryType;
         private BigDecimal limit;
         private LocalDate startDate;
         private LocalDate endDate;
@@ -67,7 +65,6 @@ public class BudgetDto {
         private UUID budgetId;
         private UUID categoryId;
         private String categoryName;
-        private TransactionType categoryType;
         private BigDecimal limit;
         private BigDecimal spent;
         private BigDecimal remaining;

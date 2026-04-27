@@ -124,7 +124,6 @@ public class BudgetAlertController {
                 .templateId(template.getId())
                 .categoryId(template.getCategory() != null ? template.getCategory().getId() : null)
                 .categoryName(template.getCategory() != null ? template.getCategory().getName() : null)
-                .categoryType(template.getCategory() != null ? template.getCategory().getTransactionType() : null)
                 .budgetLimit(template.getBudgetLimit())
                 .recurrenceType(template.getRecurrenceType())
                 .thresholdPercentage(alert.getThresholdPercentage())

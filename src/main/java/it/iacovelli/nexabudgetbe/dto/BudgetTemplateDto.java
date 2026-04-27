@@ -1,7 +1,6 @@
 package it.iacovelli.nexabudgetbe.dto;
 
 import it.iacovelli.nexabudgetbe.model.RecurrenceType;
-import it.iacovelli.nexabudgetbe.model.TransactionType;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Positive;
 import lombok.AllArgsConstructor;
@@ -40,7 +39,6 @@ public class BudgetTemplateDto {
         private UUID id;
         private UUID categoryId;
         private String categoryName;
-        private TransactionType categoryType;
         private BigDecimal budgetLimit;
         private RecurrenceType recurrenceType;
         private Boolean active;

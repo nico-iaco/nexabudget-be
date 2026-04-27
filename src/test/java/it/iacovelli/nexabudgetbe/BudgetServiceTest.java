@@ -77,7 +77,6 @@ class BudgetServiceTest {
 
         expenseCategory = categoryRepository.save(Category.builder()
                 .name("Alimentari")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build());
 
@@ -375,6 +374,36 @@ class BudgetServiceTest {
                 .orElse(null);
         assertNotNull(spent);
         assertEquals(0, new BigDecimal("80.00").compareTo(spent));
+    }
+
+    @Test
+    void testGetBudgetUsage_RefundOnSameCategory_SubtractsFromSpent() {
+        LocalDate today = LocalDate.now();
+        Budget budget = budgetRepository.save(Budget.builder()
+                .user(testUser)
+                .category(expenseCategory)
+                .budgetLimit(new BigDecimal("300.00"))
+                .startDate(today.withDayOfMonth(1))
+                .endDate(today.withDayOfMonth(today.lengthOfMonth()))
+                .build());
+
+        transactionRepository.save(Transaction.builder()
+                .user(testUser).account(testAccount)
+                .amount(new BigDecimal("100.00")).type(TransactionType.OUT)
+                .description("Spesa").category(expenseCategory).date(today).build());
+
+        transactionRepository.save(Transaction.builder()
+                .user(testUser).account(testAccount)
+                .amount(new BigDecimal("30.00")).type(TransactionType.IN)
+                .description("Rimborso").category(expenseCategory).date(today).build());
+
+        Map<Budget, BigDecimal> usage = budgetService.getBudgetUsage(testUser, today);
+
+        BigDecimal spent = usage.entrySet().stream()
+                .filter(e -> e.getKey().getId().equals(budget.getId()))
+                .map(Map.Entry::getValue).findFirst().orElse(null);
+        assertNotNull(spent);
+        assertEquals(0, new BigDecimal("70.00").compareTo(spent));
     }
 
     @Test

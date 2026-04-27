@@ -71,7 +71,6 @@ class CategoryServiceTest {
     void testCreateCategory() {
         Category category = Category.builder()
                 .name("Alimentari")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build();
 
@@ -79,14 +78,12 @@ class CategoryServiceTest {
 
         assertNotNull(saved.getId());
         assertEquals("Alimentari", saved.getName());
-        assertEquals(TransactionType.OUT, saved.getTransactionType());
     }
 
     @Test
     void testGetCategoryById() {
         Category category = Category.builder()
                 .name("Trasporti")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build();
 
@@ -102,7 +99,6 @@ class CategoryServiceTest {
     void testGetCategoryByIdAndUser() {
         Category category = Category.builder()
                 .name("Salute")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build();
 
@@ -118,7 +114,6 @@ class CategoryServiceTest {
     void testGetDefaultCategories() {
         Category defaultCategory = Category.builder()
                 .name("Stipendio")
-                .transactionType(TransactionType.IN)
                 .build();
 
         categoryService.createCategory(defaultCategory);
@@ -133,13 +128,11 @@ class CategoryServiceTest {
     void testGetCategoriesByUser() {
         Category category1 = Category.builder()
                 .name("Categoria 1")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build();
 
         Category category2 = Category.builder()
                 .name("Categoria 2")
-                .transactionType(TransactionType.IN)
                 .user(testUser)
                 .build();
 
@@ -152,33 +145,9 @@ class CategoryServiceTest {
     }
 
     @Test
-    void testGetCategoriesByUserAndType() {
-        Category category1 = Category.builder()
-                .name("Uscita")
-                .transactionType(TransactionType.OUT)
-                .user(testUser)
-                .build();
-
-        Category category2 = Category.builder()
-                .name("Entrata")
-                .transactionType(TransactionType.IN)
-                .user(testUser)
-                .build();
-
-        categoryService.createCategory(category1);
-        categoryService.createCategory(category2);
-
-        List<Category> outCategories = categoryService.getCategoriesByUserAndType(testUser, TransactionType.OUT);
-
-        assertEquals(1, outCategories.size());
-        assertEquals("Uscita", outCategories.get(0).getName());
-    }
-
-    @Test
     void testUpdateCategory() {
         Category category = Category.builder()
                 .name("Nome Originale")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build();
 
@@ -194,7 +163,6 @@ class CategoryServiceTest {
     void testDeleteCategory() {
         Category category = Category.builder()
                 .name("Da Eliminare")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build();
 
@@ -210,7 +178,6 @@ class CategoryServiceTest {
     void testDeleteCategoryWithUser() {
         Category category = Category.builder()
                 .name("User Category")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build();
 
@@ -231,20 +198,19 @@ class CategoryServiceTest {
         assertFalse(defaults.isEmpty());
         assertTrue(defaults.stream().anyMatch(c -> c.getName().equals("Alimentari")));
         assertTrue(defaults.stream().anyMatch(c -> c.getName().equals("Stipendio")));
+        assertTrue(defaults.stream().anyMatch(c -> c.getName().equals("Rimborsi")));
     }
 
     @Test
     void testCreateCategory_DuplicateUserCategory_Throws() {
         Category category1 = Category.builder()
                 .name("Duplicato")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build();
         categoryService.createCategory(category1);
 
         Category category2 = Category.builder()
                 .name("Duplicato")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build();
 
@@ -252,20 +218,18 @@ class CategoryServiceTest {
     }
 
     @Test
-    void testCreateCategory_SameNameDifferentType_Allowed() {
-        Category expense = Category.builder()
-                .name("Varia")
-                .transactionType(TransactionType.OUT)
-                .user(testUser)
-                .build();
-        Category income = Category.builder()
-                .name("Varia")
-                .transactionType(TransactionType.IN)
-                .user(testUser)
-                .build();
+    void testCreateCategory_SameNameDifferentUsers_Allowed() {
+        User otherUser = userRepository.save(User.builder()
+                .username("other")
+                .email("other@example.com")
+                .passwordHash("hash")
+                .build());
 
-        assertDoesNotThrow(() -> categoryService.createCategory(expense));
-        assertDoesNotThrow(() -> categoryService.createCategory(income));
+        Category cat1 = Category.builder().name("Spesa").user(testUser).build();
+        Category cat2 = Category.builder().name("Spesa").user(otherUser).build();
+
+        assertDoesNotThrow(() -> categoryService.createCategory(cat1));
+        assertDoesNotThrow(() -> categoryService.createCategory(cat2));
     }
 
     @Test
@@ -283,13 +247,11 @@ class CategoryServiceTest {
     void testMergeCategories_MovesTransactionsAndDeletesSource() {
         Category source = categoryService.createCategory(Category.builder()
                 .name("Da Unire")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build());
 
         Category target = categoryService.createCategory(Category.builder()
                 .name("Destinazione")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build());
 
@@ -320,28 +282,25 @@ class CategoryServiceTest {
     }
 
     @Test
-    void testMergeCategories_DifferentType_Throws() {
+    void testMergeCategories_AcrossDifferentTransactionFlows_Succeeds() {
         Category expenseCategory = categoryService.createCategory(Category.builder()
-                .name("Uscita")
-                .transactionType(TransactionType.OUT)
+                .name("Spesa")
                 .user(testUser)
                 .build());
 
         Category incomeCategory = categoryService.createCategory(Category.builder()
-                .name("Entrata")
-                .transactionType(TransactionType.IN)
+                .name("Rimborso Spesa")
                 .user(testUser)
                 .build());
 
-        assertThrows(IllegalArgumentException.class, () ->
-                categoryService.mergeCategories(expenseCategory.getId(), incomeCategory.getId(), testUser));
+        assertDoesNotThrow(() ->
+                categoryService.mergeCategories(incomeCategory.getId(), expenseCategory.getId(), testUser));
     }
 
     @Test
     void testMergeCategories_SameId_Throws() {
         Category category = categoryService.createCategory(Category.builder()
                 .name("Categoria")
-                .transactionType(TransactionType.OUT)
                 .user(testUser)
                 .build());
 

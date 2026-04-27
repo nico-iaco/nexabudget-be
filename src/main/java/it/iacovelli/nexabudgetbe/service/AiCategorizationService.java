@@ -42,13 +42,12 @@ public class AiCategorizationService {
             return Optional.empty();
         }
 
-        List<Category> availableCategories = categoryService.getAllAvailableCategoriesForUserAndType(user, type);
+        List<Category> availableCategories = categoryService.getAllAvailableCategoriesForUser(user);
         if (availableCategories.isEmpty()) {
             return Optional.empty();
         }
 
-        // 1. Cache semantica (scoped per utente e tipo)
-        Optional<String> cached = semanticCacheService.findSimilar(description, user.getId(), type);
+        Optional<String> cached = semanticCacheService.findSimilar(description, user.getId());
         if (cached.isPresent()) {
             String cachedName = cached.get();
             log.debug("Cache hit per '{}': '{}'", description, cachedName);
@@ -81,7 +80,7 @@ public class AiCategorizationService {
                     .findFirst();
 
             if (matched.isPresent()) {
-                semanticCacheService.saveToCache(description, matched.get().getName(), user.getId(), type);
+                semanticCacheService.saveToCache(description, matched.get().getName(), user.getId());
                 log.info("Transazione '{}' categorizzata come '{}' (AI)", description, matched.get().getName());
             } else {
                 log.warn("Risposta AI '{}' non corrisponde a nessuna categoria per '{}'", aiResponse, description);
@@ -106,7 +105,7 @@ public class AiCategorizationService {
     }
 
     public void updateSemanticCache(String description, Category oldCategory, Category newCategory, User user, TransactionType type) {
-        semanticCacheService.saveToCache(description, newCategory.getName(), user.getId(), type);
+        semanticCacheService.saveToCache(description, newCategory.getName(), user.getId());
     }
 
     private String buildPrompt(String description, List<Category> categories, TransactionType type) {

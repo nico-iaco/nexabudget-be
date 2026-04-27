@@ -14,7 +14,7 @@ import java.util.UUID;
 @AllArgsConstructor
 @Entity
 @Table(name = "categories", uniqueConstraints = {
-        @UniqueConstraint(name = "uk_category_user_name_type", columnNames = {"user_id", "name", "transaction_type"})
+        @UniqueConstraint(name = "uk_category_user_name", columnNames = {"user_id", "name"})
 })
 public class Category {
 
@@ -29,8 +29,5 @@ public class Category {
 
     @Column(nullable = false)
     private String name;
-
-    @Enumerated(EnumType.STRING)
-    private TransactionType transactionType; // Applica a ENTRATA o USCITA
 
 }

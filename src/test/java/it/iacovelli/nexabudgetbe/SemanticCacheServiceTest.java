@@ -1,6 +1,5 @@
 package it.iacovelli.nexabudgetbe;
 
-import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.service.SemanticCacheService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -45,7 +44,7 @@ class SemanticCacheServiceTest {
                 .build();
         when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(doc));
 
-        Optional<String> result = service.findSimilar("Esselunga SPA", userId, TransactionType.OUT);
+        Optional<String> result = service.findSimilar("Esselunga SPA", userId);
 
         assertTrue(result.isPresent());
         assertEquals("Alimentari e Supermercati", result.get());
@@ -55,7 +54,7 @@ class SemanticCacheServiceTest {
     void findSimilar_noResults_returnsEmpty() {
         when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
 
-        Optional<String> result = service.findSimilar("Transazione sconosciuta", userId, TransactionType.OUT);
+        Optional<String> result = service.findSimilar("Transazione sconosciuta", userId);
 
         assertTrue(result.isEmpty());
     }
@@ -64,16 +63,16 @@ class SemanticCacheServiceTest {
     void findSimilar_vectorStoreThrows_returnsEmpty() {
         when(vectorStore.similaritySearch(any(SearchRequest.class))).thenThrow(new RuntimeException("MongoDB unavailable"));
 
-        Optional<String> result = service.findSimilar("Esselunga", userId, TransactionType.OUT);
+        Optional<String> result = service.findSimilar("Esselunga", userId);
 
-        assertTrue(result.isEmpty()); // fallback sicuro, non propaga l'eccezione
+        assertTrue(result.isEmpty());
     }
 
     @Test
-    void findSimilar_includesUserAndTypeInFilter() {
+    void findSimilar_includesUserInFilter() {
         when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
 
-        service.findSimilar("Test", userId, TransactionType.OUT);
+        service.findSimilar("Test", userId);
 
         ArgumentCaptor<SearchRequest> captor = ArgumentCaptor.forClass(SearchRequest.class);
         verify(vectorStore).similaritySearch(captor.capture());
@@ -81,7 +80,6 @@ class SemanticCacheServiceTest {
         SearchRequest request = captor.getValue();
         String filter = request.getFilterExpression().toString();
         assertTrue(filter.contains(userId.toString()), "Il filtro deve contenere lo userId");
-        assertTrue(filter.contains("OUT"), "Il filtro deve contenere il tipo transazione");
     }
 
     @Test
@@ -89,24 +87,8 @@ class SemanticCacheServiceTest {
         UUID userId2 = UUID.randomUUID();
         when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
 
-        service.findSimilar("Esselunga", userId, TransactionType.OUT);
-        service.findSimilar("Esselunga", userId2, TransactionType.OUT);
-
-        ArgumentCaptor<SearchRequest> captor = ArgumentCaptor.forClass(SearchRequest.class);
-        verify(vectorStore, times(2)).similaritySearch(captor.capture());
-
-        List<SearchRequest> requests = captor.getAllValues();
-        String filter1 = requests.get(0).getFilterExpression().toString();
-        String filter2 = requests.get(1).getFilterExpression().toString();
-        assertNotEquals(filter1, filter2);
-    }
-
-    @Test
-    void findSimilar_outAndInUseDifferentFilters() {
-        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
-
-        service.findSimilar("Stipendio", userId, TransactionType.OUT);
-        service.findSimilar("Stipendio", userId, TransactionType.IN);
+        service.findSimilar("Esselunga", userId);
+        service.findSimilar("Esselunga", userId2);
 
         ArgumentCaptor<SearchRequest> captor = ArgumentCaptor.forClass(SearchRequest.class);
         verify(vectorStore, times(2)).similaritySearch(captor.capture());
@@ -121,7 +103,7 @@ class SemanticCacheServiceTest {
 
     @Test
     void saveToCache_addsDocumentWithCorrectMetadata() {
-        service.saveToCache("Esselunga", "Alimentari e Supermercati", userId, TransactionType.OUT);
+        service.saveToCache("Esselunga", "Alimentari e Supermercati", userId);
 
         ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
         verify(vectorStore).add(captor.capture());
@@ -133,7 +115,7 @@ class SemanticCacheServiceTest {
         assertEquals("Esselunga", doc.getText());
         assertEquals("Alimentari e Supermercati", doc.getMetadata().get("category"));
         assertEquals(userId.toString(), doc.getMetadata().get("userId"));
-        assertEquals("OUT", doc.getMetadata().get("transactionType"));
+        assertFalse(doc.getMetadata().containsKey("transactionType"), "transactionType non deve più essere in cache");
     }
 
     @Test
@@ -141,6 +123,6 @@ class SemanticCacheServiceTest {
         doThrow(new RuntimeException("MongoDB unavailable")).when(vectorStore).add(any());
 
         assertDoesNotThrow(() ->
-                service.saveToCache("Esselunga", "Alimentari", userId, TransactionType.OUT));
+                service.saveToCache("Esselunga", "Alimentari", userId));
     }
 }

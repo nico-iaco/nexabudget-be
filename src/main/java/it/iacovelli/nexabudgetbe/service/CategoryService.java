@@ -1,7 +1,6 @@
 package it.iacovelli.nexabudgetbe.service;
 
 import it.iacovelli.nexabudgetbe.model.Category;
-import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.repository.BudgetRepository;
 import it.iacovelli.nexabudgetbe.repository.CategoryRepository;
@@ -31,11 +30,9 @@ public class CategoryService {
 
     public Category createCategory(Category category) {
         if (category.getUser() != null) {
-            boolean exists = categoryRepository.existsByUserAndNameAndTransactionType(
-                    category.getUser(), category.getName(), category.getTransactionType());
+            boolean exists = categoryRepository.existsByUserAndName(category.getUser(), category.getName());
             if (exists) {
-                throw new IllegalStateException("Categoria '" + category.getName() +
-                        "' di tipo " + category.getTransactionType() + " già esistente per questo utente");
+                throw new IllegalStateException("Categoria '" + category.getName() + "' già esistente per questo utente");
             }
         }
         return categoryRepository.save(category);
@@ -61,12 +58,8 @@ public class CategoryService {
         return categoryRepository.findByUserOrDefault(user);
     }
 
-    public List<Category> getCategoriesByUserAndType(User user, TransactionType type) {
-        return categoryRepository.findByUserAndTransactionType(user, type);
-    }
-
-    public List<Category> getAllAvailableCategoriesForUserAndType(User user, TransactionType type) {
-        return categoryRepository.findByUserOrDefaultAndTransactionType(user, type);
+    public List<Category> getAllAvailableCategoriesForUser(User user) {
+        return categoryRepository.findByUserOrDefault(user);
     }
 
     public Category updateCategory(Category category) {
@@ -82,21 +75,15 @@ public class CategoryService {
     }
 
     public void createDefaultCategories() {
-        // Creazione di categorie predefinite se non esistono già
         if (categoryRepository.findByUserIsNull().isEmpty()) {
-            createExpenseDefaultCategories();
-            createIncomeDefaultCategories();
-        }
-    }
-
-    private void createExpenseDefaultCategories() {
-        String[] expenseCategories = {"Alimentari", "Trasporti", "Abitazione", "Bollette", "Salute",
-                "Svago", "Abbigliamento", "Istruzione", "Regali"};
-        for (String name : expenseCategories) {
-            Category category = new Category();
-            category.setName(name);
-            category.setTransactionType(TransactionType.OUT);
-            categoryRepository.save(category);
+            String[] defaults = {"Alimentari", "Trasporti", "Abitazione", "Bollette", "Salute",
+                    "Svago", "Abbigliamento", "Istruzione", "Regali", "Stipendio", "Bonus",
+                    "Investimenti", "Rimborsi", "Freelance"};
+            for (String name : defaults) {
+                Category category = new Category();
+                category.setName(name);
+                categoryRepository.save(category);
+            }
         }
     }
 
@@ -115,23 +102,9 @@ public class CategoryService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Categoria target non trovata"));
 
-        if (!source.getTransactionType().equals(target.getTransactionType())) {
-            throw new IllegalArgumentException(
-                    "Le categorie devono avere lo stesso tipo di transazione per poter essere unite");
-        }
-
         transactionRepository.updateCategoryBulk(source, target, user);
         budgetRepository.updateCategoryBulk(source, target, user);
         categoryRepository.delete(source);
     }
 
-    private void createIncomeDefaultCategories() {
-        String[] incomeCategories = {"Stipendio", "Bonus", "Regali", "Investimenti", "Rimborsi", "Freelance"};
-        for (String name : incomeCategories) {
-            Category category = new Category();
-            category.setName(name);
-            category.setTransactionType(TransactionType.IN);
-            categoryRepository.save(category);
-        }
-    }
 }

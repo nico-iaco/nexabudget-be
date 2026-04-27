@@ -97,10 +97,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
        void deleteAllByAccount(Account account);
 
-       @Query("SELECT COALESCE(SUM(t.amount), 0) FROM Transaction t " +
-                     "WHERE t.user = :user AND t.category = :category AND t.type = 'OUT' " +
+       @Query("SELECT COALESCE(SUM(CASE WHEN t.type = 'OUT' THEN t.amount ELSE -t.amount END), 0) FROM Transaction t " +
+                     "WHERE t.user = :user AND t.category = :category " +
                      "AND t.date BETWEEN :startDate AND :endDate")
-       BigDecimal sumOutByUserAndCategoryAndDateRange(@Param("user") User user,
+       BigDecimal sumNetByUserAndCategoryAndDateRange(@Param("user") User user,
                      @Param("category") Category category,
                      @Param("startDate") LocalDate startDate,
                      @Param("endDate") LocalDate endDate);
@@ -153,6 +153,16 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
                      "GROUP BY t.category.id, t.category.name " +
                      "ORDER BY SUM(t.amount) DESC")
        List<Object[]> findCategoryBreakdown(@Param("user") User user, @Param("type") TransactionType type,
+                     @Param("start") LocalDate start, @Param("end") LocalDate end);
+
+       @Query("SELECT t.category.id, t.category.name, " +
+                     "SUM(CASE WHEN t.type = 'OUT' THEN t.amount ELSE -t.amount END) " +
+                     "FROM Transaction t WHERE t.user = :user " +
+                     "AND t.date BETWEEN :start AND :end AND t.category IS NOT NULL " +
+                     "GROUP BY t.category.id, t.category.name " +
+                     "HAVING SUM(CASE WHEN t.type = 'OUT' THEN t.amount ELSE -t.amount END) <> 0 " +
+                     "ORDER BY ABS(SUM(CASE WHEN t.type = 'OUT' THEN t.amount ELSE -t.amount END)) DESC")
+       List<Object[]> findCategoryNetBreakdown(@Param("user") User user,
                      @Param("start") LocalDate start, @Param("end") LocalDate end);
 
        @Query("SELECT COALESCE(SUM(t.amount), 0) FROM Transaction t " +

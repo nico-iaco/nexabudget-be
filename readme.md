@@ -507,6 +507,7 @@ Every write operation (create, update, delete) on Transactions, Accounts, Budget
 ### API Key Management
 
 Users can generate API keys for machine-to-machine access (e.g. scripts, dashboards, automations). Keys are:
+
 - Generated with a cryptographically secure random 32-byte value (base64url-encoded)
 - Stored only as a SHA-256 hash — the plaintext is shown exactly once at creation
 - Validated on every request via `ApiKeyAuthenticationFilter` (reads `X-Api-Key` header)
@@ -602,7 +603,7 @@ The application supports compilation to a native executable using GraalVM, provi
 | `SMTP_PWD`                      | SMTP password                               | Yes (prod) | -                                                            |
 | `SMTP_AUTH`                     | Enable SMTP authentication                  | No       | false (set to `true` for Gmail/real SMTP)                      |
 | `SMTP_STARTTLS`                 | Enable STARTTLS                             | No       | false (set to `true` for Gmail/real SMTP)                      |
-| `MAIL_FROM`                     | Sender address for email notifications      | No       | noreply@nexabudget.it                                          |
+| `MAIL_FROM`                     | Sender address for email notifications      | No       | <noreply@nexabudget.it>                                          |
 
 ## Development
 

@@ -6,7 +6,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.AiReportRequest;
 import it.iacovelli.nexabudgetbe.dto.AiReportStatusResponse;
 import it.iacovelli.nexabudgetbe.dto.ReportDto;
-import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.AiReportService;
 import it.iacovelli.nexabudgetbe.service.ReportService;
@@ -84,13 +83,12 @@ public class ReportController {
     }
 
     @GetMapping("/category-breakdown")
-    @Operation(summary = "Breakdown per categoria", description = "Distribuzione delle transazioni per categoria in un intervallo di date")
+    @Operation(summary = "Breakdown per categoria", description = "Distribuzione netta (OUT-IN) delle transazioni per categoria in un intervallo di date")
     public ResponseEntity<ReportDto.CategoryBreakdownResponse> getCategoryBreakdown(
             @AuthenticationPrincipal User currentUser,
-            @Parameter(description = "Tipo transazione (IN/OUT)") @RequestParam TransactionType type,
             @Parameter(description = "Data inizio") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @Parameter(description = "Data fine") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
-        return ResponseEntity.ok(reportService.getCategoryBreakdown(currentUser, type, startDate, endDate));
+        return ResponseEntity.ok(reportService.getCategoryBreakdown(currentUser, startDate, endDate));
     }
 
     @GetMapping("/month-comparison")
