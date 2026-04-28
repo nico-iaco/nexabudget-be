@@ -6,6 +6,7 @@ import it.iacovelli.nexabudgetbe.model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.prompt.Prompt;
+import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
@@ -33,6 +34,8 @@ public class AiCategorizationService {
         this.chatClient = chatClient;
     }
 
+    public record AiCategoryResponse(String category) {}
+
     /**
      * Tenta di associare una descrizione a una categoria esistente usando l'AI.
      * Usa la cache semantica per evitare chiamate ridondanti.
@@ -57,7 +60,10 @@ public class AiCategorizationService {
         }
 
         // 2. Chiamata AI
-        String prompt = buildPrompt(description, availableCategories, type);
+        BeanOutputConverter<AiCategoryResponse> converter = new BeanOutputConverter<>(AiCategoryResponse.class);
+        String formatOptions = converter.getFormat();
+        String prompt = buildPrompt(description, availableCategories, type, formatOptions);
+        
         try {
             log.debug("Categorizzazione AI per: '{}'", description);
             String raw = chatClient.call(new Prompt(prompt))
@@ -65,8 +71,8 @@ public class AiCategorizationService {
                     .getOutput()
                     .getText();
 
-            String rawResponse = raw != null ? raw.trim() : NONE;
-            String aiResponse = rawResponse.replaceAll("[*_`\"']+", "").trim();
+            AiCategoryResponse response = converter.convert(raw);
+            String aiResponse = response != null && response.category() != null ? response.category().replaceAll("[*_`\"']+", "").trim() : NONE;
 
             log.debug("Risposta AI per '{}': '{}'", description, aiResponse);
 
@@ -108,7 +114,7 @@ public class AiCategorizationService {
         semanticCacheService.saveToCache(description, newCategory.getName(), user.getId());
     }
 
-    private String buildPrompt(String description, List<Category> categories, TransactionType type) {
+    private String buildPrompt(String description, List<Category> categories, TransactionType type, String formatOptions) {
         String typeLabel = type == TransactionType.OUT ? "USCITA (spesa)" : "ENTRATA (accredito)";
         String categoryList = categories.stream()
                 .map(Category::getName)
@@ -118,11 +124,13 @@ public class AiCategorizationService {
                 Sei un classificatore di transazioni bancarie italiane.
 
                 REGOLE OBBLIGATORIE:
-                - Rispondi SOLO con il nome ESATTO di una delle categorie elencate sotto
+                - Rispondi con il nome ESATTO di una delle categorie elencate sotto
                 - NON inventare categorie nuove o simili
-                - Se nessuna categoria è adatta alla transazione, rispondi esattamente: NONE
-                - Nessuna spiegazione, punteggiatura aggiuntiva o testo extra
+                - Se nessuna categoria è adatta alla transazione, restituisci esattamente: NONE
                 - In caso di dubbio, preferisci NONE a una categoria sbagliata
+
+                FORMATO DI OUTPUT RICHIESTO:
+                %s
 
                 CATEGORIE DISPONIBILI (scegli solo da questa lista):
                 %s
@@ -130,7 +138,6 @@ public class AiCategorizationService {
                 TRANSAZIONE DA CLASSIFICARE:
                 Tipo: %s
                 Descrizione: "%s"
-
-                Categoria:""".formatted(categoryList, typeLabel, description);
+                """.formatted(formatOptions, categoryList, typeLabel, description);
     }
 }
