@@ -22,7 +22,7 @@ public class AuditLogDto {
         private String entityType;
         private String entityId;
         private String newValue;
-        @JsonFormat(pattern = "yyyy-MM-dd'T'HH:mm:ss")
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
         private LocalDateTime timestamp;
         private String ipAddress;
     }

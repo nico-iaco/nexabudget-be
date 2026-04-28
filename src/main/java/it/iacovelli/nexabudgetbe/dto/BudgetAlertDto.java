@@ -1,5 +1,6 @@
 package it.iacovelli.nexabudgetbe.dto;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import it.iacovelli.nexabudgetbe.model.RecurrenceType;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -44,7 +45,9 @@ public class BudgetAlertDto {
         private RecurrenceType recurrenceType;
         private Integer thresholdPercentage;
         private Boolean active;
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
         private LocalDateTime lastNotifiedAt;
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
         private LocalDateTime createdAt;
     }
 }

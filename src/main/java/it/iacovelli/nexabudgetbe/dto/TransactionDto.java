@@ -100,6 +100,7 @@ public class TransactionDto {
         private BigDecimal exchangeRate;
         private String originalCurrency;
         private BigDecimal originalAmount;
+        @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
         private LocalDateTime deletedAt;
     }
 }
