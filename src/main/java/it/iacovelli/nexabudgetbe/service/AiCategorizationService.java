@@ -71,7 +71,9 @@ public class AiCategorizationService {
                     .getOutput()
                     .getText();
 
-            AiCategoryResponse response = converter.convert(raw);
+            // Extract JSON object from raw text, stripping any thinking tokens preamble
+            String json = raw.replaceAll("(?s)^.*?(\\{[^{}]*\\}).*$", "$1");
+            AiCategoryResponse response = converter.convert(json);
             String aiResponse = response != null && response.category() != null ? response.category().replaceAll("[*_`\"']+", "").trim() : NONE;
 
             log.debug("Risposta AI per '{}': '{}'", description, aiResponse);

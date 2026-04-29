@@ -57,7 +57,6 @@ public class GoogleGenAiConfig {
                                 GoogleGenAiChatOptions.builder()
                                                 .model(modelName)
                                                 .temperature(temperature)
-                                                .thinkingBudget(0)
                                                 .build(),
                                 ToolCallingManager.builder()
                                                 .build(),
