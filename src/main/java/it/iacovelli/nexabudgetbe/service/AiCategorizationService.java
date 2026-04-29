@@ -61,9 +61,8 @@ public class AiCategorizationService {
 
         // 2. Chiamata AI
         BeanOutputConverter<AiCategoryResponse> converter = new BeanOutputConverter<>(AiCategoryResponse.class);
-        String formatOptions = converter.getFormat();
-        String prompt = buildPrompt(description, availableCategories, type, formatOptions);
-        
+        String prompt = buildPrompt(description, availableCategories, type);
+
         try {
             log.debug("Categorizzazione AI per: '{}'", description);
             String raw = chatClient.call(new Prompt(prompt))
@@ -116,7 +115,7 @@ public class AiCategorizationService {
         semanticCacheService.saveToCache(description, newCategory.getName(), user.getId());
     }
 
-    private String buildPrompt(String description, List<Category> categories, TransactionType type, String formatOptions) {
+    private String buildPrompt(String description, List<Category> categories, TransactionType type) {
         String typeLabel = type == TransactionType.OUT ? "USCITA (spesa)" : "ENTRATA (accredito)";
         String categoryList = categories.stream()
                 .map(Category::getName)
@@ -128,11 +127,13 @@ public class AiCategorizationService {
                 REGOLE OBBLIGATORIE:
                 - Rispondi con il nome ESATTO di una delle categorie elencate sotto
                 - NON inventare categorie nuove o simili
-                - Se nessuna categoria è adatta alla transazione, restituisci esattamente: NONE
+                - Se nessuna categoria è adatta alla transazione, usa NONE come valore
                 - In caso di dubbio, preferisci NONE a una categoria sbagliata
 
                 FORMATO DI OUTPUT RICHIESTO:
-                %s
+                Rispondi esclusivamente con un oggetto JSON, senza markdown, senza spiegazioni.
+                Esempio: {"category": "Alimentari"}
+                Se nessuna categoria è adatta: {"category": "NONE"}
 
                 CATEGORIE DISPONIBILI (scegli solo da questa lista):
                 %s
@@ -140,6 +141,6 @@ public class AiCategorizationService {
                 TRANSAZIONE DA CLASSIFICARE:
                 Tipo: %s
                 Descrizione: "%s"
-                """.formatted(formatOptions, categoryList, typeLabel, description);
+                """.formatted(categoryList, typeLabel, description);
     }
 }
