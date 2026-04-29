@@ -6,7 +6,6 @@ import it.iacovelli.nexabudgetbe.model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.converter.BeanOutputConverter;
 import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
@@ -60,7 +59,6 @@ public class AiCategorizationService {
         }
 
         // 2. Chiamata AI
-        BeanOutputConverter<AiCategoryResponse> converter = new BeanOutputConverter<>(AiCategoryResponse.class);
         String prompt = buildPrompt(description, availableCategories, type);
 
         try {
@@ -70,10 +68,7 @@ public class AiCategorizationService {
                     .getOutput()
                     .getText();
 
-            // Extract JSON object from raw text, stripping any thinking tokens preamble
-            String json = raw.replaceAll("(?s)^.*?(\\{[^{}]*\\}).*$", "$1");
-            AiCategoryResponse response = converter.convert(json);
-            String aiResponse = response != null && response.category() != null ? response.category().replaceAll("[*_`\"']+", "").trim() : NONE;
+            String aiResponse = raw != null ? raw.replaceAll("[*_`\"'\\n]+", "").trim() : NONE;
 
             log.debug("Risposta AI per '{}': '{}'", description, aiResponse);
 
@@ -123,17 +118,8 @@ public class AiCategorizationService {
 
         return """
                 Sei un classificatore di transazioni bancarie italiane.
-
-                REGOLE OBBLIGATORIE:
-                - Rispondi con il nome ESATTO di una delle categorie elencate sotto
-                - NON inventare categorie nuove o simili
-                - Se nessuna categoria è adatta alla transazione, usa NONE come valore
-                - In caso di dubbio, preferisci NONE a una categoria sbagliata
-
-                FORMATO DI OUTPUT RICHIESTO:
-                Rispondi esclusivamente con un oggetto JSON, senza markdown, senza spiegazioni.
-                Esempio: {"category": "Alimentari"}
-                Se nessuna categoria è adatta: {"category": "NONE"}
+                Rispondi con una sola riga contenente ESCLUSIVAMENTE il nome esatto della categoria, senza punteggiatura, senza spiegazioni, senza markdown.
+                Se nessuna categoria è adatta, rispondi esattamente: NONE
 
                 CATEGORIE DISPONIBILI (scegli solo da questa lista):
                 %s
