@@ -121,7 +121,7 @@ class AiCategorizationServiceTest {
                 .thenReturn(List.of(alimentari, trasporti));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("{\"category\": \"Alimentari e Supermercati\"}");
+                .thenReturn("Alimentari e Supermercati");
 
         Optional<Category> result = service.categorizeTransaction("ESSELUNGA SPA", user, TransactionType.OUT);
 
@@ -136,7 +136,7 @@ class AiCategorizationServiceTest {
                 .thenReturn(List.of(alimentari, trasporti));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("{\"category\": \"alimentari e supermercati\"}");
+                .thenReturn("alimentari e supermercati");
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
 
@@ -152,7 +152,7 @@ class AiCategorizationServiceTest {
                 .thenReturn(List.of(alimentari, trasporti, stipendio));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("{\"category\": \"Stipendio\"}");
+                .thenReturn("Stipendio");
 
         Optional<Category> result = service.categorizeTransaction("Bonifico stipendio", user, TransactionType.IN);
 
@@ -168,7 +168,7 @@ class AiCategorizationServiceTest {
                 .thenReturn(List.of(alimentari, abbonamenti));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("{\"category\": \"**Abbonamenti**\"}");
+                .thenReturn("**Abbonamenti**");
 
         Optional<Category> result = service.categorizeTransaction("NETFLIX.COM", user, TransactionType.OUT);
 
@@ -182,7 +182,7 @@ class AiCategorizationServiceTest {
                 .thenReturn(List.of(trasporti));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("{\"category\": \"  Trasporti  \\n\"}");
+                .thenReturn("  Trasporti  \n");
 
         Optional<Category> result = service.categorizeTransaction("Q8 CARBURANTE", user, TransactionType.OUT);
 
@@ -199,7 +199,7 @@ class AiCategorizationServiceTest {
                 .thenReturn(List.of(salute));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("{\"category\": \"Salute e Farmacia\"}");
+                .thenReturn("Salute e Farmacia");
 
         Optional<Category> result = service.categorizeTransaction("FARMACIA CENTRALE", user, TransactionType.OUT);
 
@@ -214,7 +214,7 @@ class AiCategorizationServiceTest {
                 .thenReturn(List.of(alimentari));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("{\"category\": \"Alimentari\"}");
+                .thenReturn("Alimentari");
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
 
@@ -229,7 +229,7 @@ class AiCategorizationServiceTest {
                 .thenReturn(List.of(alimentari));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("{\"category\": \"NONE\"}");
+                .thenReturn("NONE");
 
         Optional<Category> result = service.categorizeTransaction("Pagamento generico", user, TransactionType.OUT);
 
@@ -243,7 +243,7 @@ class AiCategorizationServiceTest {
                 .thenReturn(List.of(alimentari));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("{\"category\": \"   \"}");
+                .thenReturn("   ");
 
         Optional<Category> result = service.categorizeTransaction("Qualcosa", user, TransactionType.OUT);
 
@@ -257,7 +257,7 @@ class AiCategorizationServiceTest {
                 .thenReturn(List.of(alimentari, trasporti));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
         when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("{\"category\": \"Categoria Inventata\"}");
+                .thenReturn("Categoria Inventata");
 
         Optional<Category> result = service.categorizeTransaction("Descrizione strana", user, TransactionType.OUT);
 
