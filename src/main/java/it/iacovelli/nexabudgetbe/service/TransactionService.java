@@ -345,7 +345,8 @@ public class TransactionService {
                         t.setType(txType);
                         t.setUser(user);
                         t.setDescription(description);
-                        t.setDate(LocalDate.parse(gt.getValueDate(), formatter));
+                        String rawDate = gt.getValueDate() != null ? gt.getValueDate() : gt.getBookingDate();
+                        t.setDate(LocalDate.parse(rawDate, formatter));
                         t.setAccount(account);
 
                         Optional<Category> foundCategory = aiCategorizationService.categorizeTransaction(description, user, t.getType());
