@@ -2,6 +2,7 @@ package it.iacovelli.nexabudgetbe.config;
 
 import it.iacovelli.nexabudgetbe.dto.*;
 import it.iacovelli.nexabudgetbe.model.*;
+import it.iacovelli.nexabudgetbe.service.AiCategorizationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.aot.hint.MemberCategory;
@@ -91,6 +92,13 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
         for (Class<?> dto : dtos) {
             hints.reflection().registerType(dto, MemberCategory.values());
         }
+
+        // ─── AI response records ─────────────────────────────────────────────────
+        // Inner record classes used by BeanOutputConverter (Jackson) are not picked
+        // up by Spring MVC AOT scanning and need explicit registration so that
+        // getRecordComponents() and the accessor methods are available at runtime.
+        hints.reflection().registerType(AiCategorizationService.AiCategoryResponse.class,
+                MemberCategory.values());
 
         // ─── Apache Commons CSV ──────────────────────────────────────────────────
         // CSVFormat uses an internal Predicate via lambda — register the top-level class
