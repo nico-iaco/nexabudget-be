@@ -13,7 +13,6 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.format.DateTimeFormatter;
-import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/users")

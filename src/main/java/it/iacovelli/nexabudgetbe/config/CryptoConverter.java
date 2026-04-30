@@ -4,8 +4,11 @@ import jakarta.persistence.AttributeConverter;
 import jakarta.persistence.Converter;
 
 import javax.crypto.Cipher;
+import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.Arrays;
 import java.util.Base64;
 
 /**
@@ -14,18 +17,28 @@ import java.util.Base64;
 @Converter(autoApply = false)
 public class CryptoConverter implements AttributeConverter<String, String> {
 
-    private static final String ALGORITHM = "AES";
-    private static final String DEFAULT_KEY = "MySuperSecretKey1234567890123456";
+    private static final String LEGACY_TRANSFORMATION = "AES";
+    private static final String TRANSFORMATION = "AES/GCM/NoPadding";
+    private static final String VERSION_PREFIX = "v2:";
+    private static final int KEY_LENGTH_BYTES = 32;
+    private static final int GCM_IV_LENGTH_BYTES = 12;
+    private static final int GCM_TAG_LENGTH_BITS = 128;
+    private static final SecureRandom SECURE_RANDOM = new SecureRandom();
 
-    private String getEncryptionKey() {
-        // Prova a leggere dalla variabile d'ambiente o usa il default
+    private SecretKeySpec getEncryptionKeySpec() {
         String key = System.getenv("CRYPTO_ENCRYPTION_KEY");
-        if (key == null || key.isEmpty()) {
-            key = System.getProperty("crypto.encryption.key", DEFAULT_KEY);
+        if (key == null || key.isBlank()) {
+            key = System.getProperty("crypto.encryption.key");
         }
-        // La chiave deve essere di 16, 24 o 32 byte per AES
-        return key.length() >= 32 ? key.substring(0, 32) :
-                String.format("%-32s", key).replace(' ', '0');
+        if (key == null || key.isBlank()) {
+            throw new IllegalStateException("CRYPTO_ENCRYPTION_KEY non configurata");
+        }
+        byte[] keyBytes = key.getBytes(StandardCharsets.UTF_8);
+        if (keyBytes.length < KEY_LENGTH_BYTES) {
+            throw new IllegalStateException("CRYPTO_ENCRYPTION_KEY deve essere di almeno 32 byte");
+        }
+        byte[] normalizedKey = Arrays.copyOf(keyBytes, KEY_LENGTH_BYTES);
+        return new SecretKeySpec(normalizedKey, "AES");
     }
 
     @Override
@@ -34,12 +47,16 @@ public class CryptoConverter implements AttributeConverter<String, String> {
             return null;
         }
         try {
-            String key = getEncryptionKey();
-            SecretKeySpec keySpec = new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), ALGORITHM);
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.ENCRYPT_MODE, keySpec);
+            SecretKeySpec keySpec = getEncryptionKeySpec();
+            byte[] iv = new byte[GCM_IV_LENGTH_BYTES];
+            SECURE_RANDOM.nextBytes(iv);
+            Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+            cipher.init(Cipher.ENCRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv));
             byte[] encrypted = cipher.doFinal(attribute.getBytes(StandardCharsets.UTF_8));
-            return Base64.getEncoder().encodeToString(encrypted);
+            byte[] payload = new byte[iv.length + encrypted.length];
+            System.arraycopy(iv, 0, payload, 0, iv.length);
+            System.arraycopy(encrypted, 0, payload, iv.length, encrypted.length);
+            return VERSION_PREFIX + Base64.getEncoder().encodeToString(payload);
         } catch (Exception e) {
             throw new RuntimeException("Errore durante la crittografia", e);
         }
@@ -51,11 +68,23 @@ public class CryptoConverter implements AttributeConverter<String, String> {
             return null;
         }
         try {
-            String key = getEncryptionKey();
-            SecretKeySpec keySpec = new SecretKeySpec(key.getBytes(StandardCharsets.UTF_8), ALGORITHM);
-            Cipher cipher = Cipher.getInstance(ALGORITHM);
-            cipher.init(Cipher.DECRYPT_MODE, keySpec);
-            byte[] decrypted = cipher.doFinal(Base64.getDecoder().decode(dbData));
+            SecretKeySpec keySpec = getEncryptionKeySpec();
+            if (dbData.startsWith(VERSION_PREFIX)) {
+                String encoded = dbData.substring(VERSION_PREFIX.length());
+                byte[] payload = Base64.getDecoder().decode(encoded);
+                if (payload.length <= GCM_IV_LENGTH_BYTES) {
+                    throw new IllegalStateException("Payload crittografato non valido");
+                }
+                byte[] iv = Arrays.copyOfRange(payload, 0, GCM_IV_LENGTH_BYTES);
+                byte[] encrypted = Arrays.copyOfRange(payload, GCM_IV_LENGTH_BYTES, payload.length);
+                Cipher cipher = Cipher.getInstance(TRANSFORMATION);
+                cipher.init(Cipher.DECRYPT_MODE, keySpec, new GCMParameterSpec(GCM_TAG_LENGTH_BITS, iv));
+                byte[] decrypted = cipher.doFinal(encrypted);
+                return new String(decrypted, StandardCharsets.UTF_8);
+            }
+            Cipher legacyCipher = Cipher.getInstance(LEGACY_TRANSFORMATION);
+            legacyCipher.init(Cipher.DECRYPT_MODE, keySpec);
+            byte[] decrypted = legacyCipher.doFinal(Base64.getDecoder().decode(dbData));
             return new String(decrypted, StandardCharsets.UTF_8);
         } catch (Exception e) {
             throw new RuntimeException("Errore durante la decrittografia", e);

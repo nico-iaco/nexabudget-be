@@ -8,8 +8,10 @@ import io.jsonwebtoken.impl.io.StandardCompressionAlgorithms;
 import io.jsonwebtoken.impl.security.*;
 import it.iacovelli.nexabudgetbe.security.ApiKeyAuthenticationFilter;
 import it.iacovelli.nexabudgetbe.security.JwtAuthenticationFilter;
+import it.iacovelli.nexabudgetbe.security.RateLimitingFilter;
 import it.iacovelli.nexabudgetbe.service.UserDetailsServiceImpl;
 import org.springframework.aot.hint.annotation.RegisterReflectionForBinding;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.authentication.AuthenticationManager;
@@ -54,13 +56,19 @@ public class SecurityConfig {
     private final UserDetailsServiceImpl userDetailsService;
     private final JwtAuthenticationFilter jwtAuthenticationFilter;
     private final ApiKeyAuthenticationFilter apiKeyAuthenticationFilter;
+    private final RateLimitingFilter rateLimitingFilter;
+
+    @Value("${springdoc.swagger-ui.enabled:true}")
+    private boolean swaggerEnabled;
 
     public SecurityConfig(UserDetailsServiceImpl userDetailsService,
                           JwtAuthenticationFilter jwtAuthenticationFilter,
-                          ApiKeyAuthenticationFilter apiKeyAuthenticationFilter) {
+                          ApiKeyAuthenticationFilter apiKeyAuthenticationFilter,
+                          RateLimitingFilter rateLimitingFilter) {
         this.userDetailsService = userDetailsService;
         this.jwtAuthenticationFilter = jwtAuthenticationFilter;
         this.apiKeyAuthenticationFilter = apiKeyAuthenticationFilter;
+        this.rateLimitingFilter = rateLimitingFilter;
     }
 
     @Bean
@@ -85,18 +93,32 @@ public class SecurityConfig {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
+                .headers(headers -> headers
+                        .frameOptions(frameOptions -> frameOptions.deny())
+                        .xssProtection(xss -> {})
+                        .contentSecurityPolicy(csp -> csp.policyDirectives("default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:;"))
+                )
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/actuator/**").permitAll()
+                        .requestMatchers("/actuator/health/**").permitAll()
+                        .requestMatchers("/actuator/**").authenticated()
                         .requestMatchers("/swagger-ui/**", "/v3/api-docs/**", "/swagger-resources/**", "/webjars/**")
-                        .permitAll()
+                                .access((authentication, context) -> {
+                                    if (swaggerEnabled) {
+                                        return new org.springframework.security.authorization.AuthorizationDecision(true);
+                                    } else {
+                                        return new org.springframework.security.authorization.AuthorizationDecision(false);
+                                    }
+                                })
                         .anyRequest().authenticated())
                 .authenticationProvider(authenticationProvider());
 
         // Aggiungi il UserDetailsService per l'AuthenticationManager
         http.userDetailsService(userDetailsService);
 
+        // Rate limiting filter per proteggere auth endpoints
+        http.addFilterBefore(rateLimitingFilter, JwtAuthenticationFilter.class);
         // JWT filter → standard username/password filter
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
         // API Key filter runs before JWT (JWT filter skips if auth already set)

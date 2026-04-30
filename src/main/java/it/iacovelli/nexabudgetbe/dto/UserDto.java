@@ -2,6 +2,7 @@ package it.iacovelli.nexabudgetbe.dto;
 
 import jakarta.validation.constraints.Email;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import jakarta.validation.constraints.Size;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -26,7 +27,9 @@ public class UserDto {
         private String email;
 
         @NotBlank(message = "Password è obbligatoria")
-        @Size(min = 8, message = "Password deve essere almeno 8 caratteri")
+        @Size(min = 12, message = "Password deve essere almeno 12 caratteri")
+        @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[a-zA-Z\\d@$!%*?&]+$",
+                message = "Password deve contenere almeno una maiuscola, una minuscola, un numero e un simbolo speciale (@$!%*?&)")
         private String password;
 
         @Size(min = 3, max = 3, message = "La valuta di default deve essere di 3 caratteri (es. EUR, USD)")
@@ -60,7 +63,9 @@ public class UserDto {
         @Size(min = 3, max = 3, message = "La valuta di default deve essere di 3 caratteri (es. EUR, USD)")
         private String defaultCurrency;
 
-        @Size(min = 8, message = "Password deve essere almeno 8 caratteri")
+        @Size(min = 12, message = "Password deve essere almeno 12 caratteri")
+        @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[a-zA-Z\\d@$!%*?&]*$",
+                message = "Password deve contenere almeno una maiuscola, una minuscola, un numero e un simbolo speciale (@$!%*?&)")
         private String password;
     }
 }
