@@ -133,6 +133,26 @@ public class TransactionController {
         }
     }
 
+    @PostMapping("/convert-single-to-transfer")
+    @Operation(summary = "Genera un trasferimento da una singola transazione", description = "Converte una transazione esistente in un trasferimento generando automaticamente la transazione opposta nel conto di destinazione.")
+    public ResponseEntity<List<TransactionDto.TransactionResponse>> convertSingleToTransfer(
+            @Valid @RequestBody TransactionDto.ConvertSingleToTransferRequest request,
+            @AuthenticationPrincipal User currentUser) {
+
+        Transaction sourceTransaction = transactionService.getTransactionByIdAndUser(request.getSourceTransactionId(), currentUser)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transazione sorgente non trovata"));
+
+        Account targetAccount = accountService.getAccountEntityByIdAndUser(request.getTargetAccountId(), currentUser)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto di destinazione non trovato"));
+
+        try {
+            List<TransactionDto.TransactionResponse> responses = transactionService.convertTransactionToTransfer(sourceTransaction, targetAccount);
+            return ResponseEntity.ok(responses);
+        } catch (IllegalStateException | IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, e.getMessage());
+        }
+    }
+
     @GetMapping
     @Operation(summary = "Transazioni utente", description = "Lista di tutte le transazioni dell'utente")
     public ResponseEntity<List<TransactionDto.TransactionResponse>> getTransactionsByUserId(@AuthenticationPrincipal User currentUser) {

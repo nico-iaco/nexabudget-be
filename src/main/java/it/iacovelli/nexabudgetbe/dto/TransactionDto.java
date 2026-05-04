@@ -79,6 +79,19 @@ public class TransactionDto {
         private UUID destinationTransactionId;
     }
 
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class ConvertSingleToTransferRequest {
+
+        @NotNull(message = "L'ID della transazione sorgente è obbligatorio")
+        private UUID sourceTransactionId;
+
+        @NotNull(message = "L'ID del conto di destinazione è obbligatorio")
+        private UUID targetAccountId;
+    }
+
 
     @Data
     @Builder

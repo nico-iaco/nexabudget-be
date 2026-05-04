@@ -116,6 +116,81 @@ public class TransactionService {
     }
 
     @Transactional
+    public List<TransactionDto.TransactionResponse> convertTransactionToTransfer(Transaction sourceTransaction, Account targetAccount) {
+        logger.info("Generazione trasferimento da singola transazione: ID: {} verso account ID: {}",
+                sourceTransaction.getId(), targetAccount.getId());
+
+        if (sourceTransaction.getTransferId() != null) {
+            logger.warn("Tentativo di conversione di una transazione già associata a trasferimento");
+            throw new IllegalStateException("La transazione fa già parte di un trasferimento.");
+        }
+        if (sourceTransaction.getAccount().getId().equals(targetAccount.getId())) {
+            throw new IllegalArgumentException("Il conto di destinazione non può essere uguale a quello di origine.");
+        }
+
+        String transferId = UUID.randomUUID().toString();
+        
+        String sourceCurrency = sourceTransaction.getAccount().getCurrency();
+        String targetCurrency = targetAccount.getCurrency();
+        boolean multiCurrency = sourceCurrency != null && targetCurrency != null
+                && !sourceCurrency.equalsIgnoreCase(targetCurrency);
+
+        BigDecimal convertedAmount = sourceTransaction.getAmount();
+        BigDecimal appliedRate = null;
+
+        if (multiCurrency) {
+            appliedRate = exchangeRateService.getRate(sourceCurrency, targetCurrency)
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Tasso di cambio non disponibile: " + sourceCurrency + " -> " + targetCurrency));
+            convertedAmount = sourceTransaction.getAmount().multiply(appliedRate).setScale(4, java.math.RoundingMode.HALF_UP);
+            logger.info("Conversione in trasferimento multi-valuta: {} {} -> {} {} (rate: {})",
+                    sourceTransaction.getAmount(), sourceCurrency, convertedAmount, targetCurrency, appliedRate);
+        }
+
+        Transaction newTransaction = Transaction.builder()
+                .user(sourceTransaction.getUser())
+                .account(targetAccount)
+                .amount(convertedAmount)
+                .type(sourceTransaction.getType() == TransactionType.IN ? TransactionType.OUT : TransactionType.IN)
+                .date(sourceTransaction.getDate())
+                .note(sourceTransaction.getNote())
+                .transferId(transferId)
+                .build();
+
+        if (sourceTransaction.getType() == TransactionType.IN) {
+            newTransaction.setDescription("Trasferimento a " + sourceTransaction.getAccount().getName() + ": " + sourceTransaction.getDescription());
+            sourceTransaction.setDescription("Trasferimento da " + targetAccount.getName() + ": " + sourceTransaction.getDescription());
+        } else {
+            newTransaction.setDescription("Trasferimento da " + sourceTransaction.getAccount().getName() + ": " + sourceTransaction.getDescription());
+            sourceTransaction.setDescription("Trasferimento a " + targetAccount.getName() + ": " + sourceTransaction.getDescription());
+        }
+
+        if (multiCurrency && newTransaction.getType() == TransactionType.IN) {
+            newTransaction.setExchangeRate(appliedRate);
+            newTransaction.setOriginalCurrency(sourceCurrency);
+            newTransaction.setOriginalAmount(sourceTransaction.getAmount());
+        } else if (multiCurrency && sourceTransaction.getType() == TransactionType.IN) {
+            // Se la transazione sorgente era IN, il tasso di cambio si inverte o si tiene conto di quello originario.
+            // Dato che è una conversione postuma, per semplicità:
+            BigDecimal inverseRate = BigDecimal.ONE.divide(appliedRate, 8, java.math.RoundingMode.HALF_UP);
+            sourceTransaction.setExchangeRate(inverseRate);
+            sourceTransaction.setOriginalCurrency(targetCurrency);
+            sourceTransaction.setOriginalAmount(convertedAmount);
+        }
+
+        sourceTransaction.setTransferId(transferId);
+        sourceTransaction.setCategory(null); // Rimuovi categoria
+
+        Transaction savedNew = transactionRepository.save(newTransaction);
+        Transaction savedSource = transactionRepository.save(sourceTransaction);
+
+        logger.info("Transazione convertita in trasferimento con successo: transferId: {}", transferId);
+        return sourceTransaction.getType() == TransactionType.IN 
+               ? List.of(mapTransactionToResponse(savedSource), mapTransactionToResponse(savedNew))
+               : List.of(mapTransactionToResponse(savedNew), mapTransactionToResponse(savedSource));
+    }
+
+    @Transactional
     public List<TransactionDto.TransactionResponse> convertTransactionsToTransfer(Transaction firstTransaction, Transaction secondTransaction) {
         logger.info("Conversione transazioni a trasferimento: ID1: {}, ID2: {}",
                 firstTransaction.getId(), secondTransaction.getId());

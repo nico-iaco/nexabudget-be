@@ -312,6 +312,8 @@ The API provides the following endpoints:
 - `GET /api/transactions/{id}` - Get transaction details
 - `PUT /api/transactions/{id}` - Update transaction
 - `DELETE /api/transactions/{id}` - Delete transaction
+- `POST /api/transactions/convert-to-transfer` - Convert two existing transactions into a transfer
+- `POST /api/transactions/convert-single-to-transfer` - Create a transfer from a single existing transaction
 - `GET /api/transactions/daterange?start=&end=` - Transactions in a date range
 - `GET /api/transactions/account/{id}/daterange` - Account transactions in a date range
 
