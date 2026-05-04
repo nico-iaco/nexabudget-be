@@ -118,11 +118,11 @@ public class SecurityConfig {
         http.userDetailsService(userDetailsService);
 
         // Rate limiting filter per proteggere auth endpoints
-        http.addFilterBefore(rateLimitingFilter, JwtAuthenticationFilter.class);
+        http.addFilterBefore(rateLimitingFilter, org.springframework.security.web.authentication.logout.LogoutFilter.class);
+        // API Key filter runs before JWT (JWT filter skips if auth already set)
+        http.addFilterAfter(apiKeyAuthenticationFilter, org.springframework.security.web.authentication.logout.LogoutFilter.class);
         // JWT filter → standard username/password filter
         http.addFilterBefore(jwtAuthenticationFilter, UsernamePasswordAuthenticationFilter.class);
-        // API Key filter runs before JWT (JWT filter skips if auth already set)
-        http.addFilterBefore(apiKeyAuthenticationFilter, JwtAuthenticationFilter.class);
 
         return http.build();
     }
