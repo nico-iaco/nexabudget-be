@@ -5,6 +5,7 @@ import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.service.AiCategorizationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.ai.vectorstore.mongodb.atlas.MongoDBAtlasVectorStore;
 import org.springframework.aot.hint.MemberCategory;
 import org.springframework.aot.hint.RuntimeHints;
 import org.springframework.aot.hint.RuntimeHintsRegistrar;
@@ -99,6 +100,25 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
         // getRecordComponents() and the accessor methods are available at runtime.
         hints.reflection().registerType(AiCategorizationService.AiCategoryResponse.class,
                 MemberCategory.values());
+
+        // ─── Spring AI MongoDB Atlas Vector Store ────────────────────────────────
+        // MongoDBDocument is an inner record of MongoDBAtlasVectorStore with no
+        // @Document/@Id annotations. In native mode, Spring Data MongoDB cannot
+        // access its record components (id, content, metadata, embedding) via
+        // reflection without explicit registration — the document is saved with
+        // only _id and _class. Full MemberCategory registration enables the
+        // record constructor, component accessors, and field introspection.
+        hints.reflection().registerType(MongoDBAtlasVectorStore.MongoDBDocument.class,
+                MemberCategory.values());
+        // Spring Data MongoDB uses RecordInstantiatorProperty to map record
+        // components; register the filter expression converter used at search time.
+        try {
+            hints.reflection().registerType(
+                    TypeReference.of("org.springframework.ai.vectorstore.mongodb.atlas.MongoDBAtlasFilterExpressionConverter"),
+                    MemberCategory.values());
+        } catch (Exception e) {
+            log.warn("Could not register MongoDBAtlasFilterExpressionConverter hint: {}", e.getMessage());
+        }
 
         // ─── Apache Commons CSV ──────────────────────────────────────────────────
         // CSVFormat uses an internal Predicate via lambda — register the top-level class
