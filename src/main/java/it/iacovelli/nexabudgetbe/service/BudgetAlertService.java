@@ -55,6 +55,11 @@ public class BudgetAlertService {
     }
 
     @Transactional(readOnly = true)
+    public List<BudgetAlert> getAlertsByUserAndTemplate(User user, UUID templateId) {
+        return budgetAlertRepository.findByUserAndBudgetTemplateId(user, templateId);
+    }
+
+    @Transactional(readOnly = true)
     public Optional<BudgetAlert> getAlertByIdAndUser(UUID id, User user) {
         return budgetAlertRepository.findByIdAndUser(id, user);
     }

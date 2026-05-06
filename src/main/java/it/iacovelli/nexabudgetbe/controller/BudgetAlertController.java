@@ -58,13 +58,16 @@ public class BudgetAlertController {
     }
 
     @GetMapping
-    @Operation(summary = "Lista alert", description = "Tutti gli alert dell'utente")
+    @Operation(summary = "Lista alert", description = "Tutti gli alert dell'utente, filtrabile per template (budgetId)")
     public ResponseEntity<List<BudgetAlertDto.BudgetAlertResponse>> getAlerts(
+            @RequestParam(required = false) UUID budgetId,
             @AuthenticationPrincipal User currentUser) {
 
         User user = resolveUser(currentUser);
-        return ResponseEntity.ok(budgetAlertService.getAlertsByUser(user)
-                .stream().map(this::mapToResponse).toList());
+        List<BudgetAlert> alerts = budgetId != null
+                ? budgetAlertService.getAlertsByUserAndTemplate(user, budgetId)
+                : budgetAlertService.getAlertsByUser(user);
+        return ResponseEntity.ok(alerts.stream().map(this::mapToResponse).toList());
     }
 
     @GetMapping("/{id}")

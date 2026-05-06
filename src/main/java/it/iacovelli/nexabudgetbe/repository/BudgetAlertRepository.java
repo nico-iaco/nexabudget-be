@@ -40,6 +40,14 @@ public interface BudgetAlertRepository extends JpaRepository<BudgetAlert, UUID> 
             """)
     Optional<BudgetAlert> findByIdAndUser(@Param("id") UUID id, @Param("user") User user);
 
+    @Query("""
+            SELECT DISTINCT ba FROM BudgetAlert ba
+            JOIN FETCH ba.budgetTemplate bt
+            JOIN FETCH bt.category
+            WHERE ba.user = :user AND bt.id = :templateId
+            """)
+    List<BudgetAlert> findByUserAndBudgetTemplateId(@Param("user") User user, @Param("templateId") UUID templateId);
+
     @Query("SELECT ba FROM BudgetAlert ba WHERE ba.budgetTemplate = :template")
     List<BudgetAlert> findByBudgetTemplate(@Param("template") BudgetTemplate template);
 
