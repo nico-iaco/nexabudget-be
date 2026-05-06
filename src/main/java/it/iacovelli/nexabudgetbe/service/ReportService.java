@@ -136,12 +136,44 @@ public class ReportService {
         currentExpense = currentExpense != null ? currentExpense : BigDecimal.ZERO;
         currentIncome = currentIncome != null ? currentIncome : BigDecimal.ZERO;
 
-        BigDecimal projectedExpense = daysElapsed == 0 ? BigDecimal.ZERO
-                : currentExpense.divide(BigDecimal.valueOf(daysElapsed), 4, RoundingMode.HALF_UP)
-                        .multiply(BigDecimal.valueOf(daysInMonth));
-        BigDecimal projectedIncome = daysElapsed == 0 ? BigDecimal.ZERO
-                : currentIncome.divide(BigDecimal.valueOf(daysElapsed), 4, RoundingMode.HALF_UP)
-                        .multiply(BigDecimal.valueOf(daysInMonth));
+        BigDecimal totalHistoricExpense = BigDecimal.ZERO;
+        BigDecimal totalHistoricIncome = BigDecimal.ZERO;
+        int monthsWithData = 0;
+
+        for (int i = 1; i <= 3; i++) {
+            LocalDate refMonthStart = monthStart.minusMonths(i);
+            LocalDate refMonthEnd = refMonthStart.withDayOfMonth(refMonthStart.lengthOfMonth());
+
+            BigDecimal monthExpense = transactionRepository.sumByUserAndTypeAndDateRange(
+                    user, TransactionType.OUT, refMonthStart, refMonthEnd);
+            BigDecimal monthIncome = transactionRepository.sumByUserAndTypeAndDateRange(
+                    user, TransactionType.IN, refMonthStart, refMonthEnd);
+
+            monthExpense = monthExpense != null ? monthExpense : BigDecimal.ZERO;
+            monthIncome = monthIncome != null ? monthIncome : BigDecimal.ZERO;
+
+            if (monthExpense.compareTo(BigDecimal.ZERO) > 0 || monthIncome.compareTo(BigDecimal.ZERO) > 0) {
+                totalHistoricExpense = totalHistoricExpense.add(monthExpense);
+                totalHistoricIncome = totalHistoricIncome.add(monthIncome);
+                monthsWithData++;
+            }
+        }
+
+        BigDecimal projectedExpense;
+        BigDecimal projectedIncome;
+
+        if (monthsWithData > 0) {
+            projectedExpense = totalHistoricExpense.divide(BigDecimal.valueOf(monthsWithData), 4, RoundingMode.HALF_UP);
+            projectedIncome = totalHistoricIncome.divide(BigDecimal.valueOf(monthsWithData), 4, RoundingMode.HALF_UP);
+        } else {
+            // fallback: daily rate del mese corrente se non c'è storico
+            projectedExpense = daysElapsed == 0 ? BigDecimal.ZERO
+                    : currentExpense.divide(BigDecimal.valueOf(daysElapsed), 4, RoundingMode.HALF_UP)
+                            .multiply(BigDecimal.valueOf(daysInMonth));
+            projectedIncome = daysElapsed == 0 ? BigDecimal.ZERO
+                    : currentIncome.divide(BigDecimal.valueOf(daysElapsed), 4, RoundingMode.HALF_UP)
+                            .multiply(BigDecimal.valueOf(daysInMonth));
+        }
 
         return ReportDto.MonthlyProjection.builder()
                 .year(today.getYear()).month(today.getMonthValue())

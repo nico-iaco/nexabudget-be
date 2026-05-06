@@ -155,6 +155,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
        // Report queries
        @Query("SELECT YEAR(t.date), MONTH(t.date), t.type, SUM(t.amount) " +
                      "FROM Transaction t WHERE t.user = :user AND t.date >= :from " +
+                     "AND t.transferId IS NULL " +
                      "GROUP BY YEAR(t.date), MONTH(t.date), t.type " +
                      "ORDER BY YEAR(t.date), MONTH(t.date)")
        List<Object[]> findMonthlyTotals(@Param("user") User user, @Param("from") LocalDate from);
@@ -162,6 +163,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
        @Query("SELECT t.category.id, t.category.name, SUM(t.amount) " +
                      "FROM Transaction t WHERE t.user = :user AND t.type = :type " +
                      "AND t.date BETWEEN :start AND :end AND t.category IS NOT NULL " +
+                     "AND t.transferId IS NULL " +
                      "GROUP BY t.category.id, t.category.name " +
                      "ORDER BY SUM(t.amount) DESC")
        List<Object[]> findCategoryBreakdown(@Param("user") User user, @Param("type") TransactionType type,
@@ -171,6 +173,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
                      "SUM(CASE WHEN t.type = 'OUT' THEN t.amount ELSE -t.amount END) " +
                      "FROM Transaction t WHERE t.user = :user " +
                      "AND t.date BETWEEN :start AND :end AND t.category IS NOT NULL " +
+                     "AND t.transferId IS NULL " +
                      "GROUP BY t.category.id, t.category.name " +
                      "HAVING SUM(CASE WHEN t.type = 'OUT' THEN t.amount ELSE -t.amount END) <> 0 " +
                      "ORDER BY ABS(SUM(CASE WHEN t.type = 'OUT' THEN t.amount ELSE -t.amount END)) DESC")
@@ -178,7 +181,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
                      @Param("start") LocalDate start, @Param("end") LocalDate end);
 
        @Query("SELECT COALESCE(SUM(t.amount), 0) FROM Transaction t " +
-                     "WHERE t.user = :user AND t.type = :type AND t.date BETWEEN :start AND :end")
+                     "WHERE t.user = :user AND t.type = :type AND t.date BETWEEN :start AND :end " +
+                     "AND t.transferId IS NULL")
        BigDecimal sumByUserAndTypeAndDateRange(@Param("user") User user, @Param("type") TransactionType type,
                      @Param("start") LocalDate start, @Param("end") LocalDate end);
 }
