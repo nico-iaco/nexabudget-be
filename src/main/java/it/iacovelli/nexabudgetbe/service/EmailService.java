@@ -12,6 +12,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.util.HtmlUtils;
 
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 
 @Service
@@ -57,6 +58,58 @@ public class EmailService {
             log.error("[EmailService] Errore imprevisto per {}: {}", context.getUserEmail(), e.getMessage(), e);
             return false;
         }
+    }
+
+    public boolean sendAiReportEmail(String userEmail, String username, LocalDate startDate, LocalDate endDate, String reportMarkdown) {
+        log.info("[EmailService] Tentativo invio email AI report a {} per periodo {} - {}", userEmail, startDate, endDate);
+        try {
+            MimeMessage message = mailSender.createMimeMessage();
+            MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
+
+            helper.setFrom(fromEmail);
+            helper.setTo(userEmail);
+            helper.setSubject("📊 Il tuo report finanziario nexaBudget");
+
+            helper.setText(generateAiReportHtml(username, startDate, endDate, reportMarkdown), true);
+
+            mailSender.send(message);
+            log.info("[EmailService] Email AI report inviata con successo a {}", userEmail);
+            return true;
+        } catch (MessagingException e) {
+            log.error("[EmailService] Errore MessagingException AI report per {}: {}", userEmail, e.getMessage(), e);
+            return false;
+        } catch (Exception e) {
+            log.error("[EmailService] Errore imprevisto AI report per {}: {}", userEmail, e.getMessage(), e);
+            return false;
+        }
+    }
+
+    private String generateAiReportHtml(String username, LocalDate startDate, LocalDate endDate, String reportMarkdown) {
+        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+        String escapedUsername = HtmlUtils.htmlEscape(username != null ? username : "");
+        String escapedReport = HtmlUtils.htmlEscape(reportMarkdown != null ? reportMarkdown : "");
+
+        return String.format("""
+            <!DOCTYPE html>
+            <html>
+            <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
+                <div style="max-width: 700px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
+                    <h2 style="color: #2e7d32;">📊 Il tuo report finanziario</h2>
+                    <p>Ciao <strong>%s</strong>,</p>
+                    <p>In allegato trovi il resoconto AI delle tue finanze per il periodo <strong>dal %s al %s</strong>.</p>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                    <div style="background-color: #fafafa; padding: 20px; border-radius: 5px; white-space: pre-wrap; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 14px;">%s</div>
+                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
+                    <p style="font-size: 12px; color: #777;">Questa è una notifica automatica da nexaBudget. Non rispondere a questa email.</p>
+                </div>
+            </body>
+            </html>
+            """,
+            escapedUsername,
+            startDate.format(formatter),
+            endDate.format(formatter),
+            escapedReport
+        );
     }
 
     private String generateBudgetAlertHtml(BudgetAlertEmailContext context) {

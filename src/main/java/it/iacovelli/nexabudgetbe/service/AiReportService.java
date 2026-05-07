@@ -42,6 +42,7 @@ public class AiReportService {
     private final GoogleGenAiChatModel chatModel;
     private final CacheManager cacheManager;
     private final ReportService reportService;
+    private final EmailService emailService;
 
     private static final String SYSTEM_PROMPT = """
             Sei un consulente finanziario esperto. Analizza le seguenti transazioni bancarie (in formato CSV) di un utente per il periodo dal %s al %s.
@@ -139,6 +140,10 @@ public class AiReportService {
             
             saveJobStatus(jobId, new AiReportStatusResponse(jobId, "COMPLETED", responseContent));
             log.info("AI Report {} completed successfully", jobId);
+
+            if (user.getEmail() != null && !user.getEmail().isBlank()) {
+                emailService.sendAiReportEmail(user.getEmail(), user.getUsername(), startDate, endDate, responseContent);
+            }
 
         } catch (Exception e) {
             log.error("Error generating AI report for job {}", jobId, e);
