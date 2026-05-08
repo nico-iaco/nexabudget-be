@@ -155,6 +155,7 @@ public class AiReportService {
         StringBuilder sb = new StringBuilder();
         try {
             var breakdown = reportService.getCategoryBreakdown(user, startDate, endDate);
+            String cur = breakdown.getCurrency();
 
             BigDecimal totalOut = breakdown.getCategories().stream()
                     .filter(c -> c.getInferredType() == TransactionType.OUT)
@@ -166,16 +167,16 @@ public class AiReportService {
                     .reduce(BigDecimal.ZERO, BigDecimal::add);
             BigDecimal netBalance = totalIn.subtract(totalOut);
 
-            sb.append("--- RIEPILOGO TOTALE PERIODO (").append(startDate).append(" al ").append(endDate).append(") ---\n");
-            sb.append("Entrate Totali: ").append(totalIn).append(" EUR\n");
-            sb.append("Uscite Totali: ").append(totalOut).append(" EUR\n");
-            sb.append("Saldo Netto del Periodo: ").append(netBalance).append(" EUR\n\n");
+            sb.append("--- RIEPILOGO TOTALE PERIODO (").append(startDate).append(" al ").append(endDate).append(") - Valuta: ").append(cur).append(" ---\n");
+            sb.append("Entrate Totali: ").append(totalIn).append(" ").append(cur).append("\n");
+            sb.append("Uscite Totali: ").append(totalOut).append(" ").append(cur).append("\n");
+            sb.append("Saldo Netto del Periodo: ").append(netBalance).append(" ").append(cur).append("\n\n");
 
             sb.append("--- RIEPILOGO USCITE PER CATEGORIA NEL PERIODO ---\n");
             for (var cat : breakdown.getCategories()) {
                 if (cat.getInferredType() == TransactionType.OUT) {
                     sb.append("- ").append(cat.getCategoryName()).append(": ").append(cat.getNet().abs())
-                      .append(" EUR (").append(String.format(java.util.Locale.US, "%.2f", cat.getPercentage())).append("%)\n");
+                      .append(" (").append(String.format(java.util.Locale.US, "%.2f", cat.getPercentage())).append("%)\n");
                 }
             }
             sb.append("\n");
@@ -184,7 +185,7 @@ public class AiReportService {
             for (var cat : breakdown.getCategories()) {
                 if (cat.getInferredType() == TransactionType.IN) {
                     sb.append("- ").append(cat.getCategoryName()).append(": ").append(cat.getNet())
-                      .append(" EUR (").append(String.format(java.util.Locale.US, "%.2f", cat.getPercentage())).append("%)\n");
+                      .append(" (").append(String.format(java.util.Locale.US, "%.2f", cat.getPercentage())).append("%)\n");
                 }
             }
             sb.append("\n");

@@ -20,7 +20,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.time.LocalDate;
-import java.util.List;
 import java.util.UUID;
 
 @RestController
@@ -75,8 +74,8 @@ public class ReportController {
     }
 
     @GetMapping("/monthly-trend")
-    @Operation(summary = "Trend mensile", description = "Entrate e uscite totali per mese negli ultimi N mesi")
-    public ResponseEntity<List<ReportDto.MonthlyTrendItem>> getMonthlyTrend(
+    @Operation(summary = "Trend mensile", description = "Entrate e uscite totali per mese negli ultimi N mesi, convertiti nella valuta di default dell'utente")
+    public ResponseEntity<ReportDto.MonthlyTrendResponse> getMonthlyTrend(
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "Numero di mesi (default 12)") @RequestParam(defaultValue = "12") int months) {
         return ResponseEntity.ok(reportService.getMonthlyTrend(currentUser, months));
@@ -98,6 +97,15 @@ public class ReportController {
             @Parameter(description = "Anno (es. 2025)") @RequestParam int year,
             @Parameter(description = "Mese 1-12") @RequestParam int month) {
         return ResponseEntity.ok(reportService.getMonthComparison(currentUser, year, month));
+    }
+
+    @GetMapping("/balance-trend")
+    @Operation(summary = "Andamento saldo mensile", description = "Saldo netto cumulato (IN-OUT) di chiusura per ciascun mese nel range specificato, partendo dal saldo iniziale calcolato sulle transazioni precedenti a startDate")
+    public ResponseEntity<ReportDto.BalanceTrendResponse> getBalanceTrend(
+            @AuthenticationPrincipal User currentUser,
+            @Parameter(description = "Data inizio (verrà allineata al primo giorno del mese)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @Parameter(description = "Data fine (verrà allineata all'ultimo giorno del mese)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return ResponseEntity.ok(reportService.getBalanceTrend(currentUser, startDate, endDate));
     }
 
     @GetMapping("/monthly-projection")

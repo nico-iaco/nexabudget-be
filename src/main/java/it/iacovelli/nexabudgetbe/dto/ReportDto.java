@@ -29,6 +29,15 @@ public class ReportDto {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    public static class MonthlyTrendResponse {
+        private String currency;
+        private List<MonthlyTrendItem> items;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class CategoryBreakdownItem {
         private UUID categoryId;
         private String categoryName;
@@ -44,6 +53,7 @@ public class ReportDto {
     public static class CategoryBreakdownResponse {
         private LocalDate startDate;
         private LocalDate endDate;
+        private String currency;
         private BigDecimal grandTotal;
         private List<CategoryBreakdownItem> categories;
     }
@@ -65,6 +75,7 @@ public class ReportDto {
     @NoArgsConstructor
     @AllArgsConstructor
     public static class MonthComparisonResponse {
+        private String currency;
         private MonthComparisonItem currentMonth;
         private MonthComparisonItem previousMonth;
         private BigDecimal incomeChange;
@@ -75,9 +86,33 @@ public class ReportDto {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    public static class BalanceTrendItem {
+        private int year;
+        private int month;
+        private BigDecimal monthlyNet;
+        private BigDecimal closingBalance;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class BalanceTrendResponse {
+        private LocalDate startDate;
+        private LocalDate endDate;
+        private String currency;
+        private BigDecimal openingBalance;
+        private List<BalanceTrendItem> items;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class MonthlyProjection {
         private int year;
         private int month;
+        private String currency;
         private BigDecimal currentMonthExpense;
         private BigDecimal currentMonthIncome;
         private BigDecimal projectedMonthlyExpense;
