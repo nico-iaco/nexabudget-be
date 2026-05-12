@@ -1,5 +1,16 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import com.google.genai.Models;
+import com.google.genai.errors.ApiException;
+import com.google.genai.types.Content;
+import com.google.genai.types.FunctionCall;
+import com.google.genai.types.FunctionDeclaration;
+import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.Part;
+import com.google.genai.types.Schema;
+import com.google.genai.types.ThinkingConfig;
+import com.google.genai.types.Tool;
 import it.iacovelli.nexabudgetbe.dto.ChatDto;
 import it.iacovelli.nexabudgetbe.model.ChatMessage;
 import it.iacovelli.nexabudgetbe.model.ChatSession;
@@ -9,16 +20,7 @@ import it.iacovelli.nexabudgetbe.repository.ChatSessionRepository;
 import it.iacovelli.nexabudgetbe.service.chat.FinanceTools;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.ai.chat.messages.AssistantMessage;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.ai.chat.messages.Message;
-import org.springframework.ai.chat.messages.SystemMessage;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.google.genai.GoogleGenAiChatModel;
-import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
-import org.springframework.ai.google.genai.common.GoogleGenAiThinkingLevel;
-import org.springframework.ai.support.ToolCallbacks;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -27,6 +29,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -36,6 +39,7 @@ import java.util.stream.Collectors;
 public class ChatService {
 
     private static final int MAX_HISTORY_MESSAGES = 20;
+    private static final int MAX_TOOL_ITERATIONS = 10;
 
     private static final String SYSTEM_PROMPT_TEMPLATE = """
             Sei NexaBot, l'assistente finanziario personale di NexaBudget.
@@ -69,7 +73,10 @@ public class ChatService {
     @Value("${nexabudget.ai.chat.model}")
     private String chatModelName;
 
-    private final GoogleGenAiChatModel chatModel;
+    @Value("${nexabudget.ai.chat.thinking-budget}")
+    private int thinkingBudget;
+
+    private final Models genaiModels;
     private final FinanceTools financeTools;
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
@@ -84,41 +91,46 @@ public class ChatService {
                 .content(request.message())
                 .build());
 
-        List<Message> messages = buildPromptMessages(user, session, request.message());
+        String systemText = String.format(SYSTEM_PROMPT_TEMPLATE,
+                user.getDefaultCurrency(),
+                LocalDate.now());
 
-        GoogleGenAiChatOptions.Builder optionsBuilder = GoogleGenAiChatOptions.builder()
-                .model(chatModelName)
-                .temperature(0.4);
-        if (chatModelName.startsWith("gemini-")) {
-            optionsBuilder.thinkingLevel(GoogleGenAiThinkingLevel.LOW).includeThoughts(false);
+        Content systemInstruction = Content.builder()
+                .parts(List.of(Part.fromText(systemText)))
+                .build();
+
+        List<Content> contents = buildContents(session, request.message());
+
+        GenerateContentConfig.Builder cfgBuilder = GenerateContentConfig.builder()
+                .temperature(0.4f)
+                .systemInstruction(systemInstruction)
+                .tools(List.of(buildFinanceTool()));
+
+        if (supportsThinking(chatModelName)) {
+            cfgBuilder.thinkingConfig(ThinkingConfig.builder()
+                    .thinkingBudget(thinkingBudget)
+                    .includeThoughts(false)
+                    .build());
         }
-        GoogleGenAiChatOptions options = optionsBuilder.build();
-        options.setToolCallbacks(java.util.Arrays.asList(ToolCallbacks.from(financeTools)));
 
-        Prompt prompt = new Prompt(messages, options);
+        GenerateContentConfig cfg = cfgBuilder.build();
 
-        log.debug("[ChatService] Invocazione Gemini per sessione {}", session.getId());
-        var response = chatModel.call(prompt);
+        log.debug("[ChatService] Invocazione modello {} per sessione {}", chatModelName, session.getId());
 
-        AssistantMessage output = response.getResult().getOutput();
-        String replyText = stripThinking(output.getText());
-
-        List<String> toolsUsed = extractToolsUsed(output);
+        ChatResult result = callWithFunctionLoop(contents, cfg);
 
         chatMessageRepository.save(ChatMessage.builder()
                 .session(session)
                 .role("ASSISTANT")
-                .content(replyText)
+                .content(result.replyText())
                 .build());
 
-        if (toolsUsed != null && !toolsUsed.isEmpty()) {
-            for (String toolName : toolsUsed) {
-                chatMessageRepository.save(ChatMessage.builder()
-                        .session(session)
-                        .role("TOOL")
-                        .toolName(toolName)
-                        .build());
-            }
+        for (String toolName : result.toolsUsed()) {
+            chatMessageRepository.save(ChatMessage.builder()
+                    .session(session)
+                    .role("TOOL")
+                    .toolName(toolName)
+                    .build());
         }
 
         if (isFirstExchange(session)) {
@@ -129,7 +141,7 @@ public class ChatService {
         }
         chatSessionRepository.save(session);
 
-        return new ChatDto.ChatResponse(session.getId(), replyText, toolsUsed);
+        return new ChatDto.ChatResponse(session.getId(), result.replyText(), result.toolsUsed());
     }
 
     @Transactional(readOnly = true)
@@ -168,37 +180,168 @@ public class ChatService {
         return chatSessionRepository.save(newSession);
     }
 
-    private List<Message> buildPromptMessages(User user, ChatSession session, String userMessage) {
-        String systemText = String.format(SYSTEM_PROMPT_TEMPLATE,
-                user.getDefaultCurrency(),
-                LocalDate.now());
-
-        List<Message> messages = new ArrayList<>();
-        messages.add(new SystemMessage(systemText));
-
+    private List<Content> buildContents(ChatSession session, String userMessage) {
+        List<Content> contents = new ArrayList<>();
         List<ChatMessage> history = chatMessageRepository.findLastNBySessionId(session.getId(), MAX_HISTORY_MESSAGES);
-        // findLastN returns DESC order — reverse for chronological order
+        // findLastN returns DESC — reverse for chronological order
         for (int i = history.size() - 1; i >= 0; i--) {
             ChatMessage m = history.get(i);
             if ("USER".equals(m.getRole()) && m.getContent() != null) {
-                messages.add(new UserMessage(m.getContent()));
+                contents.add(Content.builder().role("user").parts(List.of(Part.fromText(m.getContent()))).build());
             } else if ("ASSISTANT".equals(m.getRole()) && m.getContent() != null) {
-                messages.add(new AssistantMessage(m.getContent()));
+                contents.add(Content.builder().role("model").parts(List.of(Part.fromText(m.getContent()))).build());
             }
         }
-
-        messages.add(new UserMessage(userMessage));
-        return messages;
+        contents.add(Content.builder().role("user").parts(List.of(Part.fromText(userMessage))).build());
+        return contents;
     }
 
-    private List<String> extractToolsUsed(AssistantMessage output) {
-        if (output.getToolCalls() == null || output.getToolCalls().isEmpty()) {
-            return List.of();
+    private ChatResult callWithFunctionLoop(List<Content> contents, GenerateContentConfig cfg) {
+        List<String> toolsUsed = new ArrayList<>();
+        for (int iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+            GenerateContentResponse resp;
+            try {
+                resp = genaiModels.generateContent(chatModelName, contents, cfg);
+            } catch (ApiException e) {
+                log.error("[ChatService] Errore API Gemini ({}): {}", e.code(), e.getMessage());
+                return new ChatResult("Si è verificato un errore nella comunicazione con l'AI. Riprova tra poco.", toolsUsed);
+            }
+
+            List<FunctionCall> calls = resp.functionCalls();
+            if (calls == null || calls.isEmpty()) {
+                return new ChatResult(stripThinking(resp.text()), toolsUsed);
+            }
+
+            // collect the model's function-call content for the conversation history
+            resp.candidates()
+                    .flatMap(cs -> cs.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(cs.get(0)))
+                    .flatMap(c -> c.content())
+                    .ifPresent(contents::add);
+
+            // execute each tool and build function response parts
+            List<Part> responseParts = new ArrayList<>();
+            for (FunctionCall fc : calls) {
+                String name = fc.name().orElse("unknown");
+                Map<String, Object> args = fc.args().orElse(Map.of());
+                toolsUsed.add(name);
+                log.debug("[ChatService] Tool invocato: {} con args: {}", name, args);
+                String toolResult = dispatchTool(name, args);
+                responseParts.add(Part.fromFunctionResponse(name, Map.of("result", toolResult)));
+            }
+
+            contents.add(Content.builder().role("user").parts(responseParts).build());
         }
-        return output.getToolCalls().stream()
-                .map(AssistantMessage.ToolCall::name)
-                .distinct()
-                .collect(Collectors.toList());
+        log.warn("[ChatService] Raggiunto il limite di {} iterazioni tool calling", MAX_TOOL_ITERATIONS);
+        return new ChatResult("Non sono riuscito a completare la richiesta nel tempo previsto.", toolsUsed);
+    }
+
+    private String dispatchTool(String name, Map<String, Object> args) {
+        try {
+            return switch (name) {
+                case "getAccountBalances" -> financeTools.getAccountBalances();
+                case "getRecentTransactions" -> financeTools.getRecentTransactions(
+                        args.containsKey("limit") ? ((Number) args.get("limit")).intValue() : null);
+                case "getTransactionsInPeriod" -> financeTools.getTransactionsInPeriod(
+                        (String) args.get("startDate"), (String) args.get("endDate"));
+                case "getPeriodTotals" -> financeTools.getPeriodTotals(
+                        (String) args.get("startDate"), (String) args.get("endDate"));
+                case "getActiveBudgets" -> financeTools.getActiveBudgets();
+                case "getMonthlyTrend" -> financeTools.getMonthlyTrend(
+                        args.containsKey("months") ? ((Number) args.get("months")).intValue() : null);
+                case "getCategoryBreakdown" -> financeTools.getCategoryBreakdown(
+                        (String) args.get("startDate"), (String) args.get("endDate"));
+                case "getMonthlyProjection" -> financeTools.getMonthlyProjection();
+                case "getCryptoPortfolio" -> financeTools.getCryptoPortfolio();
+                case "listCategories" -> financeTools.listCategories();
+                default -> "Tool non trovato: " + name;
+            };
+        } catch (Exception e) {
+            log.error("[ChatService] Errore esecuzione tool '{}': {}", name, e.getMessage());
+            return "Errore nell'esecuzione del tool " + name + ": " + e.getMessage();
+        }
+    }
+
+    private Tool buildFinanceTool() {
+        Schema strSchema = Schema.builder().type("STRING").build();
+        Schema intSchema = Schema.builder().type("INTEGER").build();
+
+        return Tool.builder().functionDeclarations(
+                FunctionDeclaration.builder()
+                        .name("getAccountBalances")
+                        .description("Restituisce la lista dei conti bancari dell'utente con saldo e valuta, più il saldo totale convertito nella valuta di default dell'utente.")
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getRecentTransactions")
+                        .description("Restituisce le ultime transazioni dell'utente. Limit massimo 50.")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of("limit", Schema.builder().type("INTEGER")
+                                        .description("Numero di transazioni da restituire (default 10, max 50)").build()))
+                                .build())
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getTransactionsInPeriod")
+                        .description("Restituisce le transazioni dell'utente in un intervallo di date. Max 5 anni di range.")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of(
+                                        "startDate", Schema.builder().type("STRING").description("Data inizio in formato yyyy-MM-dd").build(),
+                                        "endDate", Schema.builder().type("STRING").description("Data fine in formato yyyy-MM-dd").build()))
+                                .required(List.of("startDate", "endDate"))
+                                .build())
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getPeriodTotals")
+                        .description("Restituisce il totale entrate, uscite e saldo netto per un periodo specifico.")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of(
+                                        "startDate", Schema.builder().type("STRING").description("Data inizio in formato yyyy-MM-dd").build(),
+                                        "endDate", Schema.builder().type("STRING").description("Data fine in formato yyyy-MM-dd").build()))
+                                .required(List.of("startDate", "endDate"))
+                                .build())
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getActiveBudgets")
+                        .description("Restituisce i budget attivi dell'utente con limite, importo speso e percentuale di utilizzo.")
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getMonthlyTrend")
+                        .description("Restituisce il trend mensile di entrate e uscite degli ultimi N mesi.")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of("months", Schema.builder().type("INTEGER")
+                                        .description("Numero di mesi da analizzare (default 6, max 24)").build()))
+                                .build())
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getCategoryBreakdown")
+                        .description("Restituisce il breakdown delle spese per categoria in un intervallo di date.")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of(
+                                        "startDate", Schema.builder().type("STRING").description("Data inizio in formato yyyy-MM-dd").build(),
+                                        "endDate", Schema.builder().type("STRING").description("Data fine in formato yyyy-MM-dd").build()))
+                                .required(List.of("startDate", "endDate"))
+                                .build())
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getMonthlyProjection")
+                        .description("Restituisce la proiezione di entrate e uscite per la fine del mese corrente basata sul ritmo attuale.")
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getCryptoPortfolio")
+                        .description("Restituisce il valore del portafoglio crypto dell'utente nella valuta di default.")
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("listCategories")
+                        .description("Restituisce la lista delle categorie disponibili per l'utente (personali + predefinite).")
+                        .build()
+        ).build();
+    }
+
+    private static boolean supportsThinking(String modelName) {
+        return modelName.startsWith("gemini-") || modelName.startsWith("gemma-4");
     }
 
     private boolean isFirstExchange(ChatSession session) {
@@ -240,4 +383,6 @@ public class ChatService {
         // 3. No known thinking pattern detected — return unchanged
         return text.strip();
     }
+
+    private record ChatResult(String replyText, List<String> toolsUsed) {}
 }

@@ -1,15 +1,18 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import com.google.genai.Models;
+import com.google.genai.errors.ApiException;
+import com.google.genai.types.Content;
+import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.Part;
 import it.iacovelli.nexabudgetbe.model.Category;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.google.genai.GoogleGenAiChatModel;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
-import org.springframework.web.client.HttpClientErrorException;
-import org.springframework.web.client.HttpServerErrorException;
 
 import java.util.List;
 import java.util.Optional;
@@ -22,15 +25,18 @@ public class AiCategorizationService {
 
     private static final String NONE = "NONE";
 
+    @Value("${nexabudget.ai.chat.model}")
+    private String modelName;
+
     private final CategoryService categoryService;
     private final SemanticCacheService semanticCacheService;
-    private final GoogleGenAiChatModel chatClient;
+    private final Models genaiModels;
 
     public AiCategorizationService(CategoryService categoryService, SemanticCacheService semanticCacheService,
-                                   GoogleGenAiChatModel chatClient) {
+                                   Models genaiModels) {
         this.categoryService = categoryService;
         this.semanticCacheService = semanticCacheService;
-        this.chatClient = chatClient;
+        this.genaiModels = genaiModels;
     }
 
     public record AiCategoryResponse(String category) {}
@@ -58,15 +64,22 @@ public class AiCategorizationService {
                     .findFirst();
         }
 
-        // 2. Chiamata AI
         String prompt = buildPrompt(description, availableCategories, type);
 
         try {
             log.debug("Categorizzazione AI per: '{}'", description);
-            String raw = chatClient.call(new Prompt(prompt))
-                    .getResult()
-                    .getOutput()
-                    .getText();
+
+            Content userContent = Content.builder()
+                    .role("user")
+                    .parts(List.of(Part.fromText(prompt)))
+                    .build();
+
+            GenerateContentConfig cfg = GenerateContentConfig.builder()
+                    .temperature(0.1f)
+                    .build();
+
+            GenerateContentResponse resp = genaiModels.generateContent(modelName, userContent, cfg);
+            String raw = resp.text();
 
             String aiResponse = raw != null ? raw.replaceAll("[*_`\"'\\n]+", "").trim() : NONE;
 
@@ -90,15 +103,12 @@ public class AiCategorizationService {
 
             return matched;
 
-        } catch (HttpClientErrorException e) {
-            if (e.getStatusCode().value() == 429) {
+        } catch (ApiException e) {
+            if (e.code() == 429) {
                 log.warn("Quota Gemini API esaurita, categorizzazione saltata per: '{}'", description);
             } else {
-                log.error("Errore HTTP client Gemini ({}): {}", e.getStatusCode(), e.getMessage());
+                log.error("Errore API Gemini ({}): {}", e.code(), e.getMessage());
             }
-            return Optional.empty();
-        } catch (HttpServerErrorException e) {
-            log.error("Errore server Gemini ({}), categorizzazione saltata per: '{}'", e.getStatusCode(), description);
             return Optional.empty();
         } catch (Exception e) {
             log.error("Errore inatteso nella categorizzazione AI per '{}': {}", description, e.getMessage());
