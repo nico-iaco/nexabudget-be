@@ -78,7 +78,7 @@ public class AiReportService {
             }
         }
         
-        List<TransactionResponse> transactions = transactionService.getTransactionsByUserAndDateRange(user, startDate, endDate);
+        List<TransactionResponse> transactions = transactionService.getTransactionsByUserAndDateRangeForReport(user, startDate, endDate);
         if (transactions.isEmpty()) {
             throw new IllegalArgumentException("Nessuna transazione trovata nel periodo specificato");
         }
@@ -92,7 +92,7 @@ public class AiReportService {
     @Async
     public void generateAiReport(UUID jobId, User user, LocalDate startDate, LocalDate endDate) {
         try {
-            List<TransactionResponse> transactions = transactionService.getTransactionsByUserAndDateRange(user, startDate, endDate);
+            List<TransactionResponse> transactions = transactionService.getTransactionsByUserAndDateRangeForReport(user, startDate, endDate);
             String csvData = generateCsv(transactions);
 
             String contextData = buildAdditionalContext(user, startDate, endDate);

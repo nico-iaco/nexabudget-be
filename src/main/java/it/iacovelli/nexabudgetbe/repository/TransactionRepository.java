@@ -91,7 +91,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
        @Query("SELECT t FROM Transaction t WHERE t.account = :account AND t.date BETWEEN :start AND :end ORDER BY t.date DESC")
        List<Transaction> findByAccountAndDateRangeOrderByDateDesc(Account account, LocalDate start, LocalDate end);
 
-       @Query("SELECT SUM(t.amount) FROM Transaction t WHERE t.account = :account AND t.type = :type AND t.date BETWEEN :start AND :end")
+       @Query("SELECT SUM(t.amount) FROM Transaction t WHERE t.account = :account AND t.type = :type AND t.date BETWEEN :start AND :end AND t.transferId IS NULL")
        BigDecimal sumByAccountAndTypeAndDateRange(Account account, TransactionType type, LocalDateTime start,
                      LocalDateTime end);
 
@@ -178,6 +178,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
        List<Object[]> findCategoryNetBreakdown(@Param("user") User user,
                      @Param("start") LocalDate start, @Param("end") LocalDate end);
 
+       @Query("SELECT t.account.currency, t.type, COALESCE(SUM(t.amount), 0) " +
+                     "FROM Transaction t WHERE t.user = :user " +
+                     "AND t.date BETWEEN :start AND :end AND t.category IS NULL " +
+                     "AND t.transferId IS NULL " +
+                     "GROUP BY t.account.currency, t.type")
+       List<Object[]> findUncategorizedTotalsByType(@Param("user") User user,
+                     @Param("start") LocalDate start, @Param("end") LocalDate end);
+
        @Query("SELECT COALESCE(SUM(t.amount), 0) FROM Transaction t " +
                      "WHERE t.user = :user AND t.type = :type AND t.date BETWEEN :start AND :end " +
                      "AND t.transferId IS NULL")
@@ -195,6 +203,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
                      "COALESCE(SUM(CASE WHEN t.type = 'IN' THEN t.amount ELSE -t.amount END), 0) " +
                      "FROM Transaction t WHERE t.user = :user " +
                      "AND t.date BETWEEN :start AND :end " +
+                     "AND t.transferId IS NULL " +
                      "GROUP BY YEAR(t.date), MONTH(t.date), t.account.currency " +
                      "ORDER BY YEAR(t.date), MONTH(t.date)")
        List<Object[]> findMonthlyNetTotals(@Param("user") User user,
@@ -202,6 +211,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
 
        @Query("SELECT t.account.currency, COALESCE(SUM(CASE WHEN t.type = 'IN' THEN t.amount ELSE -t.amount END), 0) " +
                      "FROM Transaction t WHERE t.user = :user AND t.date < :date " +
+                     "AND t.transferId IS NULL " +
                      "GROUP BY t.account.currency")
        List<Object[]> sumNetByUserBeforePerCurrency(@Param("user") User user, @Param("date") LocalDate date);
 }

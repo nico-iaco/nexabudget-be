@@ -313,6 +313,24 @@ public class TransactionController {
         return ResponseEntity.ok(income);
     }
 
+    @GetMapping("/period-totals")
+    @Operation(summary = "Totale entrate/uscite utente",
+            description = "Somma entrate e uscite di tutti i conti dell'utente nell'intervallo, escludendo i trasferimenti e convertite nella valuta di default")
+    public ResponseEntity<TransactionDto.PeriodTotalsResponse> getPeriodTotalsForUser(
+            @AuthenticationPrincipal User currentUser,
+            @Parameter(description = "Data inizio (yyyy-MM-dd)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate start,
+            @Parameter(description = "Data fine (yyyy-MM-dd)") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate end) {
+
+        User user = userService.getUserById(currentUser.getId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
+
+        if (end.isBefore(start)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "end deve essere uguale o successiva a start");
+        }
+
+        return ResponseEntity.ok(transactionService.getTotalsForUserInPeriod(user, start, end));
+    }
+
     @GetMapping("/account/{accountId}/expense")
     @Operation(summary = "Totale uscite conto", description = "Somma uscite per un conto in un intervallo")
     public ResponseEntity<BigDecimal> getExpenseForAccountInPeriod(

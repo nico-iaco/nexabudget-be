@@ -78,15 +78,26 @@ public class ReportService {
 
         // Each row: [categoryId, categoryName, currency, net]
         // Aggregate by category (sum converted nets across currencies).
-        record CatKey(UUID id, String name) {}
+        record CatKey(UUID id, String name, TransactionType forcedType) {}
         Map<CatKey, BigDecimal> aggregatedNet = new LinkedHashMap<>();
         for (Object[] r : rows) {
             UUID catId = r[0] != null ? UUID.fromString(r[0].toString()) : null;
-            String catName = r[1] != null ? r[1].toString() : "Senza categoria";
+            String catName = r[1] != null ? r[1].toString() : "n/a";
             String currency = r[2] != null ? r[2].toString() : target;
             BigDecimal net = (BigDecimal) r[3];
             BigDecimal converted = convertToUserCurrency(net, currency, target);
-            aggregatedNet.merge(new CatKey(catId, catName), converted, BigDecimal::add);
+            aggregatedNet.merge(new CatKey(catId, catName, null), converted, BigDecimal::add);
+        }
+
+        // Senza categoria: due bucket separati per IN e OUT (no netting)
+        for (Object[] r : transactionRepository.findUncategorizedTotalsByType(user, startDate, endDate)) {
+            String currency = r[0] != null ? r[0].toString() : target;
+            TransactionType type = TransactionType.valueOf(r[1].toString());
+            BigDecimal amount = (BigDecimal) r[2];
+            BigDecimal converted = convertToUserCurrency(amount, currency, target);
+            // Per coerenza con il netting: OUT positivo, IN negativo
+            BigDecimal signed = type == TransactionType.OUT ? converted : converted.negate();
+            aggregatedNet.merge(new CatKey(null, "n/a", type), signed, BigDecimal::add);
         }
 
         BigDecimal outGroupTotal = aggregatedNet.values().stream()
@@ -102,7 +113,9 @@ public class ReportService {
                 .sorted((a, b) -> b.getValue().abs().compareTo(a.getValue().abs()))
                 .map(e -> {
                     BigDecimal net = e.getValue();
-                    TransactionType inferredType = net.compareTo(BigDecimal.ZERO) > 0 ? TransactionType.OUT : TransactionType.IN;
+                    TransactionType inferredType = e.getKey().forcedType() != null
+                            ? e.getKey().forcedType()
+                            : (net.compareTo(BigDecimal.ZERO) > 0 ? TransactionType.OUT : TransactionType.IN);
                     BigDecimal groupTotal = inferredType == TransactionType.OUT ? outGroupTotal : inGroupTotal;
                     double percentage = groupTotal.compareTo(BigDecimal.ZERO) == 0 ? 0.0
                             : net.abs().divide(groupTotal, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).doubleValue();

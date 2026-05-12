@@ -27,17 +27,20 @@ public class TransactionService {
     private final UserService userService;
     private final AiCategorizationService aiCategorizationService;
     private final ExchangeRateService exchangeRateService;
+    private final CurrencyConversionService currencyConversionService;
 
     private final Logger logger = LoggerFactory.getLogger(TransactionService.class);
 
     private final DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd");
 
     public TransactionService(TransactionRepository transactionRepository, UserService userService,
-                              AiCategorizationService aiCategorizationService, ExchangeRateService exchangeRateService) {
+                              AiCategorizationService aiCategorizationService, ExchangeRateService exchangeRateService,
+                              CurrencyConversionService currencyConversionService) {
         this.transactionRepository = transactionRepository;
         this.userService = userService;
         this.aiCategorizationService = aiCategorizationService;
         this.exchangeRateService = exchangeRateService;
+        this.currencyConversionService = currencyConversionService;
     }
 
     @Transactional
@@ -302,6 +305,31 @@ public class TransactionService {
     }
 
     @Transactional(readOnly = true)
+    public List<TransactionDto.TransactionResponse> getTransactionsByUserAndDateRangeForReport(User user, LocalDate start, LocalDate end) {
+        List<Transaction> all = transactionRepository.findByUserAndDateBetween(user, start, end);
+
+        java.util.Map<String, List<Transaction>> transferGroups = all.stream()
+                .filter(t -> t.getTransferId() != null)
+                .collect(Collectors.groupingBy(Transaction::getTransferId));
+
+        java.util.Set<UUID> sameTypeTransferIds = new java.util.HashSet<>();
+        for (List<Transaction> legs : transferGroups.values()) {
+            if (legs.size() < 2) continue;
+            AccountType firstType = legs.get(0).getAccount() != null ? legs.get(0).getAccount().getType() : null;
+            boolean allSameType = legs.stream()
+                    .allMatch(l -> l.getAccount() != null && l.getAccount().getType() == firstType);
+            if (allSameType) {
+                legs.forEach(l -> sameTypeTransferIds.add(l.getId()));
+            }
+        }
+
+        return all.stream()
+                .filter(t -> !sameTypeTransferIds.contains(t.getId()))
+                .map(this::mapTransactionToResponse)
+                .collect(Collectors.toList());
+    }
+
+    @Transactional(readOnly = true)
     public List<TransactionDto.TransactionResponse> getTransactionsByAccountAndDateRange(Account account, LocalDate start, LocalDate end) {
         return transactionRepository.findByAccountAndDateRangeOrderByDateDesc(account, start, end).stream()
                 .map(this::mapTransactionToResponse)
@@ -402,6 +430,31 @@ public class TransactionService {
         BigDecimal income = getIncomeForAccountInPeriod(account, start, end);
         BigDecimal expense = getExpenseForAccountInPeriod(account, start, end);
         return income.subtract(expense);
+    }
+
+    @Transactional(readOnly = true)
+    public TransactionDto.PeriodTotalsResponse getTotalsForUserInPeriod(User user, LocalDate start, LocalDate end) {
+        String target = user.getDefaultCurrency() != null ? user.getDefaultCurrency() : "EUR";
+        BigDecimal income = sumConvertedByType(user, TransactionType.IN, start, end, target);
+        BigDecimal expense = sumConvertedByType(user, TransactionType.OUT, start, end, target);
+        return TransactionDto.PeriodTotalsResponse.builder()
+                .startDate(start).endDate(end)
+                .currency(target)
+                .income(income).expense(expense).net(income.subtract(expense))
+                .build();
+    }
+
+    private BigDecimal sumConvertedByType(User user, TransactionType type, LocalDate start, LocalDate end, String target) {
+        List<Object[]> rows = transactionRepository.sumByUserAndTypeAndDateRangePerCurrency(user, type, start, end);
+        BigDecimal sum = BigDecimal.ZERO;
+        for (Object[] row : rows) {
+            String currency = row[0] != null ? row[0].toString() : target;
+            BigDecimal amount = (BigDecimal) row[1];
+            if (amount == null) continue;
+            String src = currency != null && !currency.isBlank() ? currency : target;
+            sum = sum.add(currencyConversionService.convert(amount, src, target));
+        }
+        return sum;
     }
 
     public void importTransactionsFromGocardless(List<GocardlessTransaction> transactions, User user, Account account, LocalDate startDate) {

@@ -116,4 +116,19 @@ public class TransactionDto {
         @JsonFormat(shape = JsonFormat.Shape.STRING, pattern = "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", timezone = "UTC")
         private LocalDateTime deletedAt;
     }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
+    public static class PeriodTotalsResponse {
+        @JsonFormat(pattern = "yyyy-MM-dd")
+        private LocalDate startDate;
+        @JsonFormat(pattern = "yyyy-MM-dd")
+        private LocalDate endDate;
+        private String currency;
+        private BigDecimal income;
+        private BigDecimal expense;
+        private BigDecimal net;
+    }
 }
