@@ -1,5 +1,11 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import com.google.genai.Models;
+import com.google.genai.types.Content;
+import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GenerateContentResponse;
+import com.google.genai.types.Part;
+import com.google.genai.types.ThinkingConfig;
 import it.iacovelli.nexabudgetbe.config.CacheConfig;
 import it.iacovelli.nexabudgetbe.dto.AiReportStatusResponse;
 import it.iacovelli.nexabudgetbe.dto.TransactionDto.TransactionResponse;
@@ -9,22 +15,13 @@ import it.iacovelli.nexabudgetbe.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
+import org.springframework.beans.factory.annotation.Value;
 import java.math.BigDecimal;
 import org.apache.commons.csv.CSVPrinter;
-import org.springframework.ai.chat.messages.UserMessage;
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.google.genai.GoogleGenAiChatModel;
-import org.springframework.ai.content.Media;
-import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
-import org.springframework.ai.google.genai.common.GoogleGenAiThinkingLevel;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
-import org.springframework.util.MimeTypeUtils;
-
-import org.springframework.core.io.ByteArrayResource;
-import org.springframework.core.io.Resource;
 
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
@@ -38,24 +35,30 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AiReportService {
 
+    @Value("${nexabudget.ai.report.model}")
+    private String reportModelName;
+
+    @Value("${nexabudget.ai.report.thinking-budget}")
+    private int thinkingBudget;
+
     private final TransactionService transactionService;
-    private final GoogleGenAiChatModel chatModel;
+    private final Models genaiModels;
     private final CacheManager cacheManager;
     private final ReportService reportService;
     private final EmailService emailService;
 
     private static final String SYSTEM_PROMPT = """
             Sei un consulente finanziario esperto. Analizza le seguenti transazioni bancarie (in formato CSV) di un utente per il periodo dal %s al %s.
-            
+
             TI FORNISCO INOLTRE QUESTO CONTESTO AGGIUNTIVO SUL PERIODO GIA RAPPRESENTATO NEI DATI (già calcolato a livello di sistema):
             %s
-            
+
             IL TUO COMPITO È GENERARE UN REPORT MOLTO DETTAGLIATO CHE INCLUDA:
             1. **Riassunto Generale**: Saldo totale del periodo, andamento Entrate vs Uscite e tasso di risparmio.
             2. **Analisi per Categoria**: Evidenzia le categorie di spesa maggiori e valuta se sono eccessive. Usa i breakdown presi in contesto da abbreviare il conteggio manuale.
             3. **Pattern e Anomalie**: Individua comportamenti ripetitivi o spese anomale leggendo le occorrenze delle transazioni del periodo.
             4. **Suggerimenti di Miglioramento**: Dai 3-5 consigli pratici basati ESCLUSIVAMENTE sui dati forniti su come l'utente potrebbe ottimizzare le proprie finanze.
-            
+
             REGOLE TASSATIVE PER L'OUTPUT:
             - Scrivi ESCLUSIVAMENTE in lingua Italiana. Nessun mix di lingue.
             - NON INCLUDERE log di ragionamento interno, "scratchpad", o passaggi intermedi di auto-correzione.
@@ -65,27 +68,26 @@ public class AiReportService {
 
     public UUID startAiReportJob(User user, LocalDate startDate, LocalDate endDate) {
         validateDateRange(startDate, endDate);
-        
+
         String cacheKey = user.getId() + "_" + startDate + "_" + endDate;
         Cache cache = cacheManager.getCache(CacheConfig.AI_REPORTS_RESULTS_CACHE);
         if (cache != null) {
             String cachedReport = cache.get(cacheKey, String.class);
             if (cachedReport != null) {
-                // Ritorna un job fittizio già completato
                 UUID instantJobId = UUID.randomUUID();
                 saveJobStatus(instantJobId, new AiReportStatusResponse(instantJobId, "COMPLETED", cachedReport));
                 return instantJobId;
             }
         }
-        
+
         List<TransactionResponse> transactions = transactionService.getTransactionsByUserAndDateRangeForReport(user, startDate, endDate);
         if (transactions.isEmpty()) {
             throw new IllegalArgumentException("Nessuna transazione trovata nel periodo specificato");
         }
-        
+
         UUID jobId = UUID.randomUUID();
         saveJobStatus(jobId, new AiReportStatusResponse(jobId, "PENDING", null));
-        
+
         return jobId;
     }
 
@@ -93,51 +95,39 @@ public class AiReportService {
     public void generateAiReport(UUID jobId, User user, LocalDate startDate, LocalDate endDate) {
         try {
             List<TransactionResponse> transactions = transactionService.getTransactionsByUserAndDateRangeForReport(user, startDate, endDate);
-            String csvData = generateCsv(transactions);
+            byte[] csvBytes = generateCsv(transactions).getBytes(StandardCharsets.UTF_8);
 
             String contextData = buildAdditionalContext(user, startDate, endDate);
             String instruction = String.format(SYSTEM_PROMPT, startDate, endDate, contextData);
-            
-            byte[] csvBytes = csvData.getBytes(StandardCharsets.UTF_8);
-            Resource resource = new ByteArrayResource(csvBytes) {
-                @Override
-                public String getFilename() {
-                    return "transactions.csv";
-                }
-            };
-            
-            Media csvMedia = Media.builder()
-                    .mimeType(MimeTypeUtils.parseMimeType("text/csv"))
-                    .data(resource)
-                    .name("transactions.csv")
+
+            Part textPart = Part.fromText(instruction);
+            Part csvPart = Part.fromBytes(csvBytes, "text/csv");
+            Content userContent = Content.builder()
+                    .role("user")
+                    .parts(List.of(textPart, csvPart))
                     .build();
 
-            UserMessage userMessage = UserMessage.builder()
-                    .text(instruction)
-                    .media(List.of(csvMedia))
-                    .build();
+            GenerateContentConfig.Builder cfgBuilder = GenerateContentConfig.builder()
+                    .temperature(0.4f);
 
-            // Configura le opzioni per abilitare il "thinking" (richiede modello compatibile es: gemini-2.5-pro / gemini-2.0-flash-thinking)
-            // e imposta includeThoughts a false cosí il ragionamento intermediario non viene restituito nel payload di output.
-            GoogleGenAiChatOptions chatOptions = GoogleGenAiChatOptions.builder()
-                    // Opzionalmente .model("gemini-2.0-flash-thinking-exp")
-                    // Puoi configurare il budget qui con .thinkingBudget(1024)
-                    .model("gemini-3-flash-preview")
-                    .thinkingLevel(GoogleGenAiThinkingLevel.MEDIUM)
-                    .includeThoughts(false)
-                    .build();
+            if (supportsThinking(reportModelName)) {
+                cfgBuilder.thinkingConfig(ThinkingConfig.builder()
+                        .thinkingBudget(thinkingBudget)
+                        .includeThoughts(false)
+                        .build());
+            }
 
-            Prompt prompt = new Prompt(userMessage, chatOptions);
+            GenerateContentResponse resp = genaiModels.generateContent(
+                    reportModelName, userContent, cfgBuilder.build());
 
-            String responseContent = chatModel.call(prompt).getResult().getOutput().getText();
-            
-            // Salva il risultato elaborato nella cache dei report persistenti (7 giorni) in base al range
+            String responseContent = resp.text();
+
             Cache resultsCache = cacheManager.getCache(CacheConfig.AI_REPORTS_RESULTS_CACHE);
             if (resultsCache != null) {
                 String cacheKey = user.getId() + "_" + startDate + "_" + endDate;
                 resultsCache.put(cacheKey, responseContent);
             }
-            
+
             saveJobStatus(jobId, new AiReportStatusResponse(jobId, "COMPLETED", responseContent));
             log.info("AI Report {} completed successfully", jobId);
 
@@ -189,8 +179,7 @@ public class AiReportService {
                 }
             }
             sb.append("\n");
-            
-            // 3. Month Comparison (general metrics around the endDate month)
+
             var monthComparison = reportService.getMonthComparison(user, endDate.getYear(), endDate.getMonthValue());
             sb.append("--- CONFRONTO MACRO MESE FINALE (").append(endDate.getMonthValue()).append("/").append(endDate.getYear()).append(") VS MESE PRECEDENTE ---\n");
             sb.append("Mese Corrente: Entrate=").append(monthComparison.getCurrentMonth().getIncome())
@@ -225,6 +214,10 @@ public class AiReportService {
         }
     }
 
+    private static boolean supportsThinking(String modelName) {
+        return modelName.startsWith("gemini-") || modelName.startsWith("gemma-4");
+    }
+
     private void validateDateRange(LocalDate startDate, LocalDate endDate) {
         if (endDate.isBefore(startDate)) {
             throw new IllegalArgumentException("La data di fine non può essere precedente alla data di inizio");
@@ -240,7 +233,7 @@ public class AiReportService {
         CSVFormat format = CSVFormat.DEFAULT.builder()
                 .setHeader("Data", "Importo", "Tipo", "Categoria", "Descrizione")
                 .build();
-                
+
         try (CSVPrinter printer = new CSVPrinter(sw, format)) {
             for (TransactionResponse tx : transactions) {
                 printer.printRecord(

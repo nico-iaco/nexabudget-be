@@ -1,5 +1,8 @@
 package it.iacovelli.nexabudgetbe;
 
+import com.google.genai.Models;
+import com.google.genai.types.GenerateContentConfig;
+import com.google.genai.types.GenerateContentResponse;
 import it.iacovelli.nexabudgetbe.model.Category;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
@@ -11,8 +14,6 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.ai.chat.prompt.Prompt;
-import org.springframework.ai.google.genai.GoogleGenAiChatModel;
 
 import java.util.List;
 import java.util.Optional;
@@ -31,8 +32,8 @@ class AiCategorizationServiceTest {
     @Mock
     private SemanticCacheService semanticCacheService;
 
-    @Mock(answer = org.mockito.Answers.RETURNS_DEEP_STUBS)
-    private GoogleGenAiChatModel chatClient;
+    @Mock
+    private Models genaiModels;
 
     private AiCategorizationService service;
 
@@ -44,7 +45,7 @@ class AiCategorizationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiCategorizationService(categoryService, semanticCacheService, chatClient);
+        service = new AiCategorizationService(categoryService, semanticCacheService, genaiModels);
 
         user = User.builder()
                 .id(UUID.randomUUID())
@@ -59,20 +60,31 @@ class AiCategorizationServiceTest {
         stipendio = Category.builder().id(UUID.randomUUID()).name("Stipendio").build();
     }
 
+    private GenerateContentResponse fakeResponse(String text) {
+        String safeText = text == null ? "" : text
+                .replace("\\", "\\\\")
+                .replace("\"", "\\\"")
+                .replace("\n", "\\n")
+                .replace("\r", "\\r")
+                .replace("\t", "\\t");
+        return GenerateContentResponse.fromJson(
+                "{\"candidates\":[{\"content\":{\"role\":\"model\",\"parts\":[{\"text\":\"" + safeText + "\"}]}}]}");
+    }
+
     // ─── Guard: descrizioni non valide ──────────────────────────────────────────
 
     @Test
     void nullDescription_returnsEmpty() {
         Optional<Category> result = service.categorizeTransaction(null, user, TransactionType.OUT);
         assertTrue(result.isEmpty());
-        verifyNoInteractions(categoryService, chatClient, semanticCacheService);
+        verifyNoInteractions(categoryService, genaiModels, semanticCacheService);
     }
 
     @Test
     void blankDescription_returnsEmpty() {
         Optional<Category> result = service.categorizeTransaction("   ", user, TransactionType.OUT);
         assertTrue(result.isEmpty());
-        verifyNoInteractions(categoryService, chatClient, semanticCacheService);
+        verifyNoInteractions(categoryService, genaiModels, semanticCacheService);
     }
 
     @Test
@@ -81,7 +93,7 @@ class AiCategorizationServiceTest {
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
         assertTrue(result.isEmpty());
-        verifyNoInteractions(chatClient, semanticCacheService);
+        verifyNoInteractions(genaiModels, semanticCacheService);
     }
 
     // ─── Cache hit ───────────────────────────────────────────────────────────────
@@ -97,7 +109,7 @@ class AiCategorizationServiceTest {
 
         assertTrue(result.isPresent());
         assertEquals("Alimentari e Supermercati", result.get().getName());
-        verifyNoInteractions(chatClient);
+        verifyNoInteractions(genaiModels);
     }
 
     @Test
@@ -110,18 +122,18 @@ class AiCategorizationServiceTest {
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
 
         assertTrue(result.isEmpty());
-        verifyNoInteractions(chatClient);
+        verifyNoInteractions(genaiModels);
     }
 
     // ─── AI: risposta esatta ─────────────────────────────────────────────────────
 
     @Test
-    void aiReturnsExactMatch_returnsCategoryAndSavesToCache() {
+    void aiReturnsExactMatch_returnsCategoryAndSavesToCache() throws Exception {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari, trasporti));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
-        when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("Alimentari e Supermercati");
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(fakeResponse("Alimentari e Supermercati"));
 
         Optional<Category> result = service.categorizeTransaction("ESSELUNGA SPA", user, TransactionType.OUT);
 
@@ -131,12 +143,12 @@ class AiCategorizationServiceTest {
     }
 
     @Test
-    void aiReturnsCaseInsensitiveMatch() {
+    void aiReturnsCaseInsensitiveMatch() throws Exception {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari, trasporti));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
-        when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("alimentari e supermercati");
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(fakeResponse("alimentari e supermercati"));
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
 
@@ -147,12 +159,12 @@ class AiCategorizationServiceTest {
     // ─── Categorizzazione mista IN/OUT sulla stessa lista ────────────────────────
 
     @Test
-    void allCategoriesAvailableRegardlessOfTransactionFlow() {
+    void allCategoriesAvailableRegardlessOfTransactionFlow() throws Exception {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari, trasporti, stipendio));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
-        when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("Stipendio");
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(fakeResponse("Stipendio"));
 
         Optional<Category> result = service.categorizeTransaction("Bonifico stipendio", user, TransactionType.IN);
 
@@ -163,12 +175,12 @@ class AiCategorizationServiceTest {
     // ─── AI: pulizia markdown ────────────────────────────────────────────────────
 
     @Test
-    void aiResponseWrappedInMarkdownBold_stillMatches() {
+    void aiResponseWrappedInMarkdownBold_stillMatches() throws Exception {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari, abbonamenti));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
-        when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("**Abbonamenti**");
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(fakeResponse("**Abbonamenti**"));
 
         Optional<Category> result = service.categorizeTransaction("NETFLIX.COM", user, TransactionType.OUT);
 
@@ -177,12 +189,12 @@ class AiCategorizationServiceTest {
     }
 
     @Test
-    void aiResponseWithTrailingWhitespace_stillMatches() {
+    void aiResponseWithTrailingWhitespace_stillMatches() throws Exception {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(trasporti));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
-        when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("  Trasporti  \n");
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(fakeResponse("  Trasporti  \n"));
 
         Optional<Category> result = service.categorizeTransaction("Q8 CARBURANTE", user, TransactionType.OUT);
 
@@ -193,13 +205,13 @@ class AiCategorizationServiceTest {
     // ─── AI: risposta con accento diverso non matcha (serve nome esatto) ──────────
 
     @Test
-    void aiResponseWithDifferentAccents_doesNotMatch() {
+    void aiResponseWithDifferentAccents_doesNotMatch() throws Exception {
         Category salute = Category.builder().id(UUID.randomUUID()).name("Salute e Farmacìa").build();
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(salute));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
-        when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("Salute e Farmacia");
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(fakeResponse("Salute e Farmacia"));
 
         Optional<Category> result = service.categorizeTransaction("FARMACIA CENTRALE", user, TransactionType.OUT);
 
@@ -209,12 +221,12 @@ class AiCategorizationServiceTest {
     // ─── AI: risposta parziale non matcha (serve nome esatto) ────────────────────
 
     @Test
-    void aiReturnsPartialName_doesNotMatch() {
+    void aiReturnsPartialName_doesNotMatch() throws Exception {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
-        when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("Alimentari");
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(fakeResponse("Alimentari"));
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
 
@@ -224,12 +236,12 @@ class AiCategorizationServiceTest {
     // ─── AI: NONE e risposta non matchante ──────────────────────────────────────
 
     @Test
-    void aiReturnsNONE_returnsEmptyAndDoesNotSaveToCache() {
+    void aiReturnsNONE_returnsEmptyAndDoesNotSaveToCache() throws Exception {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
-        when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("NONE");
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(fakeResponse("NONE"));
 
         Optional<Category> result = service.categorizeTransaction("Pagamento generico", user, TransactionType.OUT);
 
@@ -238,12 +250,12 @@ class AiCategorizationServiceTest {
     }
 
     @Test
-    void aiReturnsBlankResponse_returnsEmptyAndDoesNotSaveToCache() {
+    void aiReturnsBlankResponse_returnsEmptyAndDoesNotSaveToCache() throws Exception {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
-        when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("   ");
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(fakeResponse("   "));
 
         Optional<Category> result = service.categorizeTransaction("Qualcosa", user, TransactionType.OUT);
 
@@ -252,12 +264,12 @@ class AiCategorizationServiceTest {
     }
 
     @Test
-    void aiReturnsUnknownCategory_returnsEmptyAndDoesNotSaveToCache() {
+    void aiReturnsUnknownCategory_returnsEmptyAndDoesNotSaveToCache() throws Exception {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari, trasporti));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
-        when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn("Categoria Inventata");
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(fakeResponse("Categoria Inventata"));
 
         Optional<Category> result = service.categorizeTransaction("Descrizione strana", user, TransactionType.OUT);
 
@@ -266,12 +278,14 @@ class AiCategorizationServiceTest {
     }
 
     @Test
-    void aiReturnsNull_returnsEmptyAndDoesNotSaveToCache() {
+    void aiReturnsEmptyText_returnsEmptyAndDoesNotSaveToCache() throws Exception {
+        // Simula una risposta senza testo (candidates vuoti)
+        GenerateContentResponse emptyResp = GenerateContentResponse.fromJson("{\"candidates\":[]}");
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
-        when(chatClient.call(any(Prompt.class)).getResult().getOutput().getText())
-                .thenReturn(null);
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(emptyResp);
 
         Optional<Category> result = service.categorizeTransaction("Test", user, TransactionType.OUT);
 
@@ -282,11 +296,12 @@ class AiCategorizationServiceTest {
     // ─── AI: errori ──────────────────────────────────────────────────────────────
 
     @Test
-    void aiThrowsException_returnsEmptyAndDoesNotSaveToCache() {
+    void aiThrowsException_returnsEmptyAndDoesNotSaveToCache() throws Exception {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari));
         when(semanticCacheService.findSimilar(anyString(), any())).thenReturn(Optional.empty());
-        when(chatClient.call(any(Prompt.class))).thenThrow(new RuntimeException("Network error"));
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenThrow(new RuntimeException("Network error"));
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
 
