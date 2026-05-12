@@ -9,6 +9,7 @@ import it.iacovelli.nexabudgetbe.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
+import org.springframework.beans.factory.annotation.Value;
 import java.math.BigDecimal;
 import org.apache.commons.csv.CSVPrinter;
 import org.springframework.ai.chat.messages.UserMessage;
@@ -37,6 +38,9 @@ import java.util.UUID;
 @Service
 @RequiredArgsConstructor
 public class AiReportService {
+
+    @Value("${nexabudget.ai.report.model}")
+    private String reportModelName;
 
     private final TransactionService transactionService;
     private final GoogleGenAiChatModel chatModel;
@@ -120,9 +124,7 @@ public class AiReportService {
             // Configura le opzioni per abilitare il "thinking" (richiede modello compatibile es: gemini-2.5-pro / gemini-2.0-flash-thinking)
             // e imposta includeThoughts a false cosí il ragionamento intermediario non viene restituito nel payload di output.
             GoogleGenAiChatOptions chatOptions = GoogleGenAiChatOptions.builder()
-                    // Opzionalmente .model("gemini-2.0-flash-thinking-exp")
-                    // Puoi configurare il budget qui con .thinkingBudget(1024)
-                    .model("gemini-3-flash-preview")
+                    .model(reportModelName)
                     .thinkingLevel(GoogleGenAiThinkingLevel.MEDIUM)
                     .includeThoughts(false)
                     .build();
