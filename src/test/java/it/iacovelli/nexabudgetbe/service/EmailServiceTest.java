@@ -1,7 +1,9 @@
 package it.iacovelli.nexabudgetbe.service;
 
 import it.iacovelli.nexabudgetbe.dto.BudgetAlertEmailContext;
-import it.iacovelli.nexabudgetbe.model.*;
+import jakarta.mail.BodyPart;
+import jakarta.mail.Multipart;
+import jakarta.mail.Session;
 import jakarta.mail.internet.MimeMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -13,9 +15,11 @@ import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
-import java.util.UUID;
+import java.util.Properties;
 
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
@@ -24,9 +28,6 @@ class EmailServiceTest {
 
     @Mock
     private JavaMailSender mailSender;
-
-    @Mock
-    private MimeMessage mimeMessage;
 
     @InjectMocks
     private EmailService emailService;
@@ -51,7 +52,8 @@ class EmailServiceTest {
                 .usagePercent(new BigDecimal("85.5"))
                 .build();
 
-        when(mailSender.createMimeMessage()).thenReturn(mimeMessage);
+        MimeMessage message = new MimeMessage(Session.getDefaultInstance(new Properties()));
+        when(mailSender.createMimeMessage()).thenReturn(message);
 
         // When
         emailService.sendBudgetAlertEmail(context);
@@ -59,6 +61,44 @@ class EmailServiceTest {
         // Then
         verify(mailSender, times(1)).createMimeMessage();
         verify(mailSender, times(1)).send(any(MimeMessage.class));
+    }
+
+    @Test
+    void sendAiReportEmail_ShouldAttachPdfAndSendEmail() throws Exception {
+        MimeMessage message = new MimeMessage(Session.getDefaultInstance(new Properties()));
+        when(mailSender.createMimeMessage()).thenReturn(message);
+
+        byte[] pdfBytes = "PDF".getBytes(StandardCharsets.UTF_8);
+
+        boolean result = emailService.sendAiReportEmail(
+                "test@example.com",
+                "testuser",
+                LocalDate.of(2026, 5, 1),
+                LocalDate.of(2026, 5, 31),
+                pdfBytes,
+                "report.pdf"
+        );
+
+        assertTrue(result);
+        verify(mailSender, times(1)).send(any(MimeMessage.class));
+
+        Object content = message.getContent();
+        assertTrue(content instanceof Multipart);
+        Multipart multipart = (Multipart) content;
+
+        boolean hasPdf = false;
+        for (int i = 0; i < multipart.getCount(); i++) {
+            BodyPart part = multipart.getBodyPart(i);
+            String filename = part.getFileName();
+            String contentType = part.getContentType();
+            if ((filename != null && filename.contains("report.pdf"))
+                    || (contentType != null && contentType.toLowerCase().contains("application/pdf"))) {
+                hasPdf = true;
+                break;
+            }
+        }
+
+        assertTrue(hasPdf);
     }
 
     @Test

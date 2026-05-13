@@ -6,6 +6,7 @@ import jakarta.mail.internet.MimeMessage;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
 import org.springframework.stereotype.Service;
@@ -60,9 +61,18 @@ public class EmailService {
         }
     }
 
-    public boolean sendAiReportEmail(String userEmail, String username, LocalDate startDate, LocalDate endDate, String reportMarkdown) {
+    public boolean sendAiReportEmail(String userEmail,
+                                     String username,
+                                     LocalDate startDate,
+                                     LocalDate endDate,
+                                     byte[] pdfBytes,
+                                     String pdfFilename) {
         log.info("[EmailService] Tentativo invio email AI report a {} per periodo {} - {}", userEmail, startDate, endDate);
         try {
+            if (pdfBytes == null || pdfBytes.length == 0) {
+                log.warn("[EmailService] PDF AI report non disponibile per {}", userEmail);
+                return false;
+            }
             MimeMessage message = mailSender.createMimeMessage();
             MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
 
@@ -70,7 +80,8 @@ public class EmailService {
             helper.setTo(userEmail);
             helper.setSubject("📊 Il tuo report finanziario nexaBudget");
 
-            helper.setText(generateAiReportHtml(username, startDate, endDate, reportMarkdown), true);
+            helper.setText(generateAiReportHtml(username, startDate, endDate), true);
+            helper.addAttachment(sanitizeFilename(pdfFilename), new ByteArrayResource(pdfBytes), "application/pdf");
 
             mailSender.send(message);
             log.info("[EmailService] Email AI report inviata con successo a {}", userEmail);
@@ -84,11 +95,9 @@ public class EmailService {
         }
     }
 
-    private String generateAiReportHtml(String username, LocalDate startDate, LocalDate endDate, String reportMarkdown) {
+    private String generateAiReportHtml(String username, LocalDate startDate, LocalDate endDate) {
         DateTimeFormatter formatter = DateTimeFormatter.ofPattern("dd/MM/yyyy");
         String escapedUsername = HtmlUtils.htmlEscape(username != null ? username : "");
-        String escapedReport = HtmlUtils.htmlEscape(reportMarkdown != null ? reportMarkdown : "");
-
         return String.format("""
             <!DOCTYPE html>
             <html>
@@ -98,8 +107,6 @@ public class EmailService {
                     <p>Ciao <strong>%s</strong>,</p>
                     <p>In allegato trovi il resoconto AI delle tue finanze per il periodo <strong>dal %s al %s</strong>.</p>
                     <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
-                    <div style="background-color: #fafafa; padding: 20px; border-radius: 5px; white-space: pre-wrap; font-family: 'Helvetica Neue', Arial, sans-serif; font-size: 14px;">%s</div>
-                    <hr style="border: 0; border-top: 1px solid #eee; margin: 20px 0;">
                     <p style="font-size: 12px; color: #777;">Questa è una notifica automatica da nexaBudget. Non rispondere a questa email.</p>
                 </div>
             </body>
@@ -107,9 +114,17 @@ public class EmailService {
             """,
             escapedUsername,
             startDate.format(formatter),
-            endDate.format(formatter),
-            escapedReport
+            endDate.format(formatter)
         );
+    }
+
+    private String sanitizeFilename(String filename) {
+        String safe = filename != null ? filename : "report_finanziario.pdf";
+        safe = safe.replaceAll("[\\r\\n]+", "_").trim();
+        if (safe.isBlank()) {
+            return "report_finanziario.pdf";
+        }
+        return safe.length() > 80 ? safe.substring(0, 80) : safe;
     }
 
     private String generateBudgetAlertHtml(BudgetAlertEmailContext context) {

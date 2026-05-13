@@ -1,5 +1,6 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import it.iacovelli.nexabudgetbe.dto.BudgetDto;
 import it.iacovelli.nexabudgetbe.model.Budget;
 import it.iacovelli.nexabudgetbe.model.Category;
 import it.iacovelli.nexabudgetbe.model.User;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.util.*;
 
@@ -108,5 +110,41 @@ public class BudgetService {
         });
 
         return remainingBudgets;
+    }
+
+    @Transactional(readOnly = true)
+    public List<BudgetDto.MonthlySummaryResponse> getBudgetMonthlySummary(User user, LocalDate date) {
+        LocalDate targetDate = date != null ? date : LocalDate.now();
+        LocalDate periodStart = targetDate.withDayOfMonth(1);
+        LocalDate periodEnd = targetDate.withDayOfMonth(targetDate.lengthOfMonth());
+
+        Map<Budget, BigDecimal> budgetUsage = getBudgetUsage(user, targetDate);
+
+        return budgetUsage.entrySet().stream()
+                .map(entry -> {
+                    Budget budget = entry.getKey();
+                    BigDecimal spent = entry.getValue();
+                    BigDecimal remaining = budget.getBudgetLimit().subtract(spent);
+                    double percentageUsed = budget.getBudgetLimit().compareTo(BigDecimal.ZERO) == 0
+                            ? 0.0
+                            : spent.multiply(BigDecimal.valueOf(100))
+                                    .divide(budget.getBudgetLimit(), 2, RoundingMode.HALF_UP)
+                                    .doubleValue();
+
+                    return BudgetDto.MonthlySummaryResponse.builder()
+                            .budgetId(budget.getId())
+                            .categoryId(budget.getCategory().getId())
+                            .categoryName(budget.getCategory().getName())
+                            .limit(budget.getBudgetLimit())
+                            .spent(spent)
+                            .remaining(remaining)
+                            .percentageUsed(percentageUsed)
+                            .budgetStartDate(budget.getStartDate())
+                            .budgetEndDate(budget.getEndDate())
+                            .periodStart(periodStart)
+                            .periodEnd(periodEnd)
+                            .build();
+                })
+                .toList();
     }
 }

@@ -72,6 +72,66 @@ public class ReportService {
     }
 
     @Transactional(readOnly = true)
+    public ReportDto.MonthlyTrendResponse getMonthlyTrendByRange(User user, LocalDate startDate, LocalDate endDate) {
+        if (endDate.isBefore(startDate)) {
+            throw new IllegalArgumentException("endDate must be on or after startDate");
+        }
+        String target = targetCurrency(user);
+        LocalDate rangeStart = startDate.withDayOfMonth(1);
+        LocalDate rangeEnd = endDate.withDayOfMonth(endDate.lengthOfMonth());
+
+        List<Object[]> rows = transactionRepository.findMonthlyTotals(user, rangeStart);
+
+        Map<String, ReportDto.MonthlyTrendItem> map = new LinkedHashMap<>();
+        for (Object[] row : rows) {
+            int year = ((Number) row[0]).intValue();
+            int month = ((Number) row[1]).intValue();
+            LocalDate monthStart = LocalDate.of(year, month, 1);
+            if (monthStart.isAfter(rangeEnd)) {
+                continue;
+            }
+            TransactionType type = TransactionType.valueOf(row[2].toString());
+            String currency = row[3] != null ? row[3].toString() : target;
+            BigDecimal total = (BigDecimal) row[4];
+            BigDecimal converted = convertToUserCurrency(total, currency, target);
+
+            String key = year + "-" + month;
+            ReportDto.MonthlyTrendItem item = map.computeIfAbsent(key, k ->
+                    ReportDto.MonthlyTrendItem.builder()
+                            .year(year).month(month)
+                            .income(BigDecimal.ZERO).expense(BigDecimal.ZERO).net(BigDecimal.ZERO)
+                            .build());
+
+            if (type == TransactionType.IN) {
+                item.setIncome(item.getIncome().add(converted));
+            } else {
+                item.setExpense(item.getExpense().add(converted));
+            }
+            item.setNet(item.getIncome().subtract(item.getExpense()));
+        }
+
+        List<ReportDto.MonthlyTrendItem> items = new ArrayList<>();
+        LocalDate cursor = rangeStart;
+        while (!cursor.isAfter(rangeEnd)) {
+            String key = cursor.getYear() + "-" + cursor.getMonthValue();
+            ReportDto.MonthlyTrendItem item = map.get(key);
+            if (item == null) {
+                item = ReportDto.MonthlyTrendItem.builder()
+                        .year(cursor.getYear()).month(cursor.getMonthValue())
+                        .income(BigDecimal.ZERO).expense(BigDecimal.ZERO).net(BigDecimal.ZERO)
+                        .build();
+            }
+            items.add(item);
+            cursor = cursor.plusMonths(1);
+        }
+
+        return ReportDto.MonthlyTrendResponse.builder()
+                .currency(target)
+                .items(items)
+                .build();
+    }
+
+    @Transactional(readOnly = true)
     public ReportDto.CategoryBreakdownResponse getCategoryBreakdown(User user, LocalDate startDate, LocalDate endDate) {
         String target = targetCurrency(user);
         List<Object[]> rows = transactionRepository.findCategoryNetBreakdown(user, startDate, endDate);

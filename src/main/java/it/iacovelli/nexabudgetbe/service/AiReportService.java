@@ -9,7 +9,6 @@ import com.google.genai.types.ThinkingConfig;
 import it.iacovelli.nexabudgetbe.config.CacheConfig;
 import it.iacovelli.nexabudgetbe.dto.AiReportStatusResponse;
 import it.iacovelli.nexabudgetbe.dto.TransactionDto.TransactionResponse;
-import it.iacovelli.nexabudgetbe.dto.ReportDto;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
 import lombok.RequiredArgsConstructor;
@@ -49,6 +48,7 @@ public class AiReportService {
     private final CacheManager cacheManager;
     private final ReportService reportService;
     private final EmailService emailService;
+    private final AiReportPdfService aiReportPdfService;
 
     private static final String SYSTEM_PROMPT = """
             Sei un consulente finanziario esperto. Analizza le seguenti transazioni bancarie (in formato CSV) di un utente per il periodo dal %s al %s.
@@ -132,7 +132,13 @@ public class AiReportService {
             log.info("AI Report {} completed successfully", jobId);
 
             if (user.getEmail() != null && !user.getEmail().isBlank()) {
-                emailService.sendAiReportEmail(user.getEmail(), user.getUsername(), startDate, endDate, responseContent);
+                try {
+                    byte[] pdfBytes = aiReportPdfService.buildReportPdf(user, startDate, endDate, responseContent);
+                    String filename = aiReportPdfService.buildFilename(startDate, endDate);
+                    emailService.sendAiReportEmail(user.getEmail(), user.getUsername(), startDate, endDate, pdfBytes, filename);
+                } catch (Exception e) {
+                    log.error("Errore generazione PDF AI report per job {}", jobId, e);
+                }
             }
 
         } catch (Exception e) {
