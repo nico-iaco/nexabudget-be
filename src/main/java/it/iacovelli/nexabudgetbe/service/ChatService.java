@@ -205,6 +205,9 @@ public class ChatService {
             } catch (ApiException e) {
                 log.error("[ChatService] Errore API Gemini ({}): {}", e.code(), e.getMessage());
                 return new ChatResult("Si è verificato un errore nella comunicazione con l'AI. Riprova tra poco.", toolsUsed);
+            } catch (Exception e) {
+                log.error("[ChatService] Errore chiamata Gemini ({}): {}", e.getClass().getSimpleName(), e.getMessage());
+                return new ChatResult("L'assistente AI non è al momento raggiungibile. Riprova tra qualche istante.", toolsUsed);
             }
 
             List<FunctionCall> calls = resp.functionCalls();

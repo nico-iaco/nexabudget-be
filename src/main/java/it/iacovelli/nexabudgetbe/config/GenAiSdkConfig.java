@@ -2,7 +2,6 @@ package it.iacovelli.nexabudgetbe.config;
 
 import com.google.genai.Client;
 import com.google.genai.Models;
-import com.google.genai.types.HttpOptions;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -13,19 +12,14 @@ public class GenAiSdkConfig {
     @Value("${spring.ai.google.genai.api-key}")
     private String apiKey;
 
-    @Value("${nexabudget.ai.http.timeout-ms:30000}")
-    private int httpTimeoutMs;
-
     // Separate Client bean for direct SDK usage (chat, report, categorization).
     // GoogleGenAiConfig also instantiates its own Client internally for the Spring AI embedding stack.
+    // Nessun timeout HTTP: chat e report richiedono tempi variabili. Il bulk categorization
+    // gestisce il proprio timeout tramite CompletableFuture.get(aiCallTimeoutSeconds).
     @Bean
     public Client genaiClient() {
-        HttpOptions httpOptions = HttpOptions.builder()
-                .timeout(httpTimeoutMs)
-                .build();
         return Client.builder()
                 .apiKey(apiKey)
-                .httpOptions(httpOptions)
                 .build();
     }
 
