@@ -314,6 +314,7 @@
                                 <buildArg>-J-XX:MaxRAMPercentage=80.0</buildArg>
                                 <buildArg>-J-XX:+UseParallelGC</buildArg>
                                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
+                                <buildArg>--enable-awt</buildArg>
                             </buildArgs>
                         </configuration>
                         <executions>

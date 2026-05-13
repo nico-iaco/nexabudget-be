@@ -28,6 +28,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
+import java.util.function.Supplier;
 
 @Slf4j
 @Service
@@ -53,11 +54,11 @@ public class AiReportPdfService {
         List<BudgetDto.MonthlySummaryResponse> budgetSummary = budgetService.getBudgetMonthlySummary(user, endDate);
 
         String aiHtml = renderMarkdown(reportMarkdown);
-        String monthlyTrendChart = renderMonthlyTrendChart(monthlyTrend);
-        String categoryBreakdownChart = renderCategoryBreakdownChart(categoryBreakdown);
-        String monthComparisonChart = renderMonthComparisonChart(monthComparison);
-        String balanceTrendChart = renderBalanceTrendChart(balanceTrend);
-        String projectionChart = renderProjectionChart(projection);
+        String monthlyTrendChart = safeChart("trend mensile", () -> renderMonthlyTrendChart(monthlyTrend));
+        String categoryBreakdownChart = safeChart("breakdown categoria", () -> renderCategoryBreakdownChart(categoryBreakdown));
+        String monthComparisonChart = safeChart("confronto mese", () -> renderMonthComparisonChart(monthComparison));
+        String balanceTrendChart = safeChart("andamento saldo", () -> renderBalanceTrendChart(balanceTrend));
+        String projectionChart = safeChart("proiezione mensile", () -> renderProjectionChart(projection));
 
         String html = buildHtml(user, startDate, endDate, monthlyTrend, aiHtml,
                 monthlyTrendChart, categoryBreakdownChart, monthComparisonChart,
@@ -356,6 +357,15 @@ public class AiReportPdfService {
             return "data:image/png;base64," + Base64.getEncoder().encodeToString(pngBytes);
         } catch (Exception e) {
             log.warn("Errore rendering grafico PDF", e);
+            return null;
+        }
+    }
+
+    private String safeChart(String name, Supplier<String> renderer) {
+        try {
+            return renderer.get();
+        } catch (Throwable t) {
+            log.warn("Rendering grafico '{}' fallito. Continuiamo senza grafico.", name, t);
             return null;
         }
     }
