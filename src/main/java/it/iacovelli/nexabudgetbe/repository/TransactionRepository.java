@@ -5,6 +5,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.stereotype.Repository;
 
 import org.springframework.data.domain.Page;
@@ -151,6 +152,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
        @Modifying
        @Query(value = "DELETE FROM transactions WHERE deleted = true AND deleted_at < :cutoff", nativeQuery = true)
        int purgeOldDeleted(@Param("cutoff") LocalDateTime cutoff);
+
+       @Query("SELECT t FROM Transaction t JOIN FETCH t.account WHERE t.user = :user AND t.category IS NULL AND t.transferId IS NULL")
+       List<Transaction> findUncategorizedByUser(@Param("user") User user);
+
+       @Modifying(clearAutomatically = true, flushAutomatically = true)
+       @Transactional
+       @Query(value = "UPDATE transactions SET category_id = :categoryId WHERE id = :id AND deleted = false", nativeQuery = true)
+       void updateCategoryById(@Param("id") UUID id, @Param("categoryId") UUID categoryId);
 
        // Report queries
        @Query("SELECT YEAR(t.date), MONTH(t.date), t.type, t.account.currency, SUM(t.amount) " +

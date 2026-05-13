@@ -3,6 +3,7 @@ package it.iacovelli.nexabudgetbe.controller;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import it.iacovelli.nexabudgetbe.dto.BulkCategorizationStatusResponse;
 import it.iacovelli.nexabudgetbe.dto.TransactionDto;
 import it.iacovelli.nexabudgetbe.model.Account;
 import it.iacovelli.nexabudgetbe.model.Category;
@@ -10,6 +11,7 @@ import it.iacovelli.nexabudgetbe.model.Transaction;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.AccountService;
+import it.iacovelli.nexabudgetbe.service.BulkCategorizationService;
 import it.iacovelli.nexabudgetbe.service.CategoryService;
 import it.iacovelli.nexabudgetbe.service.TransactionService;
 import it.iacovelli.nexabudgetbe.service.UserService;
@@ -44,15 +46,18 @@ public class TransactionController {
     private final UserService userService;
     private final AccountService accountService;
     private final CategoryService categoryService;
+    private final BulkCategorizationService bulkCategorizationService;
 
     public TransactionController(TransactionService transactionService,
                                  UserService userService,
                                  AccountService accountService,
-                                 CategoryService categoryService) {
+                                 CategoryService categoryService,
+                                 BulkCategorizationService bulkCategorizationService) {
         this.transactionService = transactionService;
         this.userService = userService;
         this.accountService = accountService;
         this.categoryService = categoryService;
+        this.bulkCategorizationService = bulkCategorizationService;
     }
 
     @PostMapping
@@ -391,6 +396,35 @@ public class TransactionController {
 
         transactionService.deleteTransaction(transaction);
         return ResponseEntity.noContent().build();
+    }
+
+    // ─── Bulk AI Categorization ──────────────────────────────────────────────────
+
+    @PostMapping("/categorize-uncategorized")
+    @Operation(summary = "Avvia categorizzazione AI massiva",
+               description = "Avvia un job asincrono che categorizza via AI tutte le transazioni prive di categoria. Restituisce un jobId da usare per il polling.")
+    public ResponseEntity<BulkCategorizationStatusResponse> startBulkCategorization(
+            @AuthenticationPrincipal User currentUser) {
+        try {
+            BulkCategorizationStatusResponse status = bulkCategorizationService.startBulkCategorizationJob(currentUser);
+            bulkCategorizationService.executeBulkCategorization(status.jobId(), currentUser);
+            return ResponseEntity.accepted().body(status);
+        } catch (IllegalStateException e) {
+            throw new ResponseStatusException(HttpStatus.UNPROCESSABLE_ENTITY, e.getMessage());
+        }
+    }
+
+    @GetMapping("/categorize-uncategorized/{jobId}")
+    @Operation(summary = "Stato job categorizzazione AI",
+               description = "Restituisce lo stato corrente del job di categorizzazione massiva (PENDING, IN_PROGRESS, COMPLETED, FAILED).")
+    public ResponseEntity<BulkCategorizationStatusResponse> getBulkCategorizationStatus(
+            @PathVariable UUID jobId,
+            @AuthenticationPrincipal User currentUser) {
+        try {
+            return ResponseEntity.ok(bulkCategorizationService.getJobStatus(jobId));
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
+        }
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────────
