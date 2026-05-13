@@ -1,16 +1,23 @@
 package it.iacovelli.nexabudgetbe.service;
 
-import com.openhtmltopdf.pdfboxout.PdfRendererBuilder;
+import com.lowagie.text.Document;
+import com.lowagie.text.DocumentException;
+import com.lowagie.text.Element;
+import com.lowagie.text.Font;
+import com.lowagie.text.FontFactory;
+import com.lowagie.text.PageSize;
+import com.lowagie.text.Paragraph;
+import com.lowagie.text.Phrase;
+import com.lowagie.text.pdf.PdfPCell;
+import com.lowagie.text.pdf.PdfPTable;
+import com.lowagie.text.pdf.PdfWriter;
 import it.iacovelli.nexabudgetbe.dto.BudgetDto;
 import it.iacovelli.nexabudgetbe.dto.ReportDto;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.commonmark.parser.Parser;
-import org.commonmark.renderer.html.HtmlRenderer;
 import org.springframework.stereotype.Service;
-import org.springframework.web.util.HtmlUtils;
 
 import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
@@ -18,7 +25,6 @@ import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.function.Supplier;
 
 @Slf4j
 @Service
@@ -29,11 +35,17 @@ public class AiReportPdfService {
     private static final DateTimeFormatter MONTH_FORMAT = DateTimeFormatter.ofPattern("MM/yyyy");
     private static final DateTimeFormatter FILE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd");
 
+    private static final Font TITLE_FONT = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 16f);
+    private static final Font SECTION_FONT = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 12f);
+    private static final Font SUBSECTION_FONT = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 10.5f);
+    private static final Font TEXT_FONT = FontFactory.getFont(FontFactory.HELVETICA, 10.5f);
+    private static final Font SMALL_FONT = FontFactory.getFont(FontFactory.HELVETICA, 9.5f);
+    private static final Font HEADER_FONT = FontFactory.getFont(FontFactory.HELVETICA_BOLD, 9.5f);
+
+    private static final int BAR_WIDTH = 20;
+
     private final ReportService reportService;
     private final BudgetService budgetService;
-
-    private final Parser markdownParser = Parser.builder().build();
-    private final HtmlRenderer htmlRenderer = HtmlRenderer.builder().escapeHtml(true).build();
 
     public byte[] buildReportPdf(User user, LocalDate startDate, LocalDate endDate, String reportMarkdown) {
         ReportDto.MonthlyTrendResponse monthlyTrend = reportService.getMonthlyTrendByRange(user, startDate, endDate);
@@ -43,149 +55,139 @@ public class AiReportPdfService {
         ReportDto.MonthlyProjection projection = reportService.getMonthlyProjection(user);
         List<BudgetDto.MonthlySummaryResponse> budgetSummary = budgetService.getBudgetMonthlySummary(user, endDate);
 
-        String aiHtml = renderMarkdown(reportMarkdown);
-        String monthlyTrendChart = safeChart("trend mensile", () -> renderMonthlyTrendChart(monthlyTrend));
-        String categoryBreakdownChart = safeChart("breakdown categoria", () -> renderCategoryBreakdownChart(categoryBreakdown));
-        String monthComparisonChart = safeChart("confronto mese", () -> renderMonthComparisonChart(monthComparison));
-        String balanceTrendChart = safeChart("andamento saldo", () -> renderBalanceTrendChart(balanceTrend));
-        String projectionChart = safeChart("proiezione mensile", () -> renderProjectionChart(projection));
+        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            Document document = new Document(PageSize.A4, 36, 36, 36, 36);
+            PdfWriter.getInstance(document, out);
+            document.open();
 
-        String html = buildHtml(user, startDate, endDate, monthlyTrend, aiHtml,
-                monthlyTrendChart, categoryBreakdownChart, monthComparisonChart,
-                balanceTrendChart, projectionChart, budgetSummary);
+            addTitle(document, user, startDate, endDate);
+            addSectionTitle(document, "Report AI");
+            addMarkdownContent(document, reportMarkdown);
 
-        return renderPdf(html);
+            addSectionTitle(document, "Trend mensile");
+            if (!addMonthlyTrendTable(document, monthlyTrend)) {
+                addPlaceholder(document, "Nessun dato disponibile per questo grafico.");
+            }
+
+            addSectionTitle(document, "Breakdown per categoria");
+            if (!addCategoryBreakdownTable(document, categoryBreakdown)) {
+                addPlaceholder(document, "Nessun dato disponibile per questo grafico.");
+            }
+
+            addSectionTitle(document, "Confronto mese");
+            if (!addMonthComparisonTable(document, monthComparison)) {
+                addPlaceholder(document, "Nessun dato disponibile per questo grafico.");
+            }
+
+            addSectionTitle(document, "Andamento saldo");
+            if (!addBalanceTrendTable(document, balanceTrend)) {
+                addPlaceholder(document, "Nessun dato disponibile per questo grafico.");
+            }
+
+            addSectionTitle(document, "Proiezione mensile");
+            if (!addProjectionTable(document, projection)) {
+                addPlaceholder(document, "Nessun dato disponibile per questo grafico.");
+            }
+
+            addSectionTitle(document, "Budget mensili");
+            if (!addBudgetSummaryTable(document, budgetSummary)) {
+                addPlaceholder(document, "Nessun budget attivo nel mese selezionato.");
+            }
+
+            addFooter(document);
+
+            document.close();
+            return out.toByteArray();
+        } catch (Exception e) {
+            throw new IllegalStateException("Errore durante la generazione del PDF", e);
+        }
     }
 
     public String buildFilename(LocalDate startDate, LocalDate endDate) {
         return "report_finanziario_" + startDate.format(FILE_FORMAT) + "_" + endDate.format(FILE_FORMAT) + ".pdf";
     }
 
-    private String buildHtml(User user,
-                             LocalDate startDate,
-                             LocalDate endDate,
-                             ReportDto.MonthlyTrendResponse monthlyTrend,
-                             String aiHtml,
-                             String monthlyTrendChart,
-                             String categoryBreakdownChart,
-                             String monthComparisonChart,
-                             String balanceTrendChart,
-                             String projectionChart,
-                             List<BudgetDto.MonthlySummaryResponse> budgetSummary) {
+    private void addTitle(Document document, User user, LocalDate startDate, LocalDate endDate) throws DocumentException {
+        Paragraph title = new Paragraph("Report finanziario nexaBudget", TITLE_FONT);
+        title.setSpacingAfter(6f);
+        document.add(title);
 
         String username = user != null && user.getUsername() != null ? user.getUsername() : "";
-        String currency = monthlyTrend.getCurrency() != null ? monthlyTrend.getCurrency()
-                : (user != null && user.getDefaultCurrency() != null ? user.getDefaultCurrency() : "EUR");
+        Paragraph userLine = new Paragraph("Utente: " + username, TEXT_FONT);
+        userLine.setSpacingAfter(2f);
+        document.add(userLine);
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("<!DOCTYPE html>")
-          .append("<html><head><meta charset=\"UTF-8\">")
-          .append("<style>")
-          .append("@page { size: A4; margin: 22mm 18mm; }")
-          .append("body { font-family: Helvetica, Arial, sans-serif; color: #222; font-size: 12px; }")
-          .append("h1 { font-size: 20px; margin: 0 0 4px 0; }")
-          .append("h2 { font-size: 15px; margin: 18px 0 8px 0; border-bottom: 1px solid #e0e0e0; padding-bottom: 4px; }")
-          .append("h3 { font-size: 13px; margin: 12px 0 6px 0; }")
-          .append("p { margin: 6px 0; }")
-          .append(".meta { font-size: 12px; color: #555; }")
-          .append(".section { margin-top: 14px; }")
-          .append(".ai-report { background: #f8f8f8; padding: 12px; border-radius: 6px; }")
-          .append(".ai-report pre { white-space: pre-wrap; }")
-          .append(".chart-placeholder { color: #777; font-style: italic; }")
-          .append(".chart-table { width: 100%; border-collapse: collapse; margin-top: 6px; }")
-          .append(".chart-table th, .chart-table td { border: 1px solid #e5e5e5; padding: 4px; text-align: left; font-size: 10.5px; }")
-          .append(".chart-table th { background: #f5f5f5; }")
-          .append(".bar-bg { background: #f0f0f0; height: 10px; border-radius: 2px; }")
-          .append(".bar { height: 10px; border-radius: 2px; }")
-          .append(".bar-in { background: #43a047; }")
-          .append(".bar-out { background: #e53935; }")
-          .append(".bar-net { background: #1e88e5; }")
-          .append(".bar-balance { background: #3949ab; }")
-          .append(".bar-proj { background: #6d4c41; }")
-          .append(".bar-value { font-size: 10px; color: #444; margin-top: 2px; }")
-          .append("table { width: 100%; border-collapse: collapse; margin-top: 8px; }")
-          .append("th, td { border: 1px solid #ddd; padding: 6px; text-align: left; font-size: 11px; }")
-          .append("th { background: #f2f2f2; }")
-          .append(".footer { margin-top: 18px; font-size: 10px; color: #777; }")
-          .append("</style></head><body>");
+        Paragraph periodLine = new Paragraph("Periodo: " + startDate.format(DATE_FORMAT) + " - " + endDate.format(DATE_FORMAT), TEXT_FONT);
+        periodLine.setSpacingAfter(10f);
+        document.add(periodLine);
+    }
 
-        sb.append("<h1>Report finanziario nexaBudget</h1>")
-          .append("<div class=\"meta\">Utente: <strong>")
-          .append(HtmlUtils.htmlEscape(username))
-          .append("</strong></div>")
-          .append("<div class=\"meta\">Periodo: ")
-          .append(startDate.format(DATE_FORMAT))
-          .append(" - ")
-          .append(endDate.format(DATE_FORMAT))
-          .append("</div>");
+    private void addSectionTitle(Document document, String title) throws DocumentException {
+        Paragraph section = new Paragraph(title, SECTION_FONT);
+        section.setSpacingBefore(8f);
+        section.setSpacingAfter(4f);
+        document.add(section);
+    }
 
-        sb.append("<div class=\"section\"><h2>Report AI</h2>")
-          .append("<div class=\"ai-report\">")
-          .append(aiHtml)
-          .append("</div></div>");
+    private void addFooter(Document document) throws DocumentException {
+        Paragraph footer = new Paragraph("Generato il " + LocalDate.now().format(DATE_FORMAT), SMALL_FONT);
+        footer.setSpacingBefore(12f);
+        document.add(footer);
+    }
 
-        appendChartSection(sb, "Trend mensile", "Entrate, uscite e saldo (" + currency + ")", monthlyTrendChart);
-        appendChartSection(sb, "Breakdown per categoria", "Distribuzione per categoria (" + currency + ")", categoryBreakdownChart);
-        appendChartSection(sb, "Confronto mese", "Mese corrente vs mese precedente (" + currency + ")", monthComparisonChart);
-        appendChartSection(sb, "Andamento saldo", "Saldo cumulato di chiusura (" + currency + ")", balanceTrendChart);
-        appendChartSection(sb, "Proiezione mensile", "Attuale vs proiezione fine mese (" + currency + ")", projectionChart);
+    private void addPlaceholder(Document document, String text) throws DocumentException {
+        Paragraph placeholder = new Paragraph(text, TEXT_FONT);
+        placeholder.setSpacingAfter(6f);
+        document.add(placeholder);
+    }
 
-        sb.append("<div class=\"section\"><h2>Budget mensili").append(" (" + currency + ")</h2>");
-        if (budgetSummary == null || budgetSummary.isEmpty()) {
-            sb.append("<p class=\"chart-placeholder\">Nessun budget attivo nel mese selezionato.</p>");
-        } else {
-            sb.append("<table><thead><tr>")
-              .append("<th>Categoria</th>")
-              .append("<th>Limite</th>")
-              .append("<th>Speso</th>")
-              .append("<th>Residuo</th>")
-              .append("<th>% Utilizzo</th>")
-              .append("<th>Periodo</th>")
-              .append("</tr></thead><tbody>");
+    private void addMarkdownContent(Document document, String markdown) throws DocumentException {
+        if (markdown == null || markdown.isBlank()) {
+            addPlaceholder(document, "Nessun contenuto disponibile.");
+            return;
+        }
 
-            for (BudgetDto.MonthlySummaryResponse item : budgetSummary) {
-                sb.append("<tr>")
-                  .append("<td>").append(HtmlUtils.htmlEscape(item.getCategoryName())).append("</td>")
-                  .append("<td>").append(formatAmount(item.getLimit())).append("</td>")
-                  .append("<td>").append(formatAmount(item.getSpent())).append("</td>")
-                  .append("<td>").append(formatAmount(item.getRemaining())).append("</td>")
-                  .append("<td>").append(formatPercentage(item.getPercentageUsed())).append("</td>")
-                  .append("<td>")
-                  .append(item.getPeriodStart().format(MONTH_FORMAT))
-                  .append("</td>")
-                  .append("</tr>");
+        String[] lines = markdown.split("\\r?\\n");
+        for (String line : lines) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty()) {
+                Paragraph spacer = new Paragraph(" ", TEXT_FONT);
+                spacer.setSpacingAfter(2f);
+                document.add(spacer);
+                continue;
             }
-            sb.append("</tbody></table>");
+            if (trimmed.startsWith("###")) {
+                addMarkdownHeading(document, trimmed.substring(3));
+            } else if (trimmed.startsWith("##")) {
+                addMarkdownHeading(document, trimmed.substring(2));
+            } else if (trimmed.startsWith("#")) {
+                addMarkdownHeading(document, trimmed.substring(1));
+            } else if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
+                String text = "- " + trimmed.substring(2).trim();
+                Paragraph bullet = new Paragraph(text, TEXT_FONT);
+                bullet.setSpacingAfter(2f);
+                document.add(bullet);
+            } else {
+                Paragraph paragraph = new Paragraph(trimmed, TEXT_FONT);
+                paragraph.setSpacingAfter(2f);
+                document.add(paragraph);
+            }
         }
-        sb.append("</div>");
-
-        sb.append("<div class=\"footer\">Generato il ")
-          .append(LocalDate.now().format(DATE_FORMAT))
-          .append("</div>");
-
-        sb.append("</body></html>");
-        return sb.toString();
     }
 
-    private void appendChartSection(StringBuilder sb, String title, String subtitle, String chartHtml) {
-        sb.append("<div class=\"section\"><h2>")
-          .append(HtmlUtils.htmlEscape(title))
-          .append("</h2>")
-          .append("<div class=\"meta\">")
-          .append(HtmlUtils.htmlEscape(subtitle))
-          .append("</div>");
-
-        if (chartHtml == null) {
-            sb.append("<p class=\"chart-placeholder\">Nessun dato disponibile per questo grafico.</p>");
-        } else {
-            sb.append(chartHtml);
+    private void addMarkdownHeading(Document document, String heading) throws DocumentException {
+        String text = heading.trim();
+        if (!text.isEmpty()) {
+            Paragraph title = new Paragraph(text, SUBSECTION_FONT);
+            title.setSpacingBefore(4f);
+            title.setSpacingAfter(2f);
+            document.add(title);
         }
-        sb.append("</div>");
     }
 
-    private String renderMonthlyTrendChart(ReportDto.MonthlyTrendResponse monthlyTrend) {
+    private boolean addMonthlyTrendTable(Document document, ReportDto.MonthlyTrendResponse monthlyTrend) throws DocumentException {
         if (monthlyTrend == null || monthlyTrend.getItems() == null || monthlyTrend.getItems().isEmpty()) {
-            return null;
+            return false;
         }
         double maxIncome = 0.0;
         double maxExpense = 0.0;
@@ -197,56 +199,47 @@ public class AiReportPdfService {
             maxNet = Math.max(maxNet, Math.abs(toDouble(item.getNet())));
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("<table class=\"chart-table\"><thead><tr>")
-          .append("<th>Mese</th><th>Entrate</th><th>Uscite</th><th>Netto</th>")
-          .append("</tr></thead><tbody>");
+        PdfPTable table = createTable(new float[] {1.2f, 2.2f, 2.2f, 2.2f});
+        addHeaderRow(table, "Mese", "Entrate", "Uscite", "Netto");
 
         for (ReportDto.MonthlyTrendItem item : monthlyTrend.getItems()) {
             String label = String.format("%02d/%d", item.getMonth(), item.getYear());
-            sb.append("<tr>")
-              .append("<td>").append(label).append("</td>")
-              .append("<td>").append(buildBarCell(toDouble(item.getIncome()), maxIncome, "bar-in", false)).append("</td>")
-              .append("<td>").append(buildBarCell(toDouble(item.getExpense()), maxExpense, "bar-out", false)).append("</td>")
-              .append("<td>").append(buildBarCell(toDouble(item.getNet()), maxNet, "bar-net", true)).append("</td>")
-              .append("</tr>");
+            table.addCell(cell(label));
+            table.addCell(cell(barValue(item.getIncome(), maxIncome, false)));
+            table.addCell(cell(barValue(item.getExpense(), maxExpense, false)));
+            table.addCell(cell(barValue(item.getNet(), maxNet, true)));
         }
 
-        sb.append("</tbody></table>");
-        return sb.toString();
+        document.add(table);
+        return true;
     }
 
-    private String renderCategoryBreakdownChart(ReportDto.CategoryBreakdownResponse breakdown) {
+    private boolean addCategoryBreakdownTable(Document document, ReportDto.CategoryBreakdownResponse breakdown) throws DocumentException {
         if (breakdown == null || breakdown.getCategories() == null || breakdown.getCategories().isEmpty()) {
-            return null;
+            return false;
         }
         double maxValue = 0.0;
         for (ReportDto.CategoryBreakdownItem item : breakdown.getCategories()) {
             maxValue = Math.max(maxValue, Math.abs(toDouble(item.getNet())));
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("<table class=\"chart-table\"><thead><tr>")
-          .append("<th>Categoria</th><th>Tipo</th><th>Valore</th>")
-          .append("</tr></thead><tbody>");
+        PdfPTable table = createTable(new float[] {2.4f, 1.0f, 2.6f});
+        addHeaderRow(table, "Categoria", "Tipo", "Valore");
 
         for (ReportDto.CategoryBreakdownItem item : breakdown.getCategories()) {
             String typeLabel = item.getInferredType() == TransactionType.OUT ? "Uscite" : "Entrate";
-            String cssClass = item.getInferredType() == TransactionType.OUT ? "bar-out" : "bar-in";
-            sb.append("<tr>")
-              .append("<td>").append(HtmlUtils.htmlEscape(shortLabel(item.getCategoryName(), 30))).append("</td>")
-              .append("<td>").append(typeLabel).append("</td>")
-              .append("<td>").append(buildBarCell(toDouble(item.getNet()), maxValue, cssClass, false)).append("</td>")
-              .append("</tr>");
+            table.addCell(cell(shortLabel(item.getCategoryName(), 30)));
+            table.addCell(cell(typeLabel));
+            table.addCell(cell(barValue(item.getNet(), maxValue, false)));
         }
 
-        sb.append("</tbody></table>");
-        return sb.toString();
+        document.add(table);
+        return true;
     }
 
-    private String renderMonthComparisonChart(ReportDto.MonthComparisonResponse comparison) {
+    private boolean addMonthComparisonTable(Document document, ReportDto.MonthComparisonResponse comparison) throws DocumentException {
         if (comparison == null || comparison.getCurrentMonth() == null || comparison.getPreviousMonth() == null) {
-            return null;
+            return false;
         }
         double currIncome = toDouble(comparison.getCurrentMonth().getIncome());
         double prevIncome = toDouble(comparison.getPreviousMonth().getIncome());
@@ -259,139 +252,138 @@ public class AiReportPdfService {
         double maxExpense = Math.max(Math.abs(currExpense), Math.abs(prevExpense));
         double maxNet = Math.max(Math.abs(currNet), Math.abs(prevNet));
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("<table class=\"chart-table\"><thead><tr>")
-          .append("<th>Metrica</th><th>Mese corrente</th><th>Mese precedente</th>")
-          .append("</tr></thead><tbody>");
+        PdfPTable table = createTable(new float[] {1.6f, 2.2f, 2.2f});
+        addHeaderRow(table, "Metrica", "Mese corrente", "Mese precedente");
 
-        sb.append("<tr><td>Entrate</td>")
-          .append("<td>").append(buildBarCell(currIncome, maxIncome, "bar-in", false)).append("</td>")
-          .append("<td>").append(buildBarCell(prevIncome, maxIncome, "bar-in", false)).append("</td>")
-          .append("</tr>");
+        table.addCell(cell("Entrate"));
+        table.addCell(cell(barValue(currIncome, maxIncome, false)));
+        table.addCell(cell(barValue(prevIncome, maxIncome, false)));
 
-        sb.append("<tr><td>Uscite</td>")
-          .append("<td>").append(buildBarCell(currExpense, maxExpense, "bar-out", false)).append("</td>")
-          .append("<td>").append(buildBarCell(prevExpense, maxExpense, "bar-out", false)).append("</td>")
-          .append("</tr>");
+        table.addCell(cell("Uscite"));
+        table.addCell(cell(barValue(currExpense, maxExpense, false)));
+        table.addCell(cell(barValue(prevExpense, maxExpense, false)));
 
-        sb.append("<tr><td>Netto</td>")
-          .append("<td>").append(buildBarCell(currNet, maxNet, "bar-net", true)).append("</td>")
-          .append("<td>").append(buildBarCell(prevNet, maxNet, "bar-net", true)).append("</td>")
-          .append("</tr>");
+        table.addCell(cell("Netto"));
+        table.addCell(cell(barValue(currNet, maxNet, true)));
+        table.addCell(cell(barValue(prevNet, maxNet, true)));
 
-        sb.append("</tbody></table>");
-        return sb.toString();
+        document.add(table);
+        return true;
     }
 
-    private String renderBalanceTrendChart(ReportDto.BalanceTrendResponse balanceTrend) {
+    private boolean addBalanceTrendTable(Document document, ReportDto.BalanceTrendResponse balanceTrend) throws DocumentException {
         if (balanceTrend == null || balanceTrend.getItems() == null || balanceTrend.getItems().isEmpty()) {
-            return null;
+            return false;
         }
         double maxValue = 0.0;
         for (ReportDto.BalanceTrendItem item : balanceTrend.getItems()) {
             maxValue = Math.max(maxValue, Math.abs(toDouble(item.getClosingBalance())));
         }
 
-        StringBuilder sb = new StringBuilder();
-        sb.append("<table class=\"chart-table\"><thead><tr>")
-          .append("<th>Mese</th><th>Saldo</th>")
-          .append("</tr></thead><tbody>");
+        PdfPTable table = createTable(new float[] {1.2f, 3.2f});
+        addHeaderRow(table, "Mese", "Saldo");
 
         for (ReportDto.BalanceTrendItem item : balanceTrend.getItems()) {
             String label = String.format("%02d/%d", item.getMonth(), item.getYear());
-            sb.append("<tr>")
-              .append("<td>").append(label).append("</td>")
-              .append("<td>").append(buildBarCell(toDouble(item.getClosingBalance()), maxValue, "bar-balance", true)).append("</td>")
-              .append("</tr>");
+            table.addCell(cell(label));
+            table.addCell(cell(barValue(item.getClosingBalance(), maxValue, true)));
         }
 
-        sb.append("</tbody></table>");
-        return sb.toString();
+        document.add(table);
+        return true;
     }
 
-    private String renderProjectionChart(ReportDto.MonthlyProjection projection) {
+    private boolean addProjectionTable(Document document, ReportDto.MonthlyProjection projection) throws DocumentException {
         if (projection == null) {
-            return null;
+            return false;
         }
-                double currIncome = toDouble(projection.getCurrentMonthIncome());
-                double projIncome = toDouble(projection.getProjectedMonthlyIncome());
-                double currExpense = toDouble(projection.getCurrentMonthExpense());
-                double projExpense = toDouble(projection.getProjectedMonthlyExpense());
+        double currIncome = toDouble(projection.getCurrentMonthIncome());
+        double projIncome = toDouble(projection.getProjectedMonthlyIncome());
+        double currExpense = toDouble(projection.getCurrentMonthExpense());
+        double projExpense = toDouble(projection.getProjectedMonthlyExpense());
 
-                double maxIncome = Math.max(Math.abs(currIncome), Math.abs(projIncome));
-                double maxExpense = Math.max(Math.abs(currExpense), Math.abs(projExpense));
+        double maxIncome = Math.max(Math.abs(currIncome), Math.abs(projIncome));
+        double maxExpense = Math.max(Math.abs(currExpense), Math.abs(projExpense));
 
-                StringBuilder sb = new StringBuilder();
-                sb.append("<table class=\"chart-table\"><thead><tr>")
-                    .append("<th>Metrica</th><th>Attuale</th><th>Proiezione</th>")
-                    .append("</tr></thead><tbody>");
+        PdfPTable table = createTable(new float[] {1.6f, 2.2f, 2.2f});
+        addHeaderRow(table, "Metrica", "Attuale", "Proiezione");
 
-                sb.append("<tr><td>Entrate</td>")
-                    .append("<td>").append(buildBarCell(currIncome, maxIncome, "bar-in", false)).append("</td>")
-                    .append("<td>").append(buildBarCell(projIncome, maxIncome, "bar-in", false)).append("</td>")
-                    .append("</tr>");
+        table.addCell(cell("Entrate"));
+        table.addCell(cell(barValue(currIncome, maxIncome, false)));
+        table.addCell(cell(barValue(projIncome, maxIncome, false)));
 
-                sb.append("<tr><td>Uscite</td>")
-                    .append("<td>").append(buildBarCell(currExpense, maxExpense, "bar-out", false)).append("</td>")
-                    .append("<td>").append(buildBarCell(projExpense, maxExpense, "bar-out", false)).append("</td>")
-                    .append("</tr>");
+        table.addCell(cell("Uscite"));
+        table.addCell(cell(barValue(currExpense, maxExpense, false)));
+        table.addCell(cell(barValue(projExpense, maxExpense, false)));
 
-                sb.append("</tbody></table>");
-                return sb.toString();
-        }
-
-    private String renderMarkdown(String markdown) {
-        if (markdown == null || markdown.isBlank()) {
-            return "<p>Nessun contenuto disponibile.</p>";
-        }
-        return htmlRenderer.render(markdownParser.parse(markdown));
+        document.add(table);
+        return true;
     }
 
-    private String buildBarCell(double value, double max, String cssClass, boolean signed) {
-        double width = max <= 0.0 ? 0.0 : Math.min(100.0, Math.abs(value) / max * 100.0);
-        String display = signed ? formatSignedAmount(value) : formatAmount(Math.abs(value));
-        return "<div class=\"bar-bg\"><div class=\"bar " + cssClass + "\" style=\"width:"
-                + formatPercent(width) + "%\"></div></div><div class=\"bar-value\">"
-                + display + "</div>";
-    }
-
-    private String formatSignedAmount(double value) {
-        if (value > 0) {
-            return "+" + formatAmount(value);
+    private boolean addBudgetSummaryTable(Document document, List<BudgetDto.MonthlySummaryResponse> budgetSummary) throws DocumentException {
+        if (budgetSummary == null || budgetSummary.isEmpty()) {
+            return false;
         }
-        if (value < 0) {
-            return "-" + formatAmount(Math.abs(value));
+
+        PdfPTable table = createTable(new float[] {2.0f, 1.2f, 1.2f, 1.2f, 1.0f, 1.2f});
+        addHeaderRow(table, "Categoria", "Limite", "Speso", "Residuo", "% Utilizzo", "Periodo");
+
+        for (BudgetDto.MonthlySummaryResponse item : budgetSummary) {
+            table.addCell(cell(item.getCategoryName()));
+            table.addCell(cell(formatAmount(item.getLimit())));
+            table.addCell(cell(formatAmount(item.getSpent())));
+            table.addCell(cell(formatAmount(item.getRemaining())));
+            table.addCell(cell(formatPercentage(item.getPercentageUsed())));
+            table.addCell(cell(item.getPeriodStart().format(MONTH_FORMAT)));
         }
-        return "0.00";
+
+        document.add(table);
+        return true;
     }
 
-    private String formatAmount(double value) {
-        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).toPlainString();
+    private PdfPTable createTable(float[] widths) {
+        PdfPTable table = new PdfPTable(widths);
+        table.setWidthPercentage(100f);
+        table.setSpacingAfter(6f);
+        return table;
     }
 
-    private String formatPercent(double value) {
-        return BigDecimal.valueOf(value).setScale(1, RoundingMode.HALF_UP).toPlainString();
-    }
-
-    private String safeChart(String name, Supplier<String> renderer) {
-        try {
-            return renderer.get();
-        } catch (Throwable t) {
-            log.warn("Rendering grafico '{}' fallito. Continuiamo senza grafico.", name, t);
-            return null;
+    private void addHeaderRow(PdfPTable table, String... headers) {
+        for (String header : headers) {
+            PdfPCell cell = new PdfPCell(new Phrase(header, HEADER_FONT));
+            cell.setHorizontalAlignment(Element.ALIGN_LEFT);
+            cell.setPadding(4f);
+            table.addCell(cell);
         }
     }
 
-    private byte[] renderPdf(String html) {
-        try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
-            PdfRendererBuilder builder = new PdfRendererBuilder();
-            builder.withHtmlContent(html, null);
-            builder.toStream(out);
-            builder.run();
-            return out.toByteArray();
-        } catch (Exception e) {
-            throw new IllegalStateException("Errore durante la generazione del PDF", e);
+    private PdfPCell cell(String value) {
+        PdfPCell cell = new PdfPCell(new Phrase(value != null ? value : "", SMALL_FONT));
+        cell.setPadding(4f);
+        cell.setHorizontalAlignment(Element.ALIGN_LEFT);
+        return cell;
+    }
+
+    private String barValue(BigDecimal value, double max, boolean signed) {
+        return barValue(toDouble(value), max, signed);
+    }
+
+    private String barValue(double value, double max, boolean signed) {
+        String bar = buildBar(value, max);
+        String amount = signed ? formatSignedAmount(value) : formatAmount(Math.abs(value));
+        if (bar.isEmpty()) {
+            return amount;
         }
+        return bar + " " + amount;
+    }
+
+    private String buildBar(double value, double max) {
+        if (max <= 0.0) {
+            return "";
+        }
+        int len = (int) Math.round(Math.abs(value) / max * BAR_WIDTH);
+        len = Math.max(0, Math.min(BAR_WIDTH, len));
+        return "#".repeat(len);
     }
 
     private double toDouble(BigDecimal value) {
@@ -403,6 +395,20 @@ public class AiReportPdfService {
             return "0.00";
         }
         return value.setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private String formatAmount(double value) {
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private String formatSignedAmount(double value) {
+        if (value > 0) {
+            return "+" + formatAmount(value);
+        }
+        if (value < 0) {
+            return "-" + formatAmount(Math.abs(value));
+        }
+        return "0.00";
     }
 
     private String formatPercentage(double value) {
