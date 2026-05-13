@@ -9,14 +9,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.commonmark.parser.Parser;
 import org.commonmark.renderer.html.HtmlRenderer;
-import org.knowm.xchart.BitmapEncoder;
-import org.knowm.xchart.CategoryChart;
-import org.knowm.xchart.CategoryChartBuilder;
-import org.knowm.xchart.CategorySeries;
-import org.knowm.xchart.style.CategoryStyler;
-import org.knowm.xchart.style.Styler.LegendLayout;
-import org.knowm.xchart.style.Styler.LegendPosition;
-import org.knowm.xchart.style.markers.SeriesMarkers;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.HtmlUtils;
 
@@ -25,8 +17,6 @@ import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Base64;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -101,8 +91,18 @@ public class AiReportPdfService {
           .append(".section { margin-top: 14px; }")
           .append(".ai-report { background: #f8f8f8; padding: 12px; border-radius: 6px; }")
           .append(".ai-report pre { white-space: pre-wrap; }")
-          .append(".chart { width: 100%; height: auto; margin-top: 6px; }")
           .append(".chart-placeholder { color: #777; font-style: italic; }")
+          .append(".chart-table { width: 100%; border-collapse: collapse; margin-top: 6px; }")
+          .append(".chart-table th, .chart-table td { border: 1px solid #e5e5e5; padding: 4px; text-align: left; font-size: 10.5px; }")
+          .append(".chart-table th { background: #f5f5f5; }")
+          .append(".bar-bg { background: #f0f0f0; height: 10px; border-radius: 2px; }")
+          .append(".bar { height: 10px; border-radius: 2px; }")
+          .append(".bar-in { background: #43a047; }")
+          .append(".bar-out { background: #e53935; }")
+          .append(".bar-net { background: #1e88e5; }")
+          .append(".bar-balance { background: #3949ab; }")
+          .append(".bar-proj { background: #6d4c41; }")
+          .append(".bar-value { font-size: 10px; color: #444; margin-top: 2px; }")
           .append("table { width: 100%; border-collapse: collapse; margin-top: 8px; }")
           .append("th, td { border: 1px solid #ddd; padding: 6px; text-align: left; font-size: 11px; }")
           .append("th { background: #f2f2f2; }")
@@ -167,7 +167,7 @@ public class AiReportPdfService {
         return sb.toString();
     }
 
-    private void appendChartSection(StringBuilder sb, String title, String subtitle, String dataUri) {
+    private void appendChartSection(StringBuilder sb, String title, String subtitle, String chartHtml) {
         sb.append("<div class=\"section\"><h2>")
           .append(HtmlUtils.htmlEscape(title))
           .append("</h2>")
@@ -175,14 +175,10 @@ public class AiReportPdfService {
           .append(HtmlUtils.htmlEscape(subtitle))
           .append("</div>");
 
-        if (dataUri == null) {
+        if (chartHtml == null) {
             sb.append("<p class=\"chart-placeholder\">Nessun dato disponibile per questo grafico.</p>");
         } else {
-            sb.append("<img class=\"chart\" src=\"")
-              .append(dataUri)
-              .append("\" alt=\"")
-              .append(HtmlUtils.htmlEscape(title))
-              .append("\">");
+            sb.append(chartHtml);
         }
         sb.append("</div>");
     }
@@ -191,158 +187,158 @@ public class AiReportPdfService {
         if (monthlyTrend == null || monthlyTrend.getItems() == null || monthlyTrend.getItems().isEmpty()) {
             return null;
         }
-        List<String> labels = new ArrayList<>();
-        List<Double> income = new ArrayList<>();
-        List<Double> expense = new ArrayList<>();
-        List<Double> net = new ArrayList<>();
+        double maxIncome = 0.0;
+        double maxExpense = 0.0;
+        double maxNet = 0.0;
 
         for (ReportDto.MonthlyTrendItem item : monthlyTrend.getItems()) {
-            labels.add(String.format("%02d/%d", item.getMonth(), item.getYear()));
-            income.add(toDouble(item.getIncome()));
-            expense.add(toDouble(item.getExpense()));
-            net.add(toDouble(item.getNet()));
+            maxIncome = Math.max(maxIncome, Math.abs(toDouble(item.getIncome())));
+            maxExpense = Math.max(maxExpense, Math.abs(toDouble(item.getExpense())));
+            maxNet = Math.max(maxNet, Math.abs(toDouble(item.getNet())));
         }
 
-        CategoryChart chart = new CategoryChartBuilder()
-                .width(900).height(420)
-                .title("Trend mensile")
-                .xAxisTitle("Mese")
-                .yAxisTitle("Importo")
-                .build();
-        styleLineChart(chart);
-        chart.addSeries("Entrate", labels, income);
-        chart.addSeries("Uscite", labels, expense);
-        chart.addSeries("Netto", labels, net);
-        applyLineMarkers(chart);
-        return toDataUri(chart);
+        StringBuilder sb = new StringBuilder();
+        sb.append("<table class=\"chart-table\"><thead><tr>")
+          .append("<th>Mese</th><th>Entrate</th><th>Uscite</th><th>Netto</th>")
+          .append("</tr></thead><tbody>");
+
+        for (ReportDto.MonthlyTrendItem item : monthlyTrend.getItems()) {
+            String label = String.format("%02d/%d", item.getMonth(), item.getYear());
+            sb.append("<tr>")
+              .append("<td>").append(label).append("</td>")
+              .append("<td>").append(buildBarCell(toDouble(item.getIncome()), maxIncome, "bar-in", false)).append("</td>")
+              .append("<td>").append(buildBarCell(toDouble(item.getExpense()), maxExpense, "bar-out", false)).append("</td>")
+              .append("<td>").append(buildBarCell(toDouble(item.getNet()), maxNet, "bar-net", true)).append("</td>")
+              .append("</tr>");
+        }
+
+        sb.append("</tbody></table>");
+        return sb.toString();
     }
 
     private String renderCategoryBreakdownChart(ReportDto.CategoryBreakdownResponse breakdown) {
         if (breakdown == null || breakdown.getCategories() == null || breakdown.getCategories().isEmpty()) {
             return null;
         }
-        List<String> labels = new ArrayList<>();
-        List<Double> outValues = new ArrayList<>();
-        List<Double> inValues = new ArrayList<>();
-
+        double maxValue = 0.0;
         for (ReportDto.CategoryBreakdownItem item : breakdown.getCategories()) {
-            labels.add(shortLabel(item.getCategoryName(), 24));
-            if (item.getInferredType() == TransactionType.OUT) {
-                outValues.add(toDouble(item.getNet()));
-                inValues.add(0.0);
-            } else {
-                outValues.add(0.0);
-                inValues.add(toDouble(item.getNet()));
-            }
+            maxValue = Math.max(maxValue, Math.abs(toDouble(item.getNet())));
         }
 
-        CategoryChart chart = new CategoryChartBuilder()
-                .width(900).height(420)
-                .title("Breakdown per categoria")
-                .xAxisTitle("Categoria")
-                .yAxisTitle("Importo")
-                .build();
-        styleBarChart(chart, true);
-        chart.addSeries("Uscite", labels, outValues);
-        chart.addSeries("Entrate", labels, inValues);
-        return toDataUri(chart);
+        StringBuilder sb = new StringBuilder();
+        sb.append("<table class=\"chart-table\"><thead><tr>")
+          .append("<th>Categoria</th><th>Tipo</th><th>Valore</th>")
+          .append("</tr></thead><tbody>");
+
+        for (ReportDto.CategoryBreakdownItem item : breakdown.getCategories()) {
+            String typeLabel = item.getInferredType() == TransactionType.OUT ? "Uscite" : "Entrate";
+            String cssClass = item.getInferredType() == TransactionType.OUT ? "bar-out" : "bar-in";
+            sb.append("<tr>")
+              .append("<td>").append(HtmlUtils.htmlEscape(shortLabel(item.getCategoryName(), 30))).append("</td>")
+              .append("<td>").append(typeLabel).append("</td>")
+              .append("<td>").append(buildBarCell(toDouble(item.getNet()), maxValue, cssClass, false)).append("</td>")
+              .append("</tr>");
+        }
+
+        sb.append("</tbody></table>");
+        return sb.toString();
     }
 
     private String renderMonthComparisonChart(ReportDto.MonthComparisonResponse comparison) {
         if (comparison == null || comparison.getCurrentMonth() == null || comparison.getPreviousMonth() == null) {
             return null;
         }
-        List<String> labels = List.of("Mese corrente", "Mese precedente");
-        List<Double> incomes = List.of(toDouble(comparison.getCurrentMonth().getIncome()),
-                toDouble(comparison.getPreviousMonth().getIncome()));
-        List<Double> expenses = List.of(toDouble(comparison.getCurrentMonth().getExpense()),
-                toDouble(comparison.getPreviousMonth().getExpense()));
-        List<Double> net = List.of(toDouble(comparison.getCurrentMonth().getNet()),
-                toDouble(comparison.getPreviousMonth().getNet()));
+        double currIncome = toDouble(comparison.getCurrentMonth().getIncome());
+        double prevIncome = toDouble(comparison.getPreviousMonth().getIncome());
+        double currExpense = toDouble(comparison.getCurrentMonth().getExpense());
+        double prevExpense = toDouble(comparison.getPreviousMonth().getExpense());
+        double currNet = toDouble(comparison.getCurrentMonth().getNet());
+        double prevNet = toDouble(comparison.getPreviousMonth().getNet());
 
-        CategoryChart chart = new CategoryChartBuilder()
-                .width(900).height(380)
-                .title("Confronto mese")
-                .xAxisTitle("Periodo")
-                .yAxisTitle("Importo")
-                .build();
-        styleBarChart(chart, false);
-        chart.addSeries("Entrate", labels, incomes);
-        chart.addSeries("Uscite", labels, expenses);
-        chart.addSeries("Netto", labels, net);
-        return toDataUri(chart);
+        double maxIncome = Math.max(Math.abs(currIncome), Math.abs(prevIncome));
+        double maxExpense = Math.max(Math.abs(currExpense), Math.abs(prevExpense));
+        double maxNet = Math.max(Math.abs(currNet), Math.abs(prevNet));
+
+        StringBuilder sb = new StringBuilder();
+        sb.append("<table class=\"chart-table\"><thead><tr>")
+          .append("<th>Metrica</th><th>Mese corrente</th><th>Mese precedente</th>")
+          .append("</tr></thead><tbody>");
+
+        sb.append("<tr><td>Entrate</td>")
+          .append("<td>").append(buildBarCell(currIncome, maxIncome, "bar-in", false)).append("</td>")
+          .append("<td>").append(buildBarCell(prevIncome, maxIncome, "bar-in", false)).append("</td>")
+          .append("</tr>");
+
+        sb.append("<tr><td>Uscite</td>")
+          .append("<td>").append(buildBarCell(currExpense, maxExpense, "bar-out", false)).append("</td>")
+          .append("<td>").append(buildBarCell(prevExpense, maxExpense, "bar-out", false)).append("</td>")
+          .append("</tr>");
+
+        sb.append("<tr><td>Netto</td>")
+          .append("<td>").append(buildBarCell(currNet, maxNet, "bar-net", true)).append("</td>")
+          .append("<td>").append(buildBarCell(prevNet, maxNet, "bar-net", true)).append("</td>")
+          .append("</tr>");
+
+        sb.append("</tbody></table>");
+        return sb.toString();
     }
 
     private String renderBalanceTrendChart(ReportDto.BalanceTrendResponse balanceTrend) {
         if (balanceTrend == null || balanceTrend.getItems() == null || balanceTrend.getItems().isEmpty()) {
             return null;
         }
-        List<String> labels = new ArrayList<>();
-        List<Double> values = new ArrayList<>();
-
+        double maxValue = 0.0;
         for (ReportDto.BalanceTrendItem item : balanceTrend.getItems()) {
-            labels.add(String.format("%02d/%d", item.getMonth(), item.getYear()));
-            values.add(toDouble(item.getClosingBalance()));
+            maxValue = Math.max(maxValue, Math.abs(toDouble(item.getClosingBalance())));
         }
 
-        CategoryChart chart = new CategoryChartBuilder()
-                .width(900).height(420)
-                .title("Andamento saldo")
-                .xAxisTitle("Mese")
-                .yAxisTitle("Saldo")
-                .build();
-        styleLineChart(chart);
-        chart.addSeries("Saldo", labels, values);
-        applyLineMarkers(chart);
-        return toDataUri(chart);
+        StringBuilder sb = new StringBuilder();
+        sb.append("<table class=\"chart-table\"><thead><tr>")
+          .append("<th>Mese</th><th>Saldo</th>")
+          .append("</tr></thead><tbody>");
+
+        for (ReportDto.BalanceTrendItem item : balanceTrend.getItems()) {
+            String label = String.format("%02d/%d", item.getMonth(), item.getYear());
+            sb.append("<tr>")
+              .append("<td>").append(label).append("</td>")
+              .append("<td>").append(buildBarCell(toDouble(item.getClosingBalance()), maxValue, "bar-balance", true)).append("</td>")
+              .append("</tr>");
+        }
+
+        sb.append("</tbody></table>");
+        return sb.toString();
     }
 
     private String renderProjectionChart(ReportDto.MonthlyProjection projection) {
         if (projection == null) {
             return null;
         }
-        List<String> labels = List.of("Attuale", "Proiezione");
-        List<Double> incomes = List.of(toDouble(projection.getCurrentMonthIncome()),
-                toDouble(projection.getProjectedMonthlyIncome()));
-        List<Double> expenses = List.of(toDouble(projection.getCurrentMonthExpense()),
-                toDouble(projection.getProjectedMonthlyExpense()));
+                double currIncome = toDouble(projection.getCurrentMonthIncome());
+                double projIncome = toDouble(projection.getProjectedMonthlyIncome());
+                double currExpense = toDouble(projection.getCurrentMonthExpense());
+                double projExpense = toDouble(projection.getProjectedMonthlyExpense());
 
-        CategoryChart chart = new CategoryChartBuilder()
-                .width(900).height(380)
-                .title("Proiezione mensile")
-                .xAxisTitle("Periodo")
-                .yAxisTitle("Importo")
-                .build();
-        styleBarChart(chart, false);
-        chart.addSeries("Entrate", labels, incomes);
-        chart.addSeries("Uscite", labels, expenses);
-        return toDataUri(chart);
-    }
+                double maxIncome = Math.max(Math.abs(currIncome), Math.abs(projIncome));
+                double maxExpense = Math.max(Math.abs(currExpense), Math.abs(projExpense));
 
-    private void styleLineChart(CategoryChart chart) {
-        CategoryStyler styler = chart.getStyler();
-        styler.setDefaultSeriesRenderStyle(CategorySeries.CategorySeriesRenderStyle.Line);
-        styler.setLegendPosition(LegendPosition.OutsideE);
-        styler.setLegendLayout(LegendLayout.Vertical);
-        styler.setMarkerSize(6);
-        styler.setPlotGridLinesVisible(true);
-        styler.setXAxisLabelRotation(45);
-        styler.setYAxisDecimalPattern("#,##0.00");
-    }
+                StringBuilder sb = new StringBuilder();
+                sb.append("<table class=\"chart-table\"><thead><tr>")
+                    .append("<th>Metrica</th><th>Attuale</th><th>Proiezione</th>")
+                    .append("</tr></thead><tbody>");
 
-    private void styleBarChart(CategoryChart chart, boolean rotateLabels) {
-        CategoryStyler styler = chart.getStyler();
-        styler.setDefaultSeriesRenderStyle(CategorySeries.CategorySeriesRenderStyle.Bar);
-        styler.setLegendPosition(LegendPosition.OutsideE);
-        styler.setLegendLayout(LegendLayout.Vertical);
-        styler.setPlotGridLinesVisible(true);
-        styler.setXAxisLabelRotation(rotateLabels ? 45 : 0);
-        styler.setYAxisDecimalPattern("#,##0.00");
-    }
+                sb.append("<tr><td>Entrate</td>")
+                    .append("<td>").append(buildBarCell(currIncome, maxIncome, "bar-in", false)).append("</td>")
+                    .append("<td>").append(buildBarCell(projIncome, maxIncome, "bar-in", false)).append("</td>")
+                    .append("</tr>");
 
-    private void applyLineMarkers(CategoryChart chart) {
-        chart.getSeriesMap().values().forEach(series -> series.setMarker(SeriesMarkers.CIRCLE));
-    }
+                sb.append("<tr><td>Uscite</td>")
+                    .append("<td>").append(buildBarCell(currExpense, maxExpense, "bar-out", false)).append("</td>")
+                    .append("<td>").append(buildBarCell(projExpense, maxExpense, "bar-out", false)).append("</td>")
+                    .append("</tr>");
+
+                sb.append("</tbody></table>");
+                return sb.toString();
+        }
 
     private String renderMarkdown(String markdown) {
         if (markdown == null || markdown.isBlank()) {
@@ -351,14 +347,30 @@ public class AiReportPdfService {
         return htmlRenderer.render(markdownParser.parse(markdown));
     }
 
-    private String toDataUri(CategoryChart chart) {
-        try {
-            byte[] pngBytes = BitmapEncoder.getBitmapBytes(chart, BitmapEncoder.BitmapFormat.PNG);
-            return "data:image/png;base64," + Base64.getEncoder().encodeToString(pngBytes);
-        } catch (Exception e) {
-            log.warn("Errore rendering grafico PDF", e);
-            return null;
+    private String buildBarCell(double value, double max, String cssClass, boolean signed) {
+        double width = max <= 0.0 ? 0.0 : Math.min(100.0, Math.abs(value) / max * 100.0);
+        String display = signed ? formatSignedAmount(value) : formatAmount(Math.abs(value));
+        return "<div class=\"bar-bg\"><div class=\"bar " + cssClass + "\" style=\"width:"
+                + formatPercent(width) + "%\"></div></div><div class=\"bar-value\">"
+                + display + "</div>";
+    }
+
+    private String formatSignedAmount(double value) {
+        if (value > 0) {
+            return "+" + formatAmount(value);
         }
+        if (value < 0) {
+            return "-" + formatAmount(Math.abs(value));
+        }
+        return "0.00";
+    }
+
+    private String formatAmount(double value) {
+        return BigDecimal.valueOf(value).setScale(2, RoundingMode.HALF_UP).toPlainString();
+    }
+
+    private String formatPercent(double value) {
+        return BigDecimal.valueOf(value).setScale(1, RoundingMode.HALF_UP).toPlainString();
     }
 
     private String safeChart(String name, Supplier<String> renderer) {
