@@ -120,6 +120,14 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
             log.warn("Could not register MongoDBAtlasFilterExpressionConverter hint: {}", e.getMessage());
         }
 
+        // ─── OpenPDF resources ───────────────────────────────────────────────────
+        // Native image doesn't include classpath resources automatically.
+        // OpenPDF needs its error message files (.lng), font metrics (.afm),
+        // font property files (.properties), and CMap files (.cmap) at runtime.
+        hints.resources().registerPattern("com/lowagie/text/error_messages/*");
+        hints.resources().registerPattern("com/lowagie/text/pdf/fonts/*");
+        hints.resources().registerPattern("com/lowagie/text/version.properties");
+
         // ─── Apache Commons CSV ──────────────────────────────────────────────────
         // CSVFormat uses an internal Predicate via lambda — register the top-level class
         // and its nested Builder to avoid missing-method errors at runtime.
