@@ -7,6 +7,7 @@ import it.iacovelli.nexabudgetbe.dto.AiReportRequest;
 import it.iacovelli.nexabudgetbe.dto.AiReportStatusResponse;
 import it.iacovelli.nexabudgetbe.dto.ReportDto;
 import it.iacovelli.nexabudgetbe.model.User;
+import it.iacovelli.nexabudgetbe.service.AiReportPdfService;
 import it.iacovelli.nexabudgetbe.service.AiReportService;
 import it.iacovelli.nexabudgetbe.service.ReportService;
 import jakarta.validation.Valid;
@@ -29,10 +30,12 @@ public class ReportController {
 
     private final ReportService reportService;
     private final AiReportService aiReportService;
+    private final AiReportPdfService aiReportPdfService;
 
-    public ReportController(ReportService reportService, AiReportService aiReportService) {
+    public ReportController(ReportService reportService, AiReportService aiReportService, AiReportPdfService aiReportPdfService) {
         this.reportService = reportService;
         this.aiReportService = aiReportService;
+        this.aiReportPdfService = aiReportPdfService;
     }
 
     @PostMapping("/ai-analysis")
@@ -42,7 +45,7 @@ public class ReportController {
             @Valid @RequestBody AiReportRequest request) {
         UUID jobId = aiReportService.startAiReportJob(currentUser, request.startDate(), request.endDate());
         aiReportService.generateAiReport(jobId, currentUser, request.startDate(), request.endDate());
-        return ResponseEntity.accepted().body(new AiReportStatusResponse(jobId, "PENDING", null));
+        return ResponseEntity.accepted().body(new AiReportStatusResponse(jobId, "PENDING", null, request.startDate(), request.endDate()));
     }
 
     @GetMapping("/ai-analysis/{jobId}")
@@ -54,7 +57,7 @@ public class ReportController {
     }
 
     @GetMapping("/ai-analysis/{jobId}/download")
-    @Operation(summary = "Scarica Report AI in formato file", description = "Scarica il report AI completato come file markdown.")
+    @Operation(summary = "Scarica Report AI in formato file", description = "Scarica il report AI completato come PDF.")
     public ResponseEntity<Resource> downloadAiReport(
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "ID del job AI") @PathVariable UUID jobId) {
@@ -63,14 +66,16 @@ public class ReportController {
         if (!"COMPLETED".equals(status.status())) {
             return ResponseEntity.badRequest().build();
         }
-
-        byte[] mdBytes = status.content().getBytes(java.nio.charset.StandardCharsets.UTF_8);
-        ByteArrayResource resource = new ByteArrayResource(mdBytes);
-
+        if (status.startDate() == null || status.endDate() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        byte[] pdfBytes = aiReportPdfService.buildReportPdf(currentUser, status.startDate(), status.endDate(), status.content());
+        ByteArrayResource pdfResource = new ByteArrayResource(pdfBytes);
+        String filename = aiReportPdfService.buildFilename(status.startDate(), status.endDate());
         return ResponseEntity.ok()
-                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"ai_report_" + jobId.toString().substring(0, 8) + ".md\"")
-                .contentType(MediaType.APPLICATION_OCTET_STREAM)
-                .body(resource);
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + filename + "\"")
+                .contentType(MediaType.APPLICATION_PDF)
+                .body(pdfResource);
     }
 
     @GetMapping("/monthly-trend")

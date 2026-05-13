@@ -78,7 +78,7 @@ public class AiReportService {
             String cachedReport = cache.get(cacheKey, String.class);
             if (cachedReport != null) {
                 UUID instantJobId = UUID.randomUUID();
-                saveJobStatus(instantJobId, new AiReportStatusResponse(instantJobId, "COMPLETED", cachedReport));
+                saveJobStatus(instantJobId, new AiReportStatusResponse(instantJobId, "COMPLETED", cachedReport, startDate, endDate));
                 return instantJobId;
             }
         }
@@ -89,7 +89,7 @@ public class AiReportService {
         }
 
         UUID jobId = UUID.randomUUID();
-        saveJobStatus(jobId, new AiReportStatusResponse(jobId, "PENDING", null));
+        saveJobStatus(jobId, new AiReportStatusResponse(jobId, "PENDING", null, startDate, endDate));
 
         return jobId;
     }
@@ -128,7 +128,7 @@ public class AiReportService {
                 resultsCache.put(cacheKey, responseContent);
             }
 
-            saveJobStatus(jobId, new AiReportStatusResponse(jobId, "COMPLETED", responseContent));
+            saveJobStatus(jobId, new AiReportStatusResponse(jobId, "COMPLETED", responseContent, startDate, endDate));
             log.info("AI Report {} completed successfully", jobId);
 
             if (user.getEmail() != null && !user.getEmail().isBlank()) {
@@ -143,7 +143,7 @@ public class AiReportService {
 
         } catch (Exception e) {
             log.error("Error generating AI report for job {}", jobId, e);
-            saveJobStatus(jobId, new AiReportStatusResponse(jobId, "FAILED", null));
+            saveJobStatus(jobId, new AiReportStatusResponse(jobId, "FAILED", null, startDate, endDate));
         }
     }
 
