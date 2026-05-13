@@ -76,6 +76,9 @@ public class ChatService {
     @Value("${nexabudget.ai.chat.thinking-budget}")
     private int thinkingBudget;
 
+    @Value("${nexabudget.ai.chat.thinking-level}")
+    private String thinkingLevel;
+
     private final Models genaiModels;
     private final FinanceTools financeTools;
     private final ChatSessionRepository chatSessionRepository;
@@ -107,10 +110,7 @@ public class ChatService {
                 .tools(List.of(buildFinanceTool()));
 
         if (supportsThinking(chatModelName)) {
-            cfgBuilder.thinkingConfig(ThinkingConfig.builder()
-                    .thinkingBudget(thinkingBudget)
-                    .includeThoughts(false)
-                    .build());
+            cfgBuilder.thinkingConfig(buildThinkingConfig(chatModelName, thinkingBudget, thinkingLevel));
         }
 
         GenerateContentConfig cfg = cfgBuilder.build();
@@ -341,7 +341,14 @@ public class ChatService {
     }
 
     private static boolean supportsThinking(String modelName) {
-        return modelName.startsWith("gemini-") || modelName.startsWith("gemma-4");
+        return modelName.startsWith("gemini-") || modelName.startsWith("gemma-4-");
+    }
+
+    private static ThinkingConfig buildThinkingConfig(String modelName, int budget, String level) {
+        if (modelName.startsWith("gemma-4-")) {
+            return ThinkingConfig.builder().thinkingLevel(level).includeThoughts(false).build();
+        }
+        return ThinkingConfig.builder().thinkingBudget(budget).includeThoughts(false).build();
     }
 
     private boolean isFirstExchange(ChatSession session) {
