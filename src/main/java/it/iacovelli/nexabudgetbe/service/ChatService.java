@@ -256,6 +256,33 @@ public class ChatService {
                 case "getMonthlyProjection" -> financeTools.getMonthlyProjection();
                 case "getCryptoPortfolio" -> financeTools.getCryptoPortfolio();
                 case "listCategories" -> financeTools.listCategories();
+                case "searchTransactions" -> financeTools.searchTransactions(
+                        (String) args.get("type"),
+                        (String) args.get("categoryName"),
+                        (String) args.get("startDate"),
+                        (String) args.get("endDate"),
+                        (String) args.get("search"),
+                        args.containsKey("limit") ? ((Number) args.get("limit")).intValue() : null);
+                case "getTransactionsByCategory" -> financeTools.getTransactionsByCategory(
+                        (String) args.get("categoryName"));
+                case "getRemainingBudgets" -> financeTools.getRemainingBudgets();
+                case "getBudgetMonthlySummary" -> financeTools.getBudgetMonthlySummary(
+                        (String) args.get("date"));
+                case "getMonthComparison" -> financeTools.getMonthComparison(
+                        ((Number) args.get("year")).intValue(),
+                        ((Number) args.get("month")).intValue());
+                case "getBalanceTrend" -> financeTools.getBalanceTrend(
+                        (String) args.get("startDate"),
+                        (String) args.get("endDate"));
+                case "getAccountsByType" -> financeTools.getAccountsByType(
+                        (String) args.get("type"));
+                case "convertCurrency" -> financeTools.convertCurrency(
+                        ((Number) args.get("amount")).doubleValue(),
+                        (String) args.get("fromCurrency"),
+                        (String) args.get("toCurrency"));
+                case "getExchangeRate" -> financeTools.getExchangeRate(
+                        (String) args.get("fromCurrency"),
+                        (String) args.get("toCurrency"));
                 default -> "Tool non trovato: " + name;
             };
         } catch (Exception e) {
@@ -339,6 +366,98 @@ public class ChatService {
                 FunctionDeclaration.builder()
                         .name("listCategories")
                         .description("Restituisce la lista delle categorie disponibili per l'utente (personali + predefinite).")
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("searchTransactions")
+                        .description("Ricerca avanzata delle transazioni con filtri opzionali: tipo (IN/OUT), nome categoria, intervallo di date, testo libero nella descrizione.")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of(
+                                        "type", Schema.builder().type("STRING").description("Tipo transazione: IN o OUT").build(),
+                                        "categoryName", Schema.builder().type("STRING").description("Nome della categoria da filtrare").build(),
+                                        "startDate", Schema.builder().type("STRING").description("Data inizio yyyy-MM-dd").build(),
+                                        "endDate", Schema.builder().type("STRING").description("Data fine yyyy-MM-dd").build(),
+                                        "search", Schema.builder().type("STRING").description("Testo da cercare nella descrizione o nel nome del conto").build(),
+                                        "limit", Schema.builder().type("INTEGER").description("Numero massimo di risultati (default 20, max 50)").build()))
+                                .build())
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getTransactionsByCategory")
+                        .description("Restituisce tutte le transazioni di una specifica categoria dell'utente.")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of(
+                                        "categoryName", Schema.builder().type("STRING").description("Nome esatto della categoria").build()))
+                                .required(List.of("categoryName"))
+                                .build())
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getRemainingBudgets")
+                        .description("Restituisce i budget attivi con il residuo rimanente (quanto è ancora disponibile) per categoria.")
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getBudgetMonthlySummary")
+                        .description("Restituisce il riepilogo mensile dei budget con limite, speso, residuo e percentuale di utilizzo per ciascuna categoria.")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of(
+                                        "date", Schema.builder().type("STRING").description("Data di riferimento yyyy-MM-dd (default: oggi)").build()))
+                                .build())
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getMonthComparison")
+                        .description("Confronta entrate, uscite e netto di un mese specifico con il mese precedente.")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of(
+                                        "year", Schema.builder().type("INTEGER").description("Anno (es. 2026)").build(),
+                                        "month", Schema.builder().type("INTEGER").description("Mese (1-12)").build()))
+                                .required(List.of("year", "month"))
+                                .build())
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getBalanceTrend")
+                        .description("Restituisce l'andamento del saldo mese per mese in un intervallo di date, con saldo di apertura, netto mensile e saldo di chiusura.")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of(
+                                        "startDate", Schema.builder().type("STRING").description("Data inizio yyyy-MM-dd").build(),
+                                        "endDate", Schema.builder().type("STRING").description("Data fine yyyy-MM-dd").build()))
+                                .required(List.of("startDate", "endDate"))
+                                .build())
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getAccountsByType")
+                        .description("Restituisce i conti bancari dell'utente filtrati per tipo (CHECKING, SAVINGS, CREDIT_CARD, INVESTMENT, CASH, OTHER).")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of(
+                                        "type", Schema.builder().type("STRING").description("Tipo di conto: CHECKING, SAVINGS, CREDIT_CARD, INVESTMENT, CASH, OTHER").build()))
+                                .required(List.of("type"))
+                                .build())
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("convertCurrency")
+                        .description("Converte un importo da una valuta a un'altra usando i tassi di cambio aggiornati.")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of(
+                                        "amount", Schema.builder().type("NUMBER").description("Importo da convertire").build(),
+                                        "fromCurrency", Schema.builder().type("STRING").description("Valuta di origine (es. USD, EUR)").build(),
+                                        "toCurrency", Schema.builder().type("STRING").description("Valuta di destinazione (es. EUR, USD)").build()))
+                                .required(List.of("amount", "fromCurrency", "toCurrency"))
+                                .build())
+                        .build(),
+                FunctionDeclaration.builder()
+                        .name("getExchangeRate")
+                        .description("Restituisce il tasso di cambio attuale tra due valute.")
+                        .parameters(Schema.builder()
+                                .type("OBJECT")
+                                .properties(Map.of(
+                                        "fromCurrency", Schema.builder().type("STRING").description("Valuta di origine (es. USD, EUR)").build(),
+                                        "toCurrency", Schema.builder().type("STRING").description("Valuta di destinazione (es. EUR, USD)").build()))
+                                .required(List.of("fromCurrency", "toCurrency"))
+                                .build())
                         .build()
         ).build();
     }
