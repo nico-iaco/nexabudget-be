@@ -49,10 +49,14 @@ public class GocardlessController {
 
     @PostMapping("/bank/link")
     @Operation(summary = "Ottieni link bank", description = "Ottieni il link per collegare un conto bancario tramite GoCardless")
-    public ResponseEntity<String> getBankLink(@RequestBody BankLinkRequest body) {
+    public ResponseEntity<String> getBankLink(
+            @RequestBody BankLinkRequest body,
+            @AuthenticationPrincipal User currentUser) {
         String institutionId = body.getInstitutionId();
         UUID localAccountId = body.getLocalAccountId();
         logger.debug("Received request to get bank link for institutionId: {} and localAccountId: {}", institutionId, localAccountId);
+        accountService.getAccountByIdAndUser(localAccountId, currentUser)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
         GocardlessCreateWebToken bankLink = gocardlessService.generateBankLinkForToken(institutionId, localAccountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                         "Servizio GoCardless non disponibile, riprovare più tardi"));

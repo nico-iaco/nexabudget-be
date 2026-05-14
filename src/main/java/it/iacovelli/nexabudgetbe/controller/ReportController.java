@@ -53,7 +53,7 @@ public class ReportController {
     public ResponseEntity<AiReportStatusResponse> getAiReportStatus(
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "ID del job AI") @PathVariable UUID jobId) {
-        return ResponseEntity.ok(aiReportService.getJobStatus(jobId));
+        return ResponseEntity.ok(aiReportService.getJobStatus(jobId, currentUser));
     }
 
     @GetMapping("/ai-analysis/{jobId}/download")
@@ -61,7 +61,7 @@ public class ReportController {
     public ResponseEntity<Resource> downloadAiReport(
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "ID del job AI") @PathVariable UUID jobId) {
-        AiReportStatusResponse status = aiReportService.getJobStatus(jobId);
+        AiReportStatusResponse status = aiReportService.getJobStatus(jobId, currentUser);
         
         if (!"COMPLETED".equals(status.status())) {
             return ResponseEntity.badRequest().build();

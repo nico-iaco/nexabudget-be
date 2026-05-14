@@ -42,7 +42,7 @@ public class AuditLogController {
             @PathVariable String entityType,
             @PathVariable String entityId,
             @AuthenticationPrincipal User currentUser) {
-        List<AuditLogDto.AuditLogResponse> result = auditLogService.getAuditLogForEntity(entityType, entityId);
+        List<AuditLogDto.AuditLogResponse> result = auditLogService.getAuditLogForEntity(currentUser, entityType, entityId);
         return ResponseEntity.ok(result);
     }
 }

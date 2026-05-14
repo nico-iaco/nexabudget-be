@@ -12,5 +12,5 @@ import java.util.UUID;
 @Repository
 public interface AuditLogRepository extends JpaRepository<AuditLog, UUID> {
     Page<AuditLog> findByUserIdOrderByTimestampDesc(UUID userId, Pageable pageable);
-    List<AuditLog> findByEntityTypeAndEntityIdOrderByTimestampDesc(String entityType, String entityId);
+    List<AuditLog> findByUserIdAndEntityTypeAndEntityIdOrderByTimestampDesc(UUID userId, String entityType, String entityId);
 }

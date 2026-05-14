@@ -227,7 +227,7 @@ public class TransactionController {
     @Operation(summary = "Transazioni categoria", description = "Transazioni associate ad una categoria")
     public ResponseEntity<List<TransactionDto.TransactionResponse>> getTransactionsByCategoryId(@Parameter(description = "ID categoria") @PathVariable UUID categoryId,
                                                                                                 @AuthenticationPrincipal User currentUser) {
-        Category category = categoryService.getCategoryById(categoryId)
+        Category category = categoryService.getCategoryByIdAndUser(categoryId, currentUser)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Categoria non trovata"));
 
         User user = userService.getUserById(currentUser.getId())
@@ -421,7 +421,7 @@ public class TransactionController {
             @PathVariable UUID jobId,
             @AuthenticationPrincipal User currentUser) {
         try {
-            return ResponseEntity.ok(bulkCategorizationService.getJobStatus(jobId));
+            return ResponseEntity.ok(bulkCategorizationService.getJobStatus(jobId, currentUser));
         } catch (IllegalArgumentException e) {
             throw new ResponseStatusException(HttpStatus.NOT_FOUND, e.getMessage());
         }

@@ -26,6 +26,8 @@ import java.util.regex.Pattern;
 public class ImportService {
 
     private static final Logger logger = LoggerFactory.getLogger(ImportService.class);
+    private static final int MAX_IMPORT_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
+    private static final int MAX_PARSED_ROWS = 10_000;
 
     private final TransactionRepository transactionRepository;
     private final AiCategorizationService aiCategorizationService;
@@ -94,6 +96,10 @@ public class ImportService {
              CSVParser parser = CSVParser.parse(reader, format)) {
 
             for (CSVRecord record : parser) {
+                if (result.size() >= MAX_PARSED_ROWS) {
+                    logger.warn("Limite massimo di {} righe raggiunto, le righe successive vengono ignorate", MAX_PARSED_ROWS);
+                    break;
+                }
                 try {
                     String dateStr = record.get(mapping.getDateColumn()).trim();
                     String amountStr = record.get(mapping.getAmountColumn())
@@ -131,6 +137,9 @@ public class ImportService {
     // ─── OFX Parsing ────────────────────────────────────────────────────────────
 
     private List<ParsedRow> parseOfx(MultipartFile file) throws IOException {
+        if (file.getSize() > MAX_IMPORT_FILE_BYTES) {
+            throw new IllegalArgumentException("File OFX troppo grande: dimensione massima consentita 10MB");
+        }
         String content = new String(file.getBytes(), StandardCharsets.UTF_8);
         // Detect OFX 2.x (XML) vs 1.x (SGML)
         if (content.trim().startsWith("<?xml") || content.contains("<OFX>") && content.contains("</OFX>")) {
@@ -146,7 +155,7 @@ public class ImportService {
         List<ParsedRow> result = new ArrayList<>();
         // Split on <STMTTRN> blocks
         String[] blocks = content.split("(?i)<STMTTRN>");
-        for (int i = 1; i < blocks.length; i++) {
+        for (int i = 1; i < blocks.length && result.size() < MAX_PARSED_ROWS; i++) {
             try {
                 String block = blocks[i];
                 String dateStr = extractSgmlTag(block, "DTPOSTED");
@@ -180,7 +189,7 @@ public class ImportService {
         Pattern stmtTrnPattern = Pattern.compile(
                 "<STMTTRN>(.*?)</STMTTRN>", Pattern.DOTALL | Pattern.CASE_INSENSITIVE);
         Matcher matcher = stmtTrnPattern.matcher(content);
-        while (matcher.find()) {
+        while (matcher.find() && result.size() < MAX_PARSED_ROWS) {
             try {
                 String block = matcher.group(1);
                 String dateStr = extractXmlTag(block, "DTPOSTED");

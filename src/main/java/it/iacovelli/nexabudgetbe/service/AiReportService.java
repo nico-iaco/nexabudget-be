@@ -78,7 +78,7 @@ public class AiReportService {
             String cachedReport = cache.get(cacheKey, String.class);
             if (cachedReport != null) {
                 UUID instantJobId = UUID.randomUUID();
-                saveJobStatus(instantJobId, new AiReportStatusResponse(instantJobId, "COMPLETED", cachedReport, startDate, endDate));
+                saveJobStatus(instantJobId, user.getId(), new AiReportStatusResponse(instantJobId, "COMPLETED", cachedReport, startDate, endDate));
                 return instantJobId;
             }
         }
@@ -89,7 +89,7 @@ public class AiReportService {
         }
 
         UUID jobId = UUID.randomUUID();
-        saveJobStatus(jobId, new AiReportStatusResponse(jobId, "PENDING", null, startDate, endDate));
+        saveJobStatus(jobId, user.getId(), new AiReportStatusResponse(jobId, "PENDING", null, startDate, endDate));
 
         return jobId;
     }
@@ -128,7 +128,7 @@ public class AiReportService {
                 resultsCache.put(cacheKey, responseContent);
             }
 
-            saveJobStatus(jobId, new AiReportStatusResponse(jobId, "COMPLETED", responseContent, startDate, endDate));
+            saveJobStatus(jobId, user.getId(), new AiReportStatusResponse(jobId, "COMPLETED", responseContent, startDate, endDate));
             log.info("AI Report {} completed successfully", jobId);
 
             if (user.getEmail() != null && !user.getEmail().isBlank()) {
@@ -143,7 +143,7 @@ public class AiReportService {
 
         } catch (Exception e) {
             log.error("Error generating AI report for job {}", jobId, e);
-            saveJobStatus(jobId, new AiReportStatusResponse(jobId, "FAILED", null, startDate, endDate));
+            saveJobStatus(jobId, user.getId(), new AiReportStatusResponse(jobId, "FAILED", null, startDate, endDate));
         }
     }
 
@@ -202,21 +202,26 @@ public class AiReportService {
         return sb.toString();
     }
 
-    public AiReportStatusResponse getJobStatus(UUID jobId) {
+    public AiReportStatusResponse getJobStatus(UUID jobId, User user) {
         Cache cache = cacheManager.getCache(CacheConfig.AI_REPORTS_CACHE);
         if (cache != null) {
             AiReportStatusResponse status = cache.get(jobId, AiReportStatusResponse.class);
             if (status != null) {
+                String owner = cache.get("owner_" + jobId, String.class);
+                if (owner != null && !owner.equals(user.getId().toString())) {
+                    throw new org.springframework.security.access.AccessDeniedException("Accesso non autorizzato al job");
+                }
                 return status;
             }
         }
         throw new IllegalArgumentException("Job non trovato o scaduto");
     }
 
-    private void saveJobStatus(UUID jobId, AiReportStatusResponse status) {
+    private void saveJobStatus(UUID jobId, UUID userId, AiReportStatusResponse status) {
         Cache cache = cacheManager.getCache(CacheConfig.AI_REPORTS_CACHE);
         if (cache != null) {
             cache.put(jobId, status);
+            cache.put("owner_" + jobId, userId.toString());
         }
     }
 

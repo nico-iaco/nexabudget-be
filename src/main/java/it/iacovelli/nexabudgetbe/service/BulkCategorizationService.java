@@ -33,6 +33,7 @@ public class BulkCategorizationService {
 
     // In-memory store: non dipende da Redis, non blocca mai su rete
     private final ConcurrentHashMap<UUID, BulkCategorizationStatusResponse> jobStore = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<UUID, UUID> jobOwners = new ConcurrentHashMap<>();
 
     public BulkCategorizationStatusResponse startBulkCategorizationJob(User user) {
         List<Transaction> uncategorized = transactionRepository.findUncategorizedByUser(user);
@@ -43,6 +44,7 @@ public class BulkCategorizationService {
         UUID jobId = UUID.randomUUID();
         BulkCategorizationStatusResponse initial = new BulkCategorizationStatusResponse(jobId, "PENDING", uncategorized.size(), 0, 0);
         jobStore.put(jobId, initial);
+        jobOwners.put(jobId, user.getId());
         return initial;
     }
 
@@ -107,10 +109,14 @@ public class BulkCategorizationService {
         return Optional.empty();
     }
 
-    public BulkCategorizationStatusResponse getJobStatus(UUID jobId) {
+    public BulkCategorizationStatusResponse getJobStatus(UUID jobId, User user) {
         BulkCategorizationStatusResponse status = jobStore.get(jobId);
         if (status == null) {
             throw new IllegalArgumentException("Job non trovato o scaduto");
+        }
+        UUID owner = jobOwners.get(jobId);
+        if (owner != null && !owner.equals(user.getId())) {
+            throw new org.springframework.security.access.AccessDeniedException("Accesso non autorizzato al job");
         }
         return status;
     }

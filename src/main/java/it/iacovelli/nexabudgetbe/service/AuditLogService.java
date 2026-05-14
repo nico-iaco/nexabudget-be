@@ -44,8 +44,8 @@ public class AuditLogService {
     }
 
     @Transactional(readOnly = true)
-    public List<AuditLogDto.AuditLogResponse> getAuditLogForEntity(String entityType, String entityId) {
-        return auditLogRepository.findByEntityTypeAndEntityIdOrderByTimestampDesc(entityType, entityId)
+    public List<AuditLogDto.AuditLogResponse> getAuditLogForEntity(User user, String entityType, String entityId) {
+        return auditLogRepository.findByUserIdAndEntityTypeAndEntityIdOrderByTimestampDesc(user.getId(), entityType, entityId)
                 .stream().map(this::toResponse).toList();
     }
 
