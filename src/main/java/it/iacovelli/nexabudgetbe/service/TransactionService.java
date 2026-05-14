@@ -4,8 +4,12 @@ import it.iacovelli.nexabudgetbe.dto.GocardlessTransaction;
 import it.iacovelli.nexabudgetbe.dto.TransactionDto;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
+import jakarta.persistence.criteria.Join;
+import jakarta.persistence.criteria.JoinType;
+import jakarta.persistence.criteria.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -16,6 +20,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -261,13 +266,62 @@ public class TransactionService {
 
     @Transactional(readOnly = true)
     public Page<TransactionDto.TransactionResponse> getTransactionsFiltered(
-            UUID userId, UUID accountId, TransactionType type, UUID categoryId, 
+            UUID userId, UUID accountId, TransactionType type, UUID categoryId,
             LocalDate startDate, LocalDate endDate, String search, Pageable pageable) {
-        String searchPattern = (search != null && !search.isBlank())
-                ? "%" + search.trim().toLowerCase() + "%" : null;
-        return transactionRepository.findByFilters(
-                userId, accountId, type, categoryId, startDate, endDate, searchPattern, pageable)
+        Specification<Transaction> spec = buildFilterSpec(userId, accountId, type, categoryId, startDate, endDate, search);
+        return transactionRepository.findAll(spec, pageable)
                 .map(this::mapTransactionToResponse);
+    }
+
+    @SuppressWarnings("unchecked")
+    private Specification<Transaction> buildFilterSpec(
+            UUID userId, UUID accountId, TransactionType type, UUID categoryId,
+            LocalDate startDate, LocalDate endDate, String search) {
+        return (root, query, cb) -> {
+            List<Predicate> predicates = new ArrayList<>();
+
+            boolean isCountQuery = query.getResultType() == Long.class || query.getResultType() == long.class;
+
+            // For entity queries: use fetch (which is also a Join in Hibernate) so we get one JOIN
+            // For count queries: use a plain join
+            Join<Transaction, Account> accountJoin;
+            if (isCountQuery) {
+                accountJoin = root.join("account", JoinType.INNER);
+            } else {
+                accountJoin = (Join<Transaction, Account>) root.fetch("account", JoinType.INNER);
+                root.fetch("category", JoinType.LEFT);
+            }
+
+            predicates.add(cb.equal(root.get("user").get("id"), userId));
+
+            if (accountId != null) {
+                predicates.add(cb.equal(accountJoin.get("id"), accountId));
+            }
+            if (type != null) {
+                predicates.add(cb.equal(root.get("type"), type));
+            }
+            if (categoryId != null) {
+                predicates.add(cb.equal(root.get("category").get("id"), categoryId));
+            }
+            if (startDate != null) {
+                predicates.add(cb.greaterThanOrEqualTo(root.get("date"), startDate));
+            }
+            if (endDate != null) {
+                predicates.add(cb.lessThanOrEqualTo(root.get("date"), endDate));
+            }
+            if (search != null && !search.isBlank()) {
+                String pattern = "%" + search.trim().toLowerCase() + "%";
+                predicates.add(cb.or(
+                        cb.like(cb.lower(root.get("description")), pattern),
+                        cb.like(cb.lower(accountJoin.get("name")), pattern)
+                ));
+            }
+
+            if (!isCountQuery) {
+                query.orderBy(cb.desc(root.get("date")));
+            }
+            return cb.and(predicates.toArray(new Predicate[0]));
+        };
     }
 
     @Transactional(readOnly = true)

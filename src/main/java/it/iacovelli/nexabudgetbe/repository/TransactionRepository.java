@@ -2,6 +2,7 @@ package it.iacovelli.nexabudgetbe.repository;
 
 import it.iacovelli.nexabudgetbe.model.*;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -19,7 +20,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 @Repository
-public interface TransactionRepository extends JpaRepository<Transaction, UUID> {
+public interface TransactionRepository extends JpaRepository<Transaction, UUID>, JpaSpecificationExecutor<Transaction> {
 
        @Query("SELECT COALESCE(SUM(CASE WHEN t.type = 'IN' THEN t.amount ELSE -t.amount END), 0) FROM Transaction t WHERE t.account = :account")
        BigDecimal calculateBalanceForAccount(@Param("account") Account account);
@@ -37,41 +38,7 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID> 
        @Query(value = "SELECT t FROM Transaction t JOIN FETCH t.account LEFT JOIN FETCH t.category WHERE t.user = :user ORDER BY t.date DESC", countQuery = "SELECT COUNT(t) FROM Transaction t WHERE t.user = :user")
        Page<Transaction> findByUserPaged(@Param("user") User user, Pageable pageable);
 
-       @Query(value = """
-                     SELECT t FROM Transaction t
-                     JOIN FETCH t.account a
-                     LEFT JOIN FETCH t.category
-                     WHERE t.user.id = :userId
-                     AND (:accountId IS NULL OR t.account.id = :accountId)
-                     AND (:type IS NULL OR t.type = :type)
-                     AND (:categoryId IS NULL OR t.category.id = :categoryId)
-                     AND (:startDate IS NULL OR t.date >= :startDate)
-                     AND (:endDate IS NULL OR t.date <= :endDate)
-                     AND (:searchPattern IS NULL OR LOWER(t.description) LIKE :searchPattern
-                          OR LOWER(a.name) LIKE :searchPattern)
-                     """, countQuery = """
-                     SELECT COUNT(t) FROM Transaction t
-                     LEFT JOIN t.account a
-                     WHERE t.user.id = :userId
-                     AND (:accountId IS NULL OR t.account.id = :accountId)
-                     AND (:type IS NULL OR t.type = :type)
-                     AND (:categoryId IS NULL OR t.category.id = :categoryId)
-                     AND (:startDate IS NULL OR t.date >= :startDate)
-                     AND (:endDate IS NULL OR t.date <= :endDate)
-                     AND (:searchPattern IS NULL OR LOWER(t.description) LIKE :searchPattern
-                          OR LOWER(a.name) LIKE :searchPattern)
-                     """)
-       Page<Transaction> findByFilters(
-                     @Param("userId") UUID userId,
-                     @Param("accountId") UUID accountId,
-                     @Param("type") TransactionType type,
-                     @Param("categoryId") UUID categoryId,
-                     @Param("startDate") LocalDate startDate,
-                     @Param("endDate") LocalDate endDate,
-                     @Param("searchPattern") String searchPattern,
-                     Pageable pageable);
-
-       @Query("SELECT t FROM Transaction t JOIN FETCH t.account LEFT JOIN FETCH t.category WHERE t.account = :account")
+@Query("SELECT t FROM Transaction t JOIN FETCH t.account LEFT JOIN FETCH t.category WHERE t.account = :account")
        List<Transaction> findByAccount(Account account);
 
        @Query(value = "SELECT t FROM Transaction t JOIN FETCH t.account LEFT JOIN FETCH t.category WHERE t.account = :account ORDER BY t.date DESC", countQuery = "SELECT COUNT(t) FROM Transaction t WHERE t.account = :account")
