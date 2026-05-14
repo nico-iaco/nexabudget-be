@@ -288,7 +288,7 @@ public class TransactionService {
             if (isCountQuery) {
                 accountJoin = root.join("account", JoinType.INNER);
             } else {
-                accountJoin = (Join<Transaction, Account>) root.fetch("account", JoinType.INNER);
+                accountJoin = (Join<Transaction, Account>) (Object) root.fetch("account", JoinType.INNER);
                 root.fetch("category", JoinType.LEFT);
             }
 
