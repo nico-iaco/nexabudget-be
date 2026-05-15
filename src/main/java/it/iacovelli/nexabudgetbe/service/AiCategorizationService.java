@@ -1,11 +1,13 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.genai.Models;
 import com.google.genai.errors.ApiException;
 import com.google.genai.types.Content;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.Part;
+import com.google.genai.types.Schema;
 import it.iacovelli.nexabudgetbe.model.Category;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
@@ -28,15 +30,27 @@ public class AiCategorizationService {
     @Value("${nexabudget.ai.chat.model}")
     private String modelName;
 
+    private static final String RESPONSE_SCHEMA_JSON = """
+            {
+              "type": "object",
+              "properties": {
+                "category": { "type": "string" }
+              },
+              "propertyOrdering": ["category"]
+            }
+            """;
+
     private final CategoryService categoryService;
     private final SemanticCacheService semanticCacheService;
     private final Models genaiModels;
+    private final ObjectMapper objectMapper;
 
     public AiCategorizationService(CategoryService categoryService, SemanticCacheService semanticCacheService,
-                                   Models genaiModels) {
+                                   Models genaiModels, ObjectMapper objectMapper) {
         this.categoryService = categoryService;
         this.semanticCacheService = semanticCacheService;
         this.genaiModels = genaiModels;
+        this.objectMapper = objectMapper;
     }
 
     public record AiCategoryResponse(String category) {}
@@ -76,12 +90,14 @@ public class AiCategorizationService {
 
             GenerateContentConfig cfg = GenerateContentConfig.builder()
                     .temperature(0.1f)
+                    .responseMimeType("application/json")
+                    .responseSchema(Schema.fromJson(RESPONSE_SCHEMA_JSON))
                     .build();
 
             GenerateContentResponse resp = genaiModels.generateContent(modelName, userContent, cfg);
             String raw = resp.text();
 
-            String aiResponse = raw != null ? raw.replaceAll("[*_`\"'\\n]+", "").trim() : NONE;
+            final String aiResponse = parseAiResponse(raw);
 
             log.debug("Risposta AI per '{}': '{}'", description, aiResponse);
 
@@ -120,6 +136,17 @@ public class AiCategorizationService {
         semanticCacheService.saveToCache(description, newCategory.getName(), user.getId());
     }
 
+    private String parseAiResponse(String raw) {
+        if (raw == null || raw.isBlank()) return NONE;
+        try {
+            String category = objectMapper.readValue(raw, AiCategoryResponse.class).category();
+            return category != null ? category : NONE;
+        } catch (Exception parseEx) {
+            log.warn("Impossibile parsare risposta JSON '{}': {}", raw, parseEx.getMessage());
+            return raw.replaceAll("[*_`\"'\\n]+", "").trim();
+        }
+    }
+
     private String buildPrompt(String description, List<Category> categories, TransactionType type) {
         String typeLabel = type == TransactionType.OUT ? "USCITA (spesa)" : "ENTRATA (accredito)";
         String categoryList = categories.stream()
@@ -128,8 +155,7 @@ public class AiCategorizationService {
 
         return """
                 Sei un classificatore di transazioni bancarie italiane.
-                Rispondi con una sola riga contenente ESCLUSIVAMENTE il nome esatto della categoria, senza punteggiatura, senza spiegazioni, senza markdown.
-                Se nessuna categoria è adatta, rispondi esattamente: NONE
+                Scegli la categoria più adatta dalla lista. Se nessuna è adatta, usa esattamente: NONE
 
                 CATEGORIE DISPONIBILI (scegli solo da questa lista):
                 %s

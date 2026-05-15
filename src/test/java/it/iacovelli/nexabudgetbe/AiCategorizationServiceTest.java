@@ -1,5 +1,6 @@
 package it.iacovelli.nexabudgetbe;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.genai.Models;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
@@ -45,7 +46,7 @@ class AiCategorizationServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new AiCategorizationService(categoryService, semanticCacheService, genaiModels);
+        service = new AiCategorizationService(categoryService, semanticCacheService, genaiModels, new ObjectMapper());
 
         user = User.builder()
                 .id(UUID.randomUUID())
