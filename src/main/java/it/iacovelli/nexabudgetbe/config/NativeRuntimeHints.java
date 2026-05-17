@@ -149,22 +149,30 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
         // The Coinbase Advanced SDK uses Jackson for JSON binding and likely
         // reflection for service instantiation. Registering all relevant models
         // and service implementations.
-        List<String> coinbasePackages = List.of(
-                "com.coinbase.advanced.model.accounts",
-                "com.coinbase.advanced.model.common",
-                "com.coinbase.advanced.model.orders",
-                "com.coinbase.advanced.model.portfolios",
-                "com.coinbase.advanced.model.products",
-                "com.coinbase.advanced.model.paymentmethods",
-                "com.coinbase.advanced.model.perpetuals",
-                "com.coinbase.advanced.model.fees",
-                "com.coinbase.advanced.model.futures",
-                "com.coinbase.advanced.model.converts"
+        List<String> coinbaseModels = List.of(
+                // Accounts
+                "com.coinbase.advanced.model.accounts.Account",
+                "com.coinbase.advanced.model.accounts.ListAccountsResponse",
+                // Common
+                "com.coinbase.advanced.model.common.Amount",
+                "com.coinbase.advanced.model.common.Pagination",
+                // Portfolios
+                "com.coinbase.advanced.model.portfolios.Breakdown",
+                "com.coinbase.advanced.model.portfolios.GetPortfolioBreakdownResponse",
+                "com.coinbase.advanced.model.portfolios.ListPortfoliosResponse",
+                "com.coinbase.advanced.model.portfolios.Portfolio",
+                "com.coinbase.advanced.model.portfolios.PortfolioBalances",
+                "com.coinbase.advanced.model.portfolios.SpotPosition",
+                "com.coinbase.advanced.model.portfolios.UnrealizedPnl"
         );
 
         // Register models for reflection (Jackson serialization/deserialization)
-        for (String pkg : coinbasePackages) {
-            hints.reflection().registerType(TypeReference.of(pkg + ".*"), MemberCategory.values());
+        for (String className : coinbaseModels) {
+            try {
+                hints.reflection().registerType(TypeReference.of(className), MemberCategory.values());
+            } catch (Exception e) {
+                log.warn("Could not register Coinbase model hint for {}: {}", className, e.getMessage());
+            }
         }
 
         // Register specific core classes
