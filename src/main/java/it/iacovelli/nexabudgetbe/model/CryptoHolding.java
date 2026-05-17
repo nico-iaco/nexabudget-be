@@ -32,6 +32,6 @@ public class CryptoHolding {
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
-    private HoldingSource source; // ENUM: MANUAL, BINANCE
+    private HoldingSource source; // ENUM: MANUAL, BINANCE, COINBASE
 
 }

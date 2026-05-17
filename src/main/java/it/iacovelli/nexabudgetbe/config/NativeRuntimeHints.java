@@ -144,6 +144,51 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
                 log.warn("Could not register Commons CSV hint for {}: {}", className, e.getMessage());
             }
         }
+
+        // ─── Coinbase SDK ───────────────────────────────────────────────────────
+        // The Coinbase Advanced SDK uses Jackson for JSON binding and likely
+        // reflection for service instantiation. Registering all relevant models
+        // and service implementations.
+        List<String> coinbasePackages = List.of(
+                "com.coinbase.advanced.model.accounts",
+                "com.coinbase.advanced.model.common",
+                "com.coinbase.advanced.model.orders",
+                "com.coinbase.advanced.model.portfolios",
+                "com.coinbase.advanced.model.products",
+                "com.coinbase.advanced.model.paymentmethods",
+                "com.coinbase.advanced.model.perpetuals",
+                "com.coinbase.advanced.model.fees",
+                "com.coinbase.advanced.model.futures",
+                "com.coinbase.advanced.model.converts"
+        );
+
+        // Register models for reflection (Jackson serialization/deserialization)
+        for (String pkg : coinbasePackages) {
+            hints.reflection().registerType(TypeReference.of(pkg + ".*"), MemberCategory.values());
+        }
+
+        // Register specific core classes
+        hints.reflection().registerType(com.coinbase.advanced.credentials.CoinbaseAdvancedCredentials.class, MemberCategory.values());
+        hints.reflection().registerType(com.coinbase.advanced.client.CoinbaseAdvancedClient.class, MemberCategory.values());
+        hints.reflection().registerType(com.coinbase.advanced.factory.CoinbaseAdvancedServiceFactory.class, MemberCategory.values());
+
+        // Register service implementations
+        List<String> coinbaseServices = List.of(
+                "com.coinbase.advanced.accounts.AccountsServiceImpl",
+                "com.coinbase.advanced.orders.OrdersServiceImpl",
+                "com.coinbase.advanced.portfolios.PortfoliosServiceImpl",
+                "com.coinbase.advanced.products.ProductsServiceImpl"
+        );
+        for (String service : coinbaseServices) {
+            hints.reflection().registerType(TypeReference.of(service), MemberCategory.values());
+        }
+
+        // Coinbase credentials uses CoinbaseCredentials interface (core-java)
+        try {
+            hints.reflection().registerType(TypeReference.of("com.coinbase.core.credentials.CoinbaseCredentials"), MemberCategory.values());
+        } catch (Exception e) {
+            log.warn("Could not register CoinbaseCredentials hint: {}", e.getMessage());
+        }
     }
 }
 

@@ -8,8 +8,10 @@ import it.iacovelli.nexabudgetbe.model.CryptoHolding;
 import it.iacovelli.nexabudgetbe.model.HoldingSource;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.model.UserBinanceKeys;
+import it.iacovelli.nexabudgetbe.model.UserCoinbaseKeys;
 import it.iacovelli.nexabudgetbe.repository.CryptoHoldingRepository;
 import it.iacovelli.nexabudgetbe.repository.UserBinanceKeysRepository;
+import it.iacovelli.nexabudgetbe.repository.UserCoinbaseKeysRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.CacheEvict;
@@ -29,17 +31,23 @@ public class CryptoPortfolioService {
 
     private final CryptoHoldingRepository holdingRepository;
     private final UserBinanceKeysRepository keysRepository;
+    private final UserCoinbaseKeysRepository coinbaseKeysRepository;
     private final BinanceService binanceService;
+    private final CoinbaseService coinbaseService;
     private final CurrencyConversionService currencyConversionService;
     private static final Logger log = LoggerFactory.getLogger(CryptoPortfolioService.class);
 
     public CryptoPortfolioService(CryptoHoldingRepository holdingRepository,
             UserBinanceKeysRepository keysRepository,
+            UserCoinbaseKeysRepository coinbaseKeysRepository,
             BinanceService binanceService,
+            CoinbaseService coinbaseService,
             CurrencyConversionService currencyConversionService) {
         this.holdingRepository = holdingRepository;
         this.keysRepository = keysRepository;
+        this.coinbaseKeysRepository = coinbaseKeysRepository;
         this.binanceService = binanceService;
+        this.coinbaseService = coinbaseService;
         this.currencyConversionService = currencyConversionService;
     }
 
@@ -106,6 +114,18 @@ public class CryptoPortfolioService {
         keysRepository.save(keys);
     }
 
+    @Transactional
+    public void saveCoinbaseKeys(User user, String apiKeyName, String privateKey) {
+        Optional<UserCoinbaseKeys> existing = coinbaseKeysRepository.findByUser(user);
+
+        UserCoinbaseKeys keys = existing.orElseGet(UserCoinbaseKeys::new);
+        keys.setUser(user);
+        keys.setApiKeyName(apiKeyName);
+        keys.setPrivateKey(privateKey);
+
+        coinbaseKeysRepository.save(keys);
+    }
+
     @Async
     @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
     public void syncBinanceHoldings(User user) {
@@ -133,6 +153,39 @@ public class CryptoPortfolioService {
                         .symbol(balance.getSymbol().toUpperCase())
                         .amount(balance.getAmount())
                         .source(HoldingSource.BINANCE)
+                        .build())
+                .toList();
+
+        holdingRepository.saveAll(holdingsToSave);
+    }
+
+    @Async
+    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
+    public void syncCoinbaseHoldings(User user) {
+        UserCoinbaseKeys keys = coinbaseKeysRepository.findByUser(user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Chiavi Coinbase non configurate"));
+
+        List<CryptoBalance> coinbaseBalances = coinbaseService.getWallets(keys.getApiKeyName(),
+                keys.getPrivateKey());
+
+        // Recupera i vecchi holdings da eliminare
+        List<CryptoHolding> oldHoldings = holdingRepository.findByUser(user).stream()
+                .filter(h -> h.getSource() == HoldingSource.COINBASE)
+                .toList();
+
+        // Elimina i vecchi holdings Coinbase in batch e forza il flush
+        if (!oldHoldings.isEmpty()) {
+            holdingRepository.deleteAllInBatch(oldHoldings);
+            holdingRepository.flush();
+        }
+
+        // Crea i nuovi holdings
+        List<CryptoHolding> holdingsToSave = coinbaseBalances.stream()
+                .map(balance -> CryptoHolding.builder()
+                        .user(user)
+                        .symbol(balance.getSymbol().toUpperCase())
+                        .amount(balance.getAmount())
+                        .source(HoldingSource.COINBASE)
                         .build())
                 .toList();
 

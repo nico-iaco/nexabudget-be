@@ -80,4 +80,21 @@ public class CryptoPortfolioController {
         cryptoService.syncBinanceHoldings(currentUser);
         return ResponseEntity.accepted().build(); // È un'operazione che può richiedere tempo
     }
+
+    @PostMapping("/coinbase/keys")
+    @Operation(summary = "Salva chiavi Coinbase", description = "Salva (in modo sicuro) le chiavi API Advanced Trade di Coinbase per l'utente")
+    public ResponseEntity<Void> saveCoinbaseKeys(
+            @AuthenticationPrincipal User currentUser,
+            @Valid @RequestBody CryptoDto.CoinbaseKeysRequest request) {
+        cryptoService.saveCoinbaseKeys(currentUser, request.getApiKeyName(), request.getPrivateKey());
+        return ResponseEntity.ok().build();
+    }
+
+    @PostMapping("/coinbase/sync")
+    @Operation(summary = "Sincronizza da Coinbase", description = "Avvia l'importazione/aggiornamento degli asset da Coinbase")
+    public ResponseEntity<Void> syncFromCoinbase(
+            @AuthenticationPrincipal User currentUser) {
+        cryptoService.syncCoinbaseHoldings(currentUser);
+        return ResponseEntity.accepted().build(); // È un'operazione che può richiedere tempo
+    }
 }
