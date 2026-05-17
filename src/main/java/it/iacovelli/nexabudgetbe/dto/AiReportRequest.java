@@ -12,5 +12,8 @@ public record AiReportRequest(
 
         @NotNull(message = "End date is required")
         @Schema(description = "End date of the reporting period", example = "2023-12-31")
-        LocalDate endDate
+        LocalDate endDate,
+
+        @Schema(description = "ISO Language code for the report (e.g. 'it', 'en', 'es')", example = "it")
+        String userLanguage
 ) {}

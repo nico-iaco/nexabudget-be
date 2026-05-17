@@ -43,8 +43,9 @@ public class ReportController {
     public ResponseEntity<AiReportStatusResponse> startAiReport(
             @AuthenticationPrincipal User currentUser,
             @Valid @RequestBody AiReportRequest request) {
-        UUID jobId = aiReportService.startAiReportJob(currentUser, request.startDate(), request.endDate());
-        aiReportService.generateAiReport(jobId, currentUser, request.startDate(), request.endDate());
+        String language = request.userLanguage() != null && !request.userLanguage().isBlank() ? request.userLanguage() : "it";
+        UUID jobId = aiReportService.startAiReportJob(currentUser, request.startDate(), request.endDate(), language);
+        aiReportService.generateAiReport(jobId, currentUser, request.startDate(), request.endDate(), language);
         return ResponseEntity.accepted().body(new AiReportStatusResponse(jobId, "PENDING", null, request.startDate(), request.endDate()));
     }
 

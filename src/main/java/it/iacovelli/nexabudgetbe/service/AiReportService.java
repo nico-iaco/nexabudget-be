@@ -49,6 +49,7 @@ public class AiReportService {
     private final ReportService reportService;
     private final EmailService emailService;
     private final AiReportPdfService aiReportPdfService;
+    private final CryptoPortfolioService cryptoPortfolioService;
 
     private static final String SYSTEM_PROMPT = """
             Sei un consulente finanziario esperto. Analizza le seguenti transazioni bancarie (in formato CSV) di un utente per il periodo dal %s al %s.
@@ -63,16 +64,16 @@ public class AiReportService {
             4. **Suggerimenti di Miglioramento**: Dai 3-5 consigli pratici basati ESCLUSIVAMENTE sui dati forniti su come l'utente potrebbe ottimizzare le proprie finanze.
 
             REGOLE TASSATIVE PER L'OUTPUT:
-            - Scrivi ESCLUSIVAMENTE in lingua Italiana. Nessun mix di lingue.
+            - Scrivi ESCLUSIVAMENTE nella lingua indicata dal codice ISO: %s. Nessun mix di lingue.
             - NON INCLUDERE log di ragionamento interno, "scratchpad", o passaggi intermedi di auto-correzione.
             - FORNISCI DIRETTAMENTE ED ESCLUSIVAMENTE il report finale pronto per la lettura da parte del cliente, formattato in Markdown leggibile.
             - Usa un tono professionale ma amichevole. Non includere calcoli errati.
             """;
 
-    public UUID startAiReportJob(User user, LocalDate startDate, LocalDate endDate) {
+    public UUID startAiReportJob(User user, LocalDate startDate, LocalDate endDate, String language) {
         validateDateRange(startDate, endDate);
 
-        String cacheKey = user.getId() + "_" + startDate + "_" + endDate;
+        String cacheKey = user.getId() + "_" + startDate + "_" + endDate + "_" + language;
         Cache cache = cacheManager.getCache(CacheConfig.AI_REPORTS_RESULTS_CACHE);
         if (cache != null) {
             String cachedReport = cache.get(cacheKey, String.class);
@@ -95,13 +96,13 @@ public class AiReportService {
     }
 
     @Async
-    public void generateAiReport(UUID jobId, User user, LocalDate startDate, LocalDate endDate) {
+    public void generateAiReport(UUID jobId, User user, LocalDate startDate, LocalDate endDate, String language) {
         try {
             List<TransactionResponse> transactions = transactionService.getTransactionsByUserAndDateRangeForReport(user, startDate, endDate);
             byte[] csvBytes = generateCsv(transactions).getBytes(StandardCharsets.UTF_8);
 
             String contextData = buildAdditionalContext(user, startDate, endDate);
-            String instruction = String.format(SYSTEM_PROMPT, startDate, endDate, contextData);
+            String instruction = String.format(SYSTEM_PROMPT, startDate, endDate, contextData, language);
 
             Part textPart = Part.fromText(instruction);
             Part csvPart = Part.fromBytes(csvBytes, "text/csv");
@@ -124,7 +125,7 @@ public class AiReportService {
 
             Cache resultsCache = cacheManager.getCache(CacheConfig.AI_REPORTS_RESULTS_CACHE);
             if (resultsCache != null) {
-                String cacheKey = user.getId() + "_" + startDate + "_" + endDate;
+                String cacheKey = user.getId() + "_" + startDate + "_" + endDate + "_" + language;
                 resultsCache.put(cacheKey, responseContent);
             }
 
@@ -196,6 +197,17 @@ public class AiReportService {
               .append(monthComparison.getIncomeChange())
               .append(", Uscite ").append(monthComparison.getExpenseChange().compareTo(BigDecimal.ZERO) >= 0 ? "+" : "")
               .append(monthComparison.getExpenseChange()).append("\n\n");
+
+            var portfolio = cryptoPortfolioService.getPortfolioValue(user, cur);
+            if (portfolio.getAssets() != null && !portfolio.getAssets().isEmpty()) {
+                sb.append("--- PORTAFOGLIO CRYPTO (Valuta: ").append(cur).append(") ---\n");
+                sb.append("Valore Totale Crypto: ").append(portfolio.getTotalValue()).append(" ").append(cur).append("\n");
+                for (var asset : portfolio.getAssets()) {
+                    sb.append("- ").append(asset.getAmount()).append(" ").append(asset.getSymbol())
+                            .append(" (Valore: ").append(asset.getValue()).append(" ").append(cur).append(")\n");
+                }
+                sb.append("\n");
+            }
         } catch (Exception e) {
             log.warn("Impossibile generare contesto aggiuntivo per l'AI job", e);
         }
