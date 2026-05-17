@@ -197,6 +197,24 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
         } catch (Exception e) {
             log.warn("Could not register CoinbaseCredentials hint: {}", e.getMessage());
         }
+
+        // ─── Coinbase JWT signing (BouncyCastle) ──────────────────────────────
+        // CoinbaseAdvancedCredentials uses BouncyCastle to parse PEM keys and
+        // sign ES256 JWTs. Native image needs explicit reachability for these types.
+        List<String> bouncyCastleTypes = List.of(
+                "org.bouncycastle.jce.provider.BouncyCastleProvider",
+                "org.bouncycastle.openssl.PEMParser",
+                "org.bouncycastle.openssl.PEMKeyPair",
+                "org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter",
+                "org.bouncycastle.asn1.pkcs.PrivateKeyInfo"
+        );
+        for (String className : bouncyCastleTypes) {
+            try {
+                hints.reflection().registerType(TypeReference.of(className), MemberCategory.values());
+            } catch (Exception e) {
+                log.warn("Could not register BouncyCastle hint for {}: {}", className, e.getMessage());
+            }
+        }
     }
 }
 

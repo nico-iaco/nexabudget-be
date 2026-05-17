@@ -12,6 +12,7 @@ NexaBudget is a comprehensive personal finance management application. The backe
 * **Caching & Distributed Coordination:** Valkey / Redis via Redisson (Used for caching bank data, crypto pricing, and distributed locking)
 * **AI Integration:** Google Gemini via Spring AI (Handles transaction categorization, financial analysis, and chatbot functionalities)
 * **Security:** Spring Security (Stateless JWT for user sessions, API Keys for M2M communication, bcrypt for passwords)
+* **Crypto Integrations:** Binance Spot API, Coinbase Advanced Trade API
 * **Build, Deployment & Containerization:** Maven, Docker, GraalVM Native Image, Kubernetes (Kustomize)
 
 ## 3. Core Architectural Patterns
@@ -25,7 +26,7 @@ The application strictly adheres to a standard 4-tier RESTful architecture, ensu
 2. **Business Layer (Services):**
    - Contains the core business rules and logic.
    - Orchestrates transactions (`@Transactional`).
-   - Interacts with external APIs (GoCardless, Binance, Gemini) and abstracts their complexities.
+   - Interacts with external APIs (GoCardless, Binance, Coinbase, Gemini) and abstracts their complexities.
 3. **Data Access Layer (Repositories):**
    - Utilizes Spring Data JPA interfaces for PostgreSQL interactions.
    - Utilizes Spring Data MongoDB interfaces for vector operations.
@@ -53,6 +54,7 @@ graph TD
     
     Services -.-> |External API| GC[GoCardless Open Banking]
     Services -.-> |External API| Binance[Binance API]
+   Services -.-> |External API| Coinbase[Coinbase Advanced Trade API]
     Services -.-> |External API| Gemini[Google Gemini\nSpring AI]
     Services -.-> |SMTP| Mail[Mailhog / Gmail]
 ```
@@ -103,9 +105,9 @@ The system leverages `spring-ai-google-genai` for deeply integrated intelligent 
 - **Semantic Caching:** To avoid asking the AI the same questions or categorizing identical transactions repeatedly, queries are embedded (`gemini-embedding-001`) and stored in MongoDB Atlas. Before a Gemini call, the system performs a vector similarity search in Mongo to return cached responses.
 - **Conversational Chatbot:** The `ChatController` maintains conversation history, allowing the user to interactively query their financial data.
 
-### 6.3 Crypto Portfolio (Binance)
+### 6.3 Crypto Portfolio (Binance + Coinbase)
 
-The system calls the Binance Spot API using encrypted read-only API keys stored in PostgreSQL. Symmetrical encryption (AES) guarantees keys remain secure at rest. Live balances are fetched, matched with real-time cached pricing, and presented in the unified portfolio.
+The system calls the Binance Spot API and the Coinbase Advanced Trade API using encrypted read-only credentials stored in PostgreSQL. Symmetrical encryption (AES) guarantees keys remain secure at rest. Live balances are fetched, matched with real-time cached pricing, and presented in the unified portfolio.
 
 ## 7. Data Flow Example: Creating a Transaction
 

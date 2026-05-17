@@ -13,10 +13,11 @@ NexaBudget offers a robust set of features to manage personal finances, integrat
 * **Multi-Currency:** Automatic exchange rate retrieval for transactions moving between accounts of different currencies.
 * **Soft Deletes & Trash:** Deleting an account or transaction moves it to the Trash (soft delete). A scheduled task purges items older than 30 days.
 
-### 2. Crypto Portfolio (Binance Integration)
+### 2. Crypto Portfolio (Binance + Coinbase)
 
 * **Binance Sync:** Users can provide read-only Binance API Keys to sync their spot balances.
-* **Holdings Tracking:** Crypto balances are tracked alongside traditional fiat accounts.
+* **Coinbase Sync:** Users can provide Coinbase Advanced Trade credentials (API Key Name + Private Key) to sync spot balances across accounts and portfolios.
+* **Holdings Tracking:** Crypto balances are stored with a source (MANUAL, BINANCE, COINBASE) alongside traditional fiat accounts.
 * **Pricing Cache:** Real-time crypto prices are cached in Valkey/Redis for 5 minutes.
 
 ### 3. Budgeting & Alerts
@@ -46,7 +47,7 @@ The API is exposed via standard REST controllers, primarily secured by JWT.
 | `BudgetAlertController` | Setting and retrieving threshold alerts. |
 | `BudgetTemplateController` | Reusable templates for budgets. |
 | `GocardlessController` | Initiating bank linking and webhook handling. |
-| `CryptoPortfolioController` | Syncing and retrieving Binance holdings. |
+| `CryptoPortfolioController` | Syncing and retrieving Binance and Coinbase holdings. |
 | `ChatController` | Interacting with the AI financial assistant. |
 | `ReportController` | Triggering asynchronous AI report generation. |
 | `TrashController` | Viewing and restoring soft-deleted items. |

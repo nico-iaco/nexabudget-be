@@ -33,7 +33,7 @@ Spring Boot 4.0.5 is configured with GraalVM support to compile the application 
   ./mvnw clean package -Pnative
   ```
 
-* **Configuration:** Custom reflection hints are provided in `src/main/resources/META-INF/native-image/` and `GoogleGenAiRuntimeHints.java` to ensure third-party libraries (like Gemini SDK) work seamlessly natively.
+* **Configuration:** Custom reflection hints are provided in `NativeRuntimeHints.java` and `GoogleGenAiRuntimeHints.java` to ensure third-party libraries (like Gemini and Coinbase SDKs) work seamlessly in native mode.
 
 ## Kubernetes Deployment
 

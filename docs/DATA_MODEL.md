@@ -9,6 +9,7 @@ NexaBudget utilizes **PostgreSQL** as its primary relational data store. The sch
 * **UUIDs:** All entities use `UUID` for primary keys.
 * **Soft Deletion:** `Account` and `Transaction` use soft deletion (`deleted = false`).
 * **Auditing:** Every modification is tracked in `AuditLog`.
+* **Crypto Sources:** Holdings track provenance via `source` (MANUAL, BINANCE, COINBASE).
 
 ## Entity Relationship Diagram
 
@@ -21,9 +22,10 @@ erDiagram
     USER ||--o{ CHAT_SESSION : owns
     USER ||--o{ API_KEY : generates
     USER ||--o| USER_BINANCE_KEYS : configures
+    USER ||--o| USER_COINBASE_KEYS : configures
 
     ACCOUNT ||--o{ TRANSACTION : contains
-    ACCOUNT ||--o{ CRYPTO_HOLDING : holds
+    USER ||--o{ CRYPTO_HOLDING : holds
     
     CATEGORY ||--o{ TRANSACTION : categorizes
     CATEGORY ||--o{ BUDGET : allocated_in
@@ -84,9 +86,17 @@ erDiagram
 
     CRYPTO_HOLDING {
         uuid id PK
-        uuid accountId FK
-        string assetSymbol
+        uuid userId FK
+        string symbol
         decimal amount
+        string source
+    }
+
+    USER_COINBASE_KEYS {
+        uuid id PK
+        uuid userId FK
+        string apiKeyName
+        string privateKey
     }
 ```
 

@@ -1,6 +1,6 @@
 # NexaBudget - Backend
 
-This is the backend service for **NexaBudget**, a personal finance management application. It provides a robust, highly scalable RESTful API built on **Java 25** and **Spring Boot 4.x**, featuring integrations with Open Banking, Cryptocurrency exchanges, and Google Gemini AI.
+This is the backend service for **NexaBudget**, a personal finance management application. It provides a robust, highly scalable RESTful API built on **Java 25** and **Spring Boot 4.x**, featuring integrations with Open Banking, cryptocurrency exchanges (Binance, Coinbase), and Google Gemini AI.
 
 ## 📚 Documentation Index
 
@@ -10,7 +10,7 @@ We have organized the technical documentation into specialized modules within th
 | :--- | :--- |
 | **[Architecture Guide](./docs/ARCHITECTURE.md)** | Layered design, Virtual Threads, async processing, and system diagrams. |
 | **[Data Model](./docs/DATA_MODEL.md)** | PostgreSQL relational schema, MongoDB vector store, and ER diagrams. |
-| **[API & Features Guide](./docs/API_GUIDE.md)** | Breakdown of core features (GoCardless, Binance, AI Reports) and controller list. |
+| **[API & Features Guide](./docs/API_GUIDE.md)** | Breakdown of core features (GoCardless, Binance, Coinbase, AI Reports) and controller list. |
 | **[Security Architecture](./docs/SECURITY.md)** | JWT, M2M API Keys, cryptography, and rate limiting details. |
 | **[Deployment Guide](./docs/DEPLOYMENT.md)** | Docker, GraalVM Native Image, and Kubernetes Kustomize instructions. |
 
@@ -45,7 +45,9 @@ Ensure the following environment variables are set (e.g., in a `.env` file):
 | `JWT_SECRET` | Secret key for signing (min 32 chars) |
 | `GEMINI_API_KEY` | Your Google Gemini API Key |
 | `MONGODB_URI` | `mongodb://localhost:27017/nexabudget-be` |
-| `CRYPTO_ENCRYPTION_KEY` | 32-char key for Binance API encryption |
+| `CRYPTO_ENCRYPTION_KEY` | 32-char key for Binance and Coinbase API encryption |
+
+> Note: Coinbase Advanced Trade credentials (API Key Name + Private Key) are stored per user via the API and encrypted with `CRYPTO_ENCRYPTION_KEY`.
 
 ### 4. Build and Run
 

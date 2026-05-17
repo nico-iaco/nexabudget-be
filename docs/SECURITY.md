@@ -34,7 +34,7 @@ Security in NexaBudget Backend is designed to handle both user sessions (via Web
 ## Cryptography & Secrets
 
 * **Passwords:** User passwords are encrypted using `BCryptPasswordEncoder`. The raw password is never logged or stored.
-* **External Keys:** Sensitive integrations like Binance API keys are symmetrically encrypted in the database using `CryptoConverter` (AES algorithm) and the application property `crypto.encryption.key`.
+* **External Keys:** Sensitive integrations like Binance and Coinbase API credentials are symmetrically encrypted in the database using `CryptoConverter` (AES algorithm) and the application property `crypto.encryption.key`.
 * **Environment Variables:** All secrets (`JWT_SECRET`, `CRYPTO_ENCRYPTION_KEY`, DB passwords) are injected via environment variables and are never hardcoded.
 
 ## Rate Limiting
