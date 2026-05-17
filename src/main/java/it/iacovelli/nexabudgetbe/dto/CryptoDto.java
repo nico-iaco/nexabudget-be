@@ -53,6 +53,17 @@ public class CryptoDto {
     @Builder
     @NoArgsConstructor
     @AllArgsConstructor
+    public static class CoinbaseKeysRequest {
+        @NotBlank
+        private String apiKeyName;
+        @NotBlank
+        private String privateKey;
+    }
+
+    @Data
+    @Builder
+    @NoArgsConstructor
+    @AllArgsConstructor
     public static class PortfolioValueResponse {
         private BigDecimal totalValue;
         private String currency; // Es. "USD", "EUR", "GBP"
