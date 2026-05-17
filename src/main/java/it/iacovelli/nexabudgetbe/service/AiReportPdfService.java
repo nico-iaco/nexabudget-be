@@ -1,5 +1,6 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import com.lowagie.text.Chunk;
 import com.lowagie.text.Document;
 import com.lowagie.text.DocumentException;
 import com.lowagie.text.Element;
@@ -11,6 +12,8 @@ import com.lowagie.text.Phrase;
 import com.lowagie.text.pdf.PdfPCell;
 import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
+import com.lowagie.text.pdf.draw.LineSeparator;
+import java.awt.Color;
 import it.iacovelli.nexabudgetbe.dto.BudgetDto;
 import it.iacovelli.nexabudgetbe.dto.ReportDto;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
@@ -169,6 +172,11 @@ public class AiReportPdfService {
                 document.add(spacer);
                 continue;
             }
+            if (trimmed.equals("---")) {
+                LineSeparator ls = new LineSeparator(1f, 100f, Color.LIGHT_GRAY, Element.ALIGN_CENTER, -2f);
+                document.add(new Chunk(ls));
+                continue;
+            }
             if (trimmed.startsWith("###")) {
                 addMarkdownHeading(document, trimmed.substring(3));
             } else if (trimmed.startsWith("##")) {
@@ -177,15 +185,28 @@ public class AiReportPdfService {
                 addMarkdownHeading(document, trimmed.substring(1));
             } else if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
                 String text = "- " + trimmed.substring(2).trim();
-                Paragraph bullet = new Paragraph(text, textFont);
-                bullet.setSpacingAfter(2f);
+                Paragraph bullet = parseMarkdownLine(text, textFont, subsectionFont);
                 document.add(bullet);
             } else {
-                Paragraph paragraph = new Paragraph(trimmed, textFont);
-                paragraph.setSpacingAfter(2f);
+                Paragraph paragraph = parseMarkdownLine(trimmed, textFont, subsectionFont);
                 document.add(paragraph);
             }
         }
+    }
+
+    private Paragraph parseMarkdownLine(String text, Font normalFont, Font boldFont) {
+        Paragraph paragraph = new Paragraph();
+        paragraph.setSpacingAfter(2f);
+        
+        String[] parts = text.split("\\*\\*");
+        for (int i = 0; i < parts.length; i++) {
+            if (i % 2 == 1) {
+                paragraph.add(new Chunk(parts[i], boldFont));
+            } else {
+                paragraph.add(new Chunk(parts[i], normalFont));
+            }
+        }
+        return paragraph;
     }
 
     private void addMarkdownHeading(Document document, String heading) throws DocumentException {
@@ -218,9 +239,9 @@ public class AiReportPdfService {
         for (ReportDto.MonthlyTrendItem item : monthlyTrend.getItems()) {
             String label = String.format("%02d/%d", item.getMonth(), item.getYear());
             table.addCell(cell(label));
-            table.addCell(cell(barValue(item.getIncome(), maxIncome, false)));
-            table.addCell(cell(barValue(item.getExpense(), maxExpense, false)));
-            table.addCell(cell(barValue(item.getNet(), maxNet, true)));
+            table.addCell(barCell(item.getIncome(), maxIncome, false, new Color(46, 204, 113)));
+            table.addCell(barCell(item.getExpense(), maxExpense, false, new Color(231, 76, 60)));
+            table.addCell(barCell(item.getNet(), maxNet, true, new Color(52, 152, 219)));
         }
 
         document.add(table);
@@ -243,7 +264,8 @@ public class AiReportPdfService {
             String typeLabel = item.getInferredType() == TransactionType.OUT ? "Uscite" : "Entrate";
             table.addCell(cell(shortLabel(item.getCategoryName(), 30)));
             table.addCell(cell(typeLabel));
-            table.addCell(cell(barValue(item.getNet(), maxValue, false)));
+            Color color = item.getInferredType() == TransactionType.OUT ? new Color(231, 76, 60) : new Color(46, 204, 113);
+            table.addCell(barCell(item.getNet(), maxValue, false, color));
         }
 
         document.add(table);
@@ -269,16 +291,16 @@ public class AiReportPdfService {
         addHeaderRow(table, "Metrica", "Mese corrente", "Mese precedente");
 
         table.addCell(cell("Entrate"));
-        table.addCell(cell(barValue(currIncome, maxIncome, false)));
-        table.addCell(cell(barValue(prevIncome, maxIncome, false)));
+        table.addCell(barCell(currIncome, maxIncome, false, new Color(46, 204, 113)));
+        table.addCell(barCell(prevIncome, maxIncome, false, new Color(46, 204, 113)));
 
         table.addCell(cell("Uscite"));
-        table.addCell(cell(barValue(currExpense, maxExpense, false)));
-        table.addCell(cell(barValue(prevExpense, maxExpense, false)));
+        table.addCell(barCell(currExpense, maxExpense, false, new Color(231, 76, 60)));
+        table.addCell(barCell(prevExpense, maxExpense, false, new Color(231, 76, 60)));
 
         table.addCell(cell("Netto"));
-        table.addCell(cell(barValue(currNet, maxNet, true)));
-        table.addCell(cell(barValue(prevNet, maxNet, true)));
+        table.addCell(barCell(currNet, maxNet, true, new Color(52, 152, 219)));
+        table.addCell(barCell(prevNet, maxNet, true, new Color(52, 152, 219)));
 
         document.add(table);
         return true;
@@ -299,7 +321,7 @@ public class AiReportPdfService {
         for (ReportDto.BalanceTrendItem item : balanceTrend.getItems()) {
             String label = String.format("%02d/%d", item.getMonth(), item.getYear());
             table.addCell(cell(label));
-            table.addCell(cell(barValue(item.getClosingBalance(), maxValue, true)));
+            table.addCell(barCell(item.getClosingBalance(), maxValue, true, new Color(155, 89, 182)));
         }
 
         document.add(table);
@@ -322,12 +344,12 @@ public class AiReportPdfService {
         addHeaderRow(table, "Metrica", "Attuale", "Proiezione");
 
         table.addCell(cell("Entrate"));
-        table.addCell(cell(barValue(currIncome, maxIncome, false)));
-        table.addCell(cell(barValue(projIncome, maxIncome, false)));
+        table.addCell(barCell(currIncome, maxIncome, false, new Color(46, 204, 113)));
+        table.addCell(barCell(projIncome, maxIncome, false, new Color(186, 220, 88)));
 
         table.addCell(cell("Uscite"));
-        table.addCell(cell(barValue(currExpense, maxExpense, false)));
-        table.addCell(cell(barValue(projExpense, maxExpense, false)));
+        table.addCell(barCell(currExpense, maxExpense, false, new Color(231, 76, 60)));
+        table.addCell(barCell(projExpense, maxExpense, false, new Color(255, 121, 121)));
 
         document.add(table);
         return true;
@@ -377,26 +399,29 @@ public class AiReportPdfService {
         return cell;
     }
 
-    private String barValue(BigDecimal value, double max, boolean signed) {
-        return barValue(toDouble(value), max, signed);
+    private PdfPCell barCell(BigDecimal value, double max, boolean signed, Color color) {
+        return barCell(toDouble(value), max, signed, color);
     }
 
-    private String barValue(double value, double max, boolean signed) {
-        String bar = buildBar(value, max);
+    private PdfPCell barCell(double value, double max, boolean signed, Color color) {
         String amount = signed ? formatSignedAmount(value) : formatAmount(Math.abs(value));
-        if (bar.isEmpty()) {
-            return amount;
+        Phrase phrase = new Phrase();
+        if (max > 0.0 && value != 0) {
+            float percentage = (float) (Math.abs(value) / max);
+            int len = (int) (percentage * 25);
+            if (len > 0) {
+                Chunk barChunk = new Chunk("\u00A0".repeat(len), smallFont);
+                barChunk.setBackground(color);
+                phrase.add(barChunk);
+                phrase.add(new Chunk(" ", smallFont));
+            }
         }
-        return bar + " " + amount;
-    }
+        phrase.add(new Chunk(amount, smallFont));
 
-    private String buildBar(double value, double max) {
-        if (max <= 0.0) {
-            return "";
-        }
-        int len = (int) Math.round(Math.abs(value) / max * BAR_WIDTH);
-        len = Math.max(0, Math.min(BAR_WIDTH, len));
-        return "#".repeat(len);
+        PdfPCell cell = new PdfPCell(phrase);
+        cell.setPadding(4f);
+        cell.setHorizontalAlignment(Element.ALIGN_LEFT);
+        return cell;
     }
 
     private double toDouble(BigDecimal value) {
