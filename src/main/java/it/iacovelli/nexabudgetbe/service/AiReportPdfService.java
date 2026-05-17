@@ -174,7 +174,7 @@ public class AiReportPdfService {
             }
             if (trimmed.equals("---")) {
                 LineSeparator ls = new LineSeparator(1f, 100f, Color.LIGHT_GRAY, Element.ALIGN_CENTER, -2f);
-                document.add(new Chunk(ls));
+                document.add(ls);
                 continue;
             }
             if (trimmed.startsWith("###")) {
@@ -410,7 +410,7 @@ public class AiReportPdfService {
             float percentage = (float) (Math.abs(value) / max);
             int len = (int) (percentage * 25);
             if (len > 0) {
-                Chunk barChunk = new Chunk("\u00A0".repeat(len), smallFont);
+                Chunk barChunk = new Chunk(" ".repeat(len), smallFont);
                 barChunk.setBackground(color);
                 phrase.add(barChunk);
                 phrase.add(new Chunk(" ", smallFont));

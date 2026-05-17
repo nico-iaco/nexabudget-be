@@ -126,6 +126,7 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
         // font property files (.properties), and CMap files (.cmap) at runtime.
         hints.resources().registerPattern("com/lowagie/text/error_messages/*");
         hints.resources().registerPattern("com/lowagie/text/pdf/fonts/*");
+        hints.resources().registerPattern("font-fallback/*");
         hints.resources().registerPattern("com/lowagie/text/version.properties");
 
         // ─── Apache Commons CSV ──────────────────────────────────────────────────
