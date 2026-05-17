@@ -206,7 +206,9 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
                 "org.bouncycastle.openssl.PEMParser",
                 "org.bouncycastle.openssl.PEMKeyPair",
                 "org.bouncycastle.openssl.jcajce.JcaPEMKeyConverter",
-                "org.bouncycastle.asn1.pkcs.PrivateKeyInfo"
+            "org.bouncycastle.asn1.pkcs.PrivateKeyInfo",
+            "org.bouncycastle.jcajce.provider.asymmetric.ec.KeyFactorySpi",
+            "org.bouncycastle.jcajce.provider.asymmetric.ec.KeyFactorySpi$EC"
         );
         for (String className : bouncyCastleTypes) {
             try {
