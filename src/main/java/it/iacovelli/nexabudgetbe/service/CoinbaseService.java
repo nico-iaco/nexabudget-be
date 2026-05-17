@@ -69,7 +69,7 @@ public class CoinbaseService {
                     }
                 }
             } catch (Exception e) {
-                logger.warn("Impossibile scansionare account standard: {}", e.getMessage());
+                logger.warn("Impossibile scansionare account standard: {}", e.getMessage(), e);
             }
 
             // 3. Scansione Portafogli (Fondamentale per asset in staking e sub-accounts)
@@ -97,7 +97,7 @@ public class CoinbaseService {
                     processPortfolioBreakdown(portfoliosService, credentials, portfolioId, portfolioLabel, aggregatedBalances);
                 }
             } catch (Exception e) {
-                logger.warn("Impossibile scansionare portafogli: {}", e.getMessage());
+                logger.warn("Impossibile scansionare portafogli: {}", e.getMessage(), e);
             }
 
             List<CryptoBalance> balances = new ArrayList<>();

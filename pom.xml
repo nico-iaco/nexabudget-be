@@ -310,6 +310,8 @@
                                 <buildArg>-J-XX:MaxRAMPercentage=80.0</buildArg>
                                 <buildArg>-J-XX:+UseParallelGC</buildArg>
                                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
+                                <buildArg>--enable-all-security-services</buildArg>
+                                <buildArg>--initialize-at-run-time=org.bouncycastle.jce.provider.BouncyCastleProvider</buildArg>
                             </buildArgs>
                         </configuration>
                         <executions>
