@@ -1,0 +1,125 @@
+name: Sync docs to GitHub Wiki
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "README.md"
+      - "docs/**"
+      - ".github/workflows/wiki-sync.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wiki-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source repo
+        uses: actions/checkout@v4
+
+      - name: Clone wiki repo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          git clone "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.wiki.git" wiki
+
+      - name: Sync README and docs into wiki
+        run: |
+          set -euo pipefail
+
+          # Wipe everything in wiki except its .git so deletions in /docs propagate
+          find wiki -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
+
+          # README -> Home.md (wiki landing page)
+          if [ -f README.md ]; then
+            cp README.md wiki/Home.md
+          fi
+
+          # docs/*.md -> wiki root, flattened
+          if [ -d docs ]; then
+            find docs -type f -name "*.md" | while read -r f; do
+              base="$(basename "$f")"
+              cp "$f" "wiki/${base}"
+            done
+            # copy any non-markdown assets (images, etc.) preserving relative paths
+            find docs -type f ! -name "*.md" | while read -r f; do
+              rel="${f#docs/}"
+              mkdir -p "wiki/$(dirname "$rel")"
+              cp "$f" "wiki/$rel"
+            done
+          fi
+
+          # Rewrite intra-doc markdown links so they resolve inside the wiki.
+          # GitHub wiki pages are addressed by their page name (no .md, no folder).
+          # Transformations applied to every *.md in wiki/:
+          #   [text](docs/FOO.md)        -> [text](FOO)
+          #   [text](./docs/FOO.md)      -> [text](FOO)
+          #   [text](FOO.md)             -> [text](FOO)
+          #   [text](docs/FOO.md#anchor) -> [text](FOO#anchor)
+          #   [text](FOO.md#anchor)      -> [text](FOO#anchor)
+          # Bare URLs and external links (http/https) are left untouched.
+          for f in wiki/*.md; do
+            python3 - "$f" <<'PY'
+          import re, sys, pathlib
+          p = pathlib.Path(sys.argv[1])
+          s = p.read_text(encoding="utf-8")
+          link_re = re.compile(r'(\[[^\]]*\]\()([^)\s]+)(\))')
+          def repl(m):
+              pre, target, post = m.group(1), m.group(2), m.group(3)
+              if target.startswith(('http://', 'https://', 'mailto:', '#')):
+                  return m.group(0)
+              # split off anchor
+              anchor = ''
+              if '#' in target:
+                  target, anchor = target.split('#', 1)
+                  anchor = '#' + anchor
+              # strip optional leading ./ and docs/ prefix
+              t = target
+              if t.startswith('./'):
+                  t = t[2:]
+              if t.startswith('docs/'):
+                  t = t[len('docs/'):]
+              # only rewrite if it looks like a wiki-page reference (.md, no further slashes)
+              if t.endswith('.md') and '/' not in t:
+                  t = t[:-3]
+                  return f'{pre}{t}{anchor}{post}'
+              return m.group(0)
+          p.write_text(link_re.sub(repl, s), encoding="utf-8")
+          PY
+          done
+
+          # Build a sidebar with links to every page
+          {
+            echo "# Documentation"
+            echo ""
+            echo "- [[Home]]"
+            for f in wiki/*.md; do
+              name="$(basename "$f" .md)"
+              [ "$name" = "Home" ] && continue
+              [ "$name" = "_Sidebar" ] && continue
+              echo "- [[${name}]]"
+            done
+          } > wiki/_Sidebar.md
+
+      - name: Commit and push wiki changes
+        working-directory: wiki
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "No wiki changes to publish."
+            exit 0
+          fi
+
+          git add -A
+          git commit -m "docs: sync wiki from ${GITHUB_SHA::7}"
+          git push origin HEAD:master
