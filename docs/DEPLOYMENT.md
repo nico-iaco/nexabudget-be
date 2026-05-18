@@ -56,7 +56,38 @@ Kubernetes manifests are managed using **Kustomize**, structured in the `k8s/` d
    kubectl apply -k k8s/overlays/prod
    ```
 
+## Required Environment Variables
+
+| Variable | Purpose | Notes |
+| :--- | :--- | :--- |
+| `DB_URL`, `DB_PWD` | PostgreSQL connection | username hardcoded `nexabudget-be` |
+| `JWT_SECRET` | HMAC SHA-256 signing key | ≥ 32 chars; **must** differ from dev default or boot fails |
+| `CRYPTO_ENCRYPTION_KEY` | AES key for Binance/Coinbase credentials at rest | 32+ chars |
+| `GEMINI_API_KEY` | Google Gemini access | — |
+| `MONGODB_URI` | Atlas connection for semantic cache | vector index pre-created |
+| `REDIS_HOST`, `REDIS_PORT` | Valkey/Redis | default `localhost:6379` |
+| `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_SSL_ENABLED` | Optional Redis auth/TLS | SSL default `false` |
+| `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PWD`, `SMTP_AUTH`, `SMTP_STARTTLS` | Outbound mail | dev uses Mailhog on `localhost:1025` |
+| `MAIL_FROM` | Sender address | default `noreply@nexabudget.it` |
+| `VIRTUAL_THREADS_ENABLED` | Toggle Loom virtual threads | default `true` |
+| `GEMINI_MODEL`, `NEXABUDGET_CHAT_MODEL`, `NEXABUDGET_REPORT_MODEL` | AI model overrides | — |
+| `NEXABUDGET_BULK_CATEGORIZATION_TIMEOUT_SECONDS` | Bulk AI categorization timeout | default `120` |
+| `SEMANTIC_CACHE_COLLECTION_NAME`, `SEMANTIC_CACHE_INDEX_NAME` | Atlas vector store overrides | — |
+
+## Profiles
+
+* **dev (default)** — verbose logging (`DEBUG` on app packages), Swagger UI enabled, Mailhog SMTP, actuator health details `always`.
+* **prod (`-Dspring.profiles.active=prod`)** — `INFO` logging, restricted actuator health, Swagger UI disabled. Hibernate `ddl-auto=validate` — schema must be migrated manually before deploy (see [DATA_MODEL.md](DATA_MODEL.md)).
+
 ## Actuator and Monitoring
 
-* **Endpoints:** Prometheus metrics, Health, and Info endpoints are exposed at `/actuator/*`.
-* **Probes:** Kubernetes Liveness and Readiness probes are natively integrated (`management.health.livenessState.enabled=true`).
+* **Exposed endpoints** (`management.endpoints.web.exposure.include`): `health`, `info`, `metrics`, `prometheus`.
+* **Probes:** `livenessState` and `readinessState` are both enabled, so Kubernetes liveness/readiness probes can point at `/actuator/health/liveness` and `/actuator/health/readiness`.
+* **Metrics:** Prometheus scrape target at `/actuator/prometheus` (Micrometer Prometheus registry).
+* **Logging:** structured pattern includes `requestId` and `username` from MDC, populated by `LoggingFilter`.
+
+## Build Hardening
+
+* **Bouncy Castle** is registered at startup for EC key support (Coinbase Advanced Trade SDK).
+* **Hibernate enhancements** (lazy init, dirty tracking) are applied at build time via `hibernate-maven-plugin`.
+* **GraalVM reflection hints** are declared in `GoogleGenAiRuntimeHints.java` and `NativeRuntimeHints.java` so Spring AI and the Gemini/Coinbase SDKs work natively.

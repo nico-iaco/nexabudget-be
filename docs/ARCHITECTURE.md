@@ -9,9 +9,11 @@ NexaBudget is a comprehensive personal finance management application. The backe
 * **Core Framework:** Java 25, Spring Boot 4.0.5
 * **Relational Database:** PostgreSQL (Primary storage for Users, Accounts, Transactions, Budgets, etc.)
 * **Vector Database:** MongoDB Atlas (Utilized for AI semantic caching and vector embeddings)
-* **Caching & Distributed Coordination:** Valkey / Redis via Redisson (Used for caching bank data, crypto pricing, and distributed locking)
+* **Caching:** Valkey / Redis via Spring Data Redis (Lettuce client) and Spring Cache abstraction (used for exchange rates, crypto pricing, GoCardless metadata, async-job status)
 * **AI Integration:** Google Gemini via Spring AI (Handles transaction categorization, financial analysis, and chatbot functionalities)
-* **Security:** Spring Security (Stateless JWT for user sessions, API Keys for M2M communication, bcrypt for passwords)
+* **Security:** Spring Security (stateless JWT via `jjwt 0.13`, API Keys for M2M, BCrypt for passwords, Bucket4j-based per-IP rate limiting on auth endpoints)
+* **PDF Generation:** OpenPDF 1.3.32 for AI report rendering
+* **CSV Parsing:** Apache Commons CSV 1.12 for transaction import
 * **Crypto Integrations:** Binance Spot API, Coinbase Advanced Trade API
 * **Build, Deployment & Containerization:** Maven, Docker, GraalVM Native Image, Kubernetes (Kustomize)
 
@@ -70,15 +72,19 @@ Spring Boot 4.x running on Java 25 leverages **Virtual Threads** (Project Loom).
 Long-running tasks are offloaded from the main request thread to avoid timeouts and improve UX:
 
 - **Bulk Transaction Sync:** Synchronizing thousands of bank transactions via GoCardless is executed asynchronously (`@Async`).
-- **AI Report Generation:** Generating a comprehensive PDF report via Gemini takes time. The request initiates a background job and returns a status ID. The client can poll for the report status.
-- **Scheduled Tasks:** Jobs running via `@Scheduled` to purge soft-deleted items (older than 30 days) and warm up caches.
+- **AI Report Generation:** Generating a comprehensive financial-analysis report via Gemini takes time. `POST /api/reports/ai-analysis` enqueues a background job and returns a `jobId`; the client polls `GET /api/reports/ai-analysis/{jobId}` until completion. The transactions dataset is attached as a real multipart `.csv` file (Spring AI Media Attachment), not concatenated into the prompt text. Final report is rendered to PDF via OpenPDF.
+- **Bulk Categorization:** `BulkCategorizationService` runs AI auto-categorization in batches with a configurable timeout (`NEXABUDGET_BULK_CATEGORIZATION_TIMEOUT_SECONDS`, default 120 s).
+- **Scheduled Tasks (`@EnableScheduling` on `AsyncConfig`):**
+   - Budget template instantiation — `0 0 1 1 * ?` (1 AM on the 1st of every month)
+   - Budget alert evaluation — `fixedRate = 3_600_000` (hourly)
+   - Trash purge — `0 0 3 * * ?` (daily at 03:00, hard-deletes items older than 30 days)
 
-### 5.3 Distributed Coordination & Caching (Valkey/Redis)
+### 5.3 Caching & Concurrency Control
 
-Redisson is used to interface with a Redis/Valkey instance, fulfilling two critical roles:
+The application uses **Spring Cache backed by Spring Data Redis (Lettuce client)** against a Valkey/Redis instance:
 
-- **Caching:** Application performance is boosted by caching frequent but slow operations, such as pulling current exchange rates or live crypto prices (e.g., cached for 5 minutes).
-- **Distributed Locks:** To prevent race conditions (e.g., a user triggering a GoCardless bank sync multiple times concurrently), Redisson provides atomic locks (`isSynchronizing` flag) at the database/user level.
+- **Caching:** Frequent but slow operations are cached — default TTL 6h for most caches and 5m for crypto prices. `CacheWarmupRunner` pre-populates the exchange-rate cache (USD → EUR/GBP) at startup. Cached methods use `unless` conditions to avoid caching empty fallback results, so retries are not blocked. Async AI-report job status is also tracked through cached entries.
+- **Concurrency control on GoCardless sync:** Race conditions are prevented by a **database-level atomic lock**, not a Redis lock: `AccountService.tryAcquireSyncLock()` calls `AccountRepository.markSynchronizing()`, a JPQL `UPDATE accounts SET is_synchronizing = true WHERE id = :id AND is_synchronizing = false`. The row count returned tells the caller whether it acquired the lock.
 
 ### 5.4 Cross-Cutting Concerns (AOP & Filters)
 
@@ -87,7 +93,9 @@ Aspect-Oriented Programming (AOP) and Servlet Filters are used to cleanly implem
 - **Audit Logging:** An `AuditAspect` automatically intercepts write/update/delete operations on core entities and logs them into the `audit_logs` table, tracking `who` did `what` and `when`.
 - **Soft Deletes:** Deletions for critical data (`Account`, `Transaction`) don't actually drop the record. A `@SQLRestriction("deleted = false")` on the entity ensures they are hidden globally. A dedicated trash service allows for restoration.
 - **Exception Handling:** A `@RestControllerAdvice` (`GlobalExceptionHandler`) intercepts all unhandled exceptions (e.g., `EntityNotFoundException`, `IllegalArgumentException`) and formats them into a standardized JSON error response.
-- **Logging Filter:** Intercepts incoming requests and outgoing responses to log execution time, correlation IDs (`requestId`), and user context.
+- **Logging Filter:** `LoggingFilter` intercepts incoming requests and outgoing responses to log execution time and inject correlation IDs (`requestId`) and user context into the MDC. The log pattern includes `[%X{requestId}] [%X{username}]`.
+- **Rate Limiting:** `RateLimitingFilter` (Bucket4j token bucket per client IP) protects authentication endpoints from brute-force. Configurable via `security.rate-limit.requests-per-minute` (default `10`) and `security.rate-limit.enabled`.
+- **Resilience:** Spring Retry (`@EnableRetry` on `AsyncConfig`) decorates GoCardless and ExchangeRate calls with `@Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = 1s × 2)`. HTTP timeouts: GoCardless 5 s / 10 s, Binance 5 s / 5 s, ExchangeRate 5 s / 5 s.
 
 ## 6. External Integrations Workflow
 
