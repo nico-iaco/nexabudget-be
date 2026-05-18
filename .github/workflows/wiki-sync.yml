@@ -5,6 +5,8 @@ on:
     branches: ["main"]
     paths:
       - "README.md"
+      - "readme.md"
+      - "Readme.md"
       - "docs/**"
       - ".github/workflows/wiki-sync.yml"
   workflow_dispatch:
@@ -37,9 +39,10 @@ jobs:
           # Wipe everything in wiki except its .git so deletions in /docs propagate
           find wiki -mindepth 1 -maxdepth 1 ! -name ".git" -exec rm -rf {} +
 
-          # README -> Home.md (wiki landing page)
-          if [ -f README.md ]; then
-            cp README.md wiki/Home.md
+          # README -> Home.md (wiki landing page). Case-insensitive match for the source filename.
+          readme_src="$(find . -maxdepth 1 -iname 'readme.md' -type f | head -n 1 || true)"
+          if [ -n "${readme_src}" ]; then
+            cp "${readme_src}" wiki/Home.md
           fi
 
           # docs/*.md -> wiki root, flattened
