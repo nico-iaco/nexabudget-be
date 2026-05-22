@@ -2,6 +2,7 @@ package it.iacovelli.nexabudgetbe.service;
 
 import com.google.genai.Models;
 import com.google.genai.types.Content;
+import com.google.genai.types.FunctionCall;
 import com.google.genai.types.GenerateContentConfig;
 import com.google.genai.types.GenerateContentResponse;
 import com.google.genai.types.Part;
@@ -9,30 +10,35 @@ import com.google.genai.types.ThinkingConfig;
 import it.iacovelli.nexabudgetbe.config.CacheConfig;
 import it.iacovelli.nexabudgetbe.dto.AiReportStatusResponse;
 import it.iacovelli.nexabudgetbe.dto.TransactionDto.TransactionResponse;
-import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
+import it.iacovelli.nexabudgetbe.service.chat.FinanceToolRegistry;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.apache.commons.csv.CSVFormat;
-import org.springframework.beans.factory.annotation.Value;
-import java.math.BigDecimal;
 import org.apache.commons.csv.CSVPrinter;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
 import org.springframework.scheduling.annotation.Async;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class AiReportService {
+
+    private static final int MAX_TOOL_ITERATIONS = 10;
 
     @Value("${nexabudget.ai.report.model}")
     private String reportModelName;
@@ -46,28 +52,43 @@ public class AiReportService {
     private final TransactionService transactionService;
     private final Models genaiModels;
     private final CacheManager cacheManager;
-    private final ReportService reportService;
     private final EmailService emailService;
     private final AiReportPdfService aiReportPdfService;
-    private final CryptoPortfolioService cryptoPortfolioService;
+    private final FinanceToolRegistry financeToolRegistry;
 
     private static final String SYSTEM_PROMPT = """
-            Sei un consulente finanziario esperto. Analizza le seguenti transazioni bancarie (in formato CSV) di un utente per il periodo dal %s al %s.
+            Sei un consulente finanziario esperto. Il tuo compito è generare un report finanziario dettagliato e professionale per il periodo dal %s al %s.
 
-            TI FORNISCO INOLTRE QUESTO CONTESTO AGGIUNTIVO SUL PERIODO GIA RAPPRESENTATO NEI DATI (già calcolato a livello di sistema):
-            %s
+            HAI A DISPOSIZIONE I SEGUENTI TOOL PER RECUPERARE DATI FINANZIARI AGGIORNATI DELL'UTENTE:
+            - getAccountBalances: saldi e valuta di tutti i conti bancari
+            - getPeriodTotals: totali entrate, uscite e netto del periodo
+            - getCategoryBreakdown: breakdown spese/entrate per categoria nel periodo
+            - getActiveBudgets: budget attivi con limite e speso
+            - getRemainingBudgets: residuo disponibile per ciascun budget
+            - getBudgetMonthlySummary: riepilogo mensile budget (speso/residuo/%%)
+            - getMonthlyTrend: trend mensile entrate/uscite degli ultimi mesi
+            - getBalanceTrend: andamento del saldo mese per mese
+            - getMonthComparison: confronto mese corrente vs precedente
+            - getMonthlyProjection: proiezione fine mese basata sul ritmo attuale
+            - getCryptoPortfolio: valore portafoglio crypto
+            - searchTransactions: ricerca transazioni con filtri (tipo, categoria, testo)
 
-            IL TUO COMPITO È GENERARE UN REPORT MOLTO DETTAGLIATO CHE INCLUDA:
-            1. **Riassunto Generale**: Saldo totale del periodo, andamento Entrate vs Uscite e tasso di risparmio.
-            2. **Analisi per Categoria**: Evidenzia le categorie di spesa maggiori e valuta se sono eccessive. Usa i breakdown presi in contesto da abbreviare il conteggio manuale.
-            3. **Pattern e Anomalie**: Individua comportamenti ripetitivi o spese anomale leggendo le occorrenze delle transazioni del periodo.
-            4. **Suggerimenti di Miglioramento**: Dai 3-5 consigli pratici basati ESCLUSIVAMENTE sui dati forniti su come l'utente potrebbe ottimizzare le proprie finanze.
+            ISTRUZIONI OPERATIVE:
+            1. Usa i tool per raccogliere tutti i dati necessari PRIMA di scrivere il report. Non inventare dati: usa esclusivamente ciò che i tool restituiscono.
+            2. Il file CSV allegato contiene l'elenco grezzo delle transazioni del periodo — usalo per identificare pattern ricorrenti, anomalie e singole operazioni significative.
+            3. Combina i dati aggregati dei tool con i dettagli del CSV per produrre un'analisi profonda.
+
+            IL REPORT DEVE INCLUDERE OBBLIGATORIAMENTE QUESTE 4 SEZIONI:
+            1. **Riassunto Generale**: saldo totale del periodo, andamento entrate vs uscite, tasso di risparmio, confronto col mese precedente.
+            2. **Analisi per Categoria**: categorie di spesa principali con importi e percentuali; valuta se qualcuna è eccessiva rispetto ai budget impostati.
+            3. **Pattern e Anomalie**: spese ricorrenti, abbonamenti, transazioni insolite o anomale identificate dal CSV.
+            4. **Suggerimenti di Miglioramento**: 3-5 consigli pratici e specifici basati ESCLUSIVAMENTE sui dati raccolti.
 
             REGOLE TASSATIVE PER L'OUTPUT:
             - Scrivi ESCLUSIVAMENTE nella lingua indicata dal codice ISO: %s. Nessun mix di lingue.
-            - NON INCLUDERE log di ragionamento interno, "scratchpad", o passaggi intermedi di auto-correzione.
-            - FORNISCI DIRETTAMENTE ED ESCLUSIVAMENTE il report finale pronto per la lettura da parte del cliente, formattato in Markdown leggibile.
-            - Usa un tono professionale ma amichevole. Non includere calcoli errati.
+            - NON INCLUDERE log di ragionamento interno, "scratchpad", o passaggi intermedi.
+            - FORNISCI DIRETTAMENTE ED ESCLUSIVAMENTE il report finale pronto per la lettura, formattato in Markdown.
+            - Usa un tono professionale ma amichevole.
             """;
 
     public UUID startAiReportJob(User user, LocalDate startDate, LocalDate endDate, String language) {
@@ -97,12 +118,13 @@ public class AiReportService {
 
     @Async
     public void generateAiReport(UUID jobId, User user, LocalDate startDate, LocalDate endDate, String language) {
+        var authToken = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+        SecurityContextHolder.getContext().setAuthentication(authToken);
         try {
             List<TransactionResponse> transactions = transactionService.getTransactionsByUserAndDateRangeForReport(user, startDate, endDate);
             byte[] csvBytes = generateCsv(transactions).getBytes(StandardCharsets.UTF_8);
 
-            String contextData = buildAdditionalContext(user, startDate, endDate);
-            String instruction = String.format(SYSTEM_PROMPT, startDate, endDate, contextData, language);
+            String instruction = String.format(SYSTEM_PROMPT, startDate, endDate, language);
 
             Part textPart = Part.fromText(instruction);
             Part csvPart = Part.fromBytes(csvBytes, "text/csv");
@@ -111,21 +133,24 @@ public class AiReportService {
                     .parts(List.of(textPart, csvPart))
                     .build();
 
+            List<Content> contents = new ArrayList<>();
+            contents.add(userContent);
+
             GenerateContentConfig.Builder cfgBuilder = GenerateContentConfig.builder()
-                    .temperature(0.4f);
+                    .temperature(0.4f)
+                    .tools(List.of(financeToolRegistry.buildFinanceTool()));
 
             if (supportsThinking(reportModelName)) {
                 cfgBuilder.thinkingConfig(buildThinkingConfig(reportModelName, thinkingBudget, thinkingLevel));
             }
 
-            GenerateContentResponse resp = genaiModels.generateContent(
-                    reportModelName, userContent, cfgBuilder.build());
+            GenerateContentConfig cfg = cfgBuilder.build();
 
-            String responseContent = resp.text();
+            String responseContent = runToolLoop(contents, cfg);
 
+            String cacheKey = user.getId() + "_" + startDate + "_" + endDate + "_" + language;
             Cache resultsCache = cacheManager.getCache(CacheConfig.AI_REPORTS_RESULTS_CACHE);
             if (resultsCache != null) {
-                String cacheKey = user.getId() + "_" + startDate + "_" + endDate + "_" + language;
                 resultsCache.put(cacheKey, responseContent);
             }
 
@@ -145,73 +170,40 @@ public class AiReportService {
         } catch (Exception e) {
             log.error("Error generating AI report for job {}", jobId, e);
             saveJobStatus(jobId, user.getId(), new AiReportStatusResponse(jobId, "FAILED", null, startDate, endDate));
+        } finally {
+            SecurityContextHolder.clearContext();
         }
     }
 
-    private String buildAdditionalContext(User user, LocalDate startDate, LocalDate endDate) {
-        StringBuilder sb = new StringBuilder();
-        try {
-            var breakdown = reportService.getCategoryBreakdown(user, startDate, endDate);
-            String cur = breakdown.getCurrency();
+    private String runToolLoop(List<Content> contents, GenerateContentConfig cfg) {
+        for (int iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+            GenerateContentResponse resp = genaiModels.generateContent(reportModelName, contents, cfg);
 
-            BigDecimal totalOut = breakdown.getCategories().stream()
-                    .filter(c -> c.getInferredType() == TransactionType.OUT)
-                    .map(c -> c.getNet().abs())
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal totalIn = breakdown.getCategories().stream()
-                    .filter(c -> c.getInferredType() == TransactionType.IN)
-                    .map(c -> c.getNet().abs())
-                    .reduce(BigDecimal.ZERO, BigDecimal::add);
-            BigDecimal netBalance = totalIn.subtract(totalOut);
-
-            sb.append("--- RIEPILOGO TOTALE PERIODO (").append(startDate).append(" al ").append(endDate).append(") - Valuta: ").append(cur).append(" ---\n");
-            sb.append("Entrate Totali: ").append(totalIn).append(" ").append(cur).append("\n");
-            sb.append("Uscite Totali: ").append(totalOut).append(" ").append(cur).append("\n");
-            sb.append("Saldo Netto del Periodo: ").append(netBalance).append(" ").append(cur).append("\n\n");
-
-            sb.append("--- RIEPILOGO USCITE PER CATEGORIA NEL PERIODO ---\n");
-            for (var cat : breakdown.getCategories()) {
-                if (cat.getInferredType() == TransactionType.OUT) {
-                    sb.append("- ").append(cat.getCategoryName()).append(": ").append(cat.getNet().abs())
-                      .append(" (").append(String.format(java.util.Locale.US, "%.2f", cat.getPercentage())).append("%)\n");
-                }
+            List<FunctionCall> calls = resp.functionCalls();
+            if (calls == null || calls.isEmpty()) {
+                return resp.text();
             }
-            sb.append("\n");
 
-            sb.append("--- RIEPILOGO ENTRATE PER CATEGORIA NEL PERIODO ---\n");
-            for (var cat : breakdown.getCategories()) {
-                if (cat.getInferredType() == TransactionType.IN) {
-                    sb.append("- ").append(cat.getCategoryName()).append(": ").append(cat.getNet())
-                      .append(" (").append(String.format(java.util.Locale.US, "%.2f", cat.getPercentage())).append("%)\n");
-                }
+            resp.candidates()
+                    .flatMap(cs -> cs.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(cs.get(0)))
+                    .flatMap(c -> c.content())
+                    .ifPresent(contents::add);
+
+            List<Part> responseParts = new ArrayList<>();
+            for (FunctionCall fc : calls) {
+                String name = fc.name().orElse("unknown");
+                Map<String, Object> args = fc.args().orElse(Map.of());
+                log.debug("[AiReportService] Tool invocato: {} con args: {}", name, args);
+                String toolResult = financeToolRegistry.dispatchTool(name, args);
+                responseParts.add(Part.fromFunctionResponse(name, Map.of("result", toolResult)));
             }
-            sb.append("\n");
 
-            var monthComparison = reportService.getMonthComparison(user, endDate.getYear(), endDate.getMonthValue());
-            sb.append("--- CONFRONTO MACRO MESE FINALE (").append(endDate.getMonthValue()).append("/").append(endDate.getYear()).append(") VS MESE PRECEDENTE ---\n");
-            sb.append("Mese Corrente: Entrate=").append(monthComparison.getCurrentMonth().getIncome())
-              .append(", Uscite=").append(monthComparison.getCurrentMonth().getExpense()).append("\n");
-            sb.append("Mese Precedente: Entrate=").append(monthComparison.getPreviousMonth().getIncome())
-              .append(", Uscite=").append(monthComparison.getPreviousMonth().getExpense()).append("\n");
-            sb.append("Variazione: Entrate ").append(monthComparison.getIncomeChange().compareTo(BigDecimal.ZERO) >= 0 ? "+" : "")
-              .append(monthComparison.getIncomeChange())
-              .append(", Uscite ").append(monthComparison.getExpenseChange().compareTo(BigDecimal.ZERO) >= 0 ? "+" : "")
-              .append(monthComparison.getExpenseChange()).append("\n\n");
-
-            var portfolio = cryptoPortfolioService.getPortfolioValue(user, cur);
-            if (portfolio.getAssets() != null && !portfolio.getAssets().isEmpty()) {
-                sb.append("--- PORTAFOGLIO CRYPTO (Valuta: ").append(cur).append(") ---\n");
-                sb.append("Valore Totale Crypto: ").append(portfolio.getTotalValue()).append(" ").append(cur).append("\n");
-                for (var asset : portfolio.getAssets()) {
-                    sb.append("- ").append(asset.getAmount()).append(" ").append(asset.getSymbol())
-                            .append(" (Valore: ").append(asset.getValue()).append(" ").append(cur).append(")\n");
-                }
-                sb.append("\n");
-            }
-        } catch (Exception e) {
-            log.warn("Impossibile generare contesto aggiuntivo per l'AI job", e);
+            contents.add(Content.builder().role("user").parts(responseParts).build());
         }
-        return sb.toString();
+
+        log.warn("[AiReportService] Raggiunto il limite di {} iterazioni tool calling per il report", MAX_TOOL_ITERATIONS);
+        GenerateContentResponse finalResp = genaiModels.generateContent(reportModelName, contents, cfg);
+        return finalResp.text();
     }
 
     public AiReportStatusResponse getJobStatus(UUID jobId, User user) {
