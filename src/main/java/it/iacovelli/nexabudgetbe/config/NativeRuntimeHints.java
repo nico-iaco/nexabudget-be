@@ -199,6 +199,42 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
             log.warn("Could not register CoinbaseCredentials hint: {}", e.getMessage());
         }
 
+        // ─── Spring AI MCP server (WebMVC, STATELESS transport) ─────────────────
+        // McpSchema inner types (102 JSON-RPC DTOs) are auto-registered by
+        // McpHints via META-INF/spring/aot.factories in spring-ai-mcp.jar.
+        // Auto-configuration and @ConfigurationProperties classes are handled by
+        // Spring Boot AOT. The three transport-provider classes below live inside
+        // the mcp-spring-webmvc jar and are registered as HandlerMapping/RouteFunction
+        // contributors; without explicit hints, GraalVM may miss them because they
+        // are referenced through the MVC handler-adapter reflection path.
+        List<String> mcpTransportClasses = List.of(
+                "org.springframework.ai.mcp.server.webmvc.transport.WebMvcStatelessServerTransport",
+                "org.springframework.ai.mcp.server.webmvc.transport.WebMvcSseServerTransportProvider",
+                "org.springframework.ai.mcp.server.webmvc.transport.WebMvcStreamableServerTransportProvider",
+                "org.springframework.ai.mcp.server.webmvc.transport.HeaderUtils"
+        );
+        for (String className : mcpTransportClasses) {
+            try {
+                hints.reflection().registerType(TypeReference.of(className), MemberCategory.values());
+            } catch (Exception e) {
+                log.warn("Could not register MCP transport hint for {}: {}", className, e.getMessage());
+            }
+        }
+
+        // McpConnectionInfo is a record returned over SSE and potentially serialized
+        // by Jackson — the Builder inner class is instantiated via reflection.
+        List<String> mcpConnectionClasses = List.of(
+                "org.springframework.ai.mcp.McpConnectionInfo",
+                "org.springframework.ai.mcp.McpConnectionInfo$Builder"
+        );
+        for (String className : mcpConnectionClasses) {
+            try {
+                hints.reflection().registerType(TypeReference.of(className), MemberCategory.values());
+            } catch (Exception e) {
+                log.warn("Could not register McpConnectionInfo hint for {}: {}", className, e.getMessage());
+            }
+        }
+
         // ─── Coinbase JWT signing (BouncyCastle) ──────────────────────────────
         // CoinbaseAdvancedCredentials uses BouncyCastle to parse PEM keys and
         // sign ES256 JWTs. Native image needs explicit reachability for these types.
