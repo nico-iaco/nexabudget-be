@@ -95,7 +95,7 @@ public class ApiKeyService {
     @Transactional
     public User authenticateByKey(String plainKey) {
         String hash = sha256(plainKey);
-        ApiKey apiKey = apiKeyRepository.findByKeyHash(hash).orElse(null);
+        ApiKey apiKey = apiKeyRepository.findByKeyHashWithUser(hash).orElse(null);
         if (apiKey == null || !Boolean.TRUE.equals(apiKey.getActive())) {
             return null;
         }
