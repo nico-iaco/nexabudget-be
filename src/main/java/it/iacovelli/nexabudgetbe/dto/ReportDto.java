@@ -54,6 +54,12 @@ public class ReportDto {
         private LocalDate startDate;
         private LocalDate endDate;
         private String currency;
+        /** Somma dei net netti delle categorie di spesa (OUT). Uguale alla somma di CategoryBreakdownItem.net per le righe inferredType=OUT. */
+        private BigDecimal totalExpense;
+        /** Somma dei net netti delle categorie di entrata (IN). Uguale alla somma di CategoryBreakdownItem.net per le righe inferredType=IN. */
+        private BigDecimal totalIncome;
+        /** @deprecated Usare totalExpense/totalIncome. Mantenuto per retro-compatibilità; valorizzato uguale a totalExpense. */
+        @Deprecated
         private BigDecimal grandTotal;
         private List<CategoryBreakdownItem> categories;
     }

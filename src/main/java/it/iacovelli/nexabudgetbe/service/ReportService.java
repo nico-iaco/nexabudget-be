@@ -34,37 +34,106 @@ public class ReportService {
         return currencyConversionService.convert(amount, src, target);
     }
 
+    private record NetTotals(BigDecimal expense, BigDecimal income) {
+        BigDecimal net() { return income.subtract(expense); }
+    }
+
+    /**
+     * Aggrega il netto per-categoria in expense/income, stessa logica di getCategoryBreakdown.
+     * catRows: [catId, catName, currency, net]  (da findCategoryNetBreakdown)
+     * uncatRows: [currency, type, amount]        (da findUncategorizedTotalsByType)
+     */
+    private NetTotals aggregateNetTotals(List<Object[]> catRows, List<Object[]> uncatRows, String target) {
+        Map<String, BigDecimal> netByCat = new LinkedHashMap<>();
+        for (Object[] r : catRows) {
+            String catKey = r[0] != null ? r[0].toString() : "__null__";
+            String currency = r[2] != null ? r[2].toString() : target;
+            BigDecimal converted = convertToUserCurrency((BigDecimal) r[3], currency, target);
+            netByCat.merge(catKey, converted, BigDecimal::add);
+        }
+        BigDecimal expense = netByCat.values().stream()
+                .filter(n -> n.compareTo(BigDecimal.ZERO) > 0)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        BigDecimal income = netByCat.values().stream()
+                .filter(n -> n.compareTo(BigDecimal.ZERO) < 0)
+                .map(BigDecimal::abs)
+                .reduce(BigDecimal.ZERO, BigDecimal::add);
+        for (Object[] r : uncatRows) {
+            String currency = r[0] != null ? r[0].toString() : target;
+            TransactionType type = TransactionType.valueOf(r[1].toString());
+            BigDecimal converted = convertToUserCurrency((BigDecimal) r[2], currency, target);
+            if (type == TransactionType.OUT) expense = expense.add(converted);
+            else income = income.add(converted);
+        }
+        return new NetTotals(expense, income);
+    }
+
+    /**
+     * Costruisce una mappa year*12+month → MonthlyTrendItem usando la logica netta per-categoria.
+     * Usa le query findMonthlyCategoryNetBreakdown e findMonthlyUncategorizedTotalsByType.
+     */
+    private Map<Integer, ReportDto.MonthlyTrendItem> buildMonthlyNetMap(User user, LocalDate from, LocalDate to, String target) {
+        List<Object[]> catRows = transactionRepository.findMonthlyCategoryNetBreakdown(user, from, to);
+        List<Object[]> uncatRows = transactionRepository.findMonthlyUncategorizedTotalsByType(user, from, to);
+
+        // catRows: [year, month, catId, currency, net]
+        Map<Integer, Map<String, BigDecimal>> netByCatByMonth = new TreeMap<>();
+        for (Object[] r : catRows) {
+            int y = ((Number) r[0]).intValue(), m = ((Number) r[1]).intValue();
+            int key = y * 12 + m;
+            String catKey = r[2] != null ? r[2].toString() : "__null__";
+            String currency = r[3] != null ? r[3].toString() : target;
+            BigDecimal converted = convertToUserCurrency((BigDecimal) r[4], currency, target);
+            netByCatByMonth.computeIfAbsent(key, k -> new LinkedHashMap<>())
+                    .merge(catKey, converted, BigDecimal::add);
+        }
+
+        // uncatRows: [year, month, currency, type, amount] — no netting, bucket separati
+        Map<Integer, List<Object[]>> uncatByMonth = new TreeMap<>();
+        for (Object[] r : uncatRows) {
+            int y = ((Number) r[0]).intValue(), m = ((Number) r[1]).intValue();
+            uncatByMonth.computeIfAbsent(y * 12 + m, k -> new ArrayList<>())
+                    .add(new Object[]{r[2], r[3], r[4]});
+        }
+
+        Set<Integer> allKeys = new TreeSet<>(netByCatByMonth.keySet());
+        allKeys.addAll(uncatByMonth.keySet());
+
+        Map<Integer, ReportDto.MonthlyTrendItem> result = new TreeMap<>();
+        for (int key : allKeys) {
+            int y = (key - 1) / 12, m = key - y * 12;
+
+            Map<String, BigDecimal> netByCat = netByCatByMonth.getOrDefault(key, Map.of());
+            BigDecimal expense = netByCat.values().stream()
+                    .filter(n -> n.compareTo(BigDecimal.ZERO) > 0)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+            BigDecimal income = netByCat.values().stream()
+                    .filter(n -> n.compareTo(BigDecimal.ZERO) < 0)
+                    .map(BigDecimal::abs)
+                    .reduce(BigDecimal.ZERO, BigDecimal::add);
+
+            for (Object[] r : uncatByMonth.getOrDefault(key, List.of())) {
+                String currency = r[0] != null ? r[0].toString() : target;
+                TransactionType type = TransactionType.valueOf(r[1].toString());
+                BigDecimal converted = convertToUserCurrency((BigDecimal) r[2], currency, target);
+                if (type == TransactionType.OUT) expense = expense.add(converted);
+                else income = income.add(converted);
+            }
+
+            result.put(key, ReportDto.MonthlyTrendItem.builder()
+                    .year(y).month(m)
+                    .income(income).expense(expense).net(income.subtract(expense))
+                    .build());
+        }
+        return result;
+    }
+
     @Transactional(readOnly = true)
     public ReportDto.MonthlyTrendResponse getMonthlyTrend(User user, int months) {
         String target = targetCurrency(user);
         LocalDate from = LocalDate.now().minusMonths(months).withDayOfMonth(1);
-        List<Object[]> rows = transactionRepository.findMonthlyTotals(user, from);
-
-        // Each row: [year, month, type, currency, total]
-        Map<String, ReportDto.MonthlyTrendItem> map = new LinkedHashMap<>();
-        for (Object[] row : rows) {
-            int year = ((Number) row[0]).intValue();
-            int month = ((Number) row[1]).intValue();
-            TransactionType type = TransactionType.valueOf(row[2].toString());
-            String currency = row[3] != null ? row[3].toString() : target;
-            BigDecimal total = (BigDecimal) row[4];
-            BigDecimal converted = convertToUserCurrency(total, currency, target);
-
-            String key = year + "-" + month;
-            ReportDto.MonthlyTrendItem item = map.computeIfAbsent(key, k ->
-                    ReportDto.MonthlyTrendItem.builder()
-                            .year(year).month(month)
-                            .income(BigDecimal.ZERO).expense(BigDecimal.ZERO).net(BigDecimal.ZERO)
-                            .build());
-
-            if (type == TransactionType.IN) {
-                item.setIncome(item.getIncome().add(converted));
-            } else {
-                item.setExpense(item.getExpense().add(converted));
-            }
-            item.setNet(item.getIncome().subtract(item.getExpense()));
-        }
-
+        LocalDate to = LocalDate.now();
+        Map<Integer, ReportDto.MonthlyTrendItem> map = buildMonthlyNetMap(user, from, to, target);
         return ReportDto.MonthlyTrendResponse.builder()
                 .currency(target)
                 .items(new ArrayList<>(map.values()))
@@ -80,48 +149,17 @@ public class ReportService {
         LocalDate rangeStart = startDate.withDayOfMonth(1);
         LocalDate rangeEnd = endDate.withDayOfMonth(endDate.lengthOfMonth());
 
-        List<Object[]> rows = transactionRepository.findMonthlyTotals(user, rangeStart);
+        Map<Integer, ReportDto.MonthlyTrendItem> map = buildMonthlyNetMap(user, rangeStart, rangeEnd, target);
 
-        Map<String, ReportDto.MonthlyTrendItem> map = new LinkedHashMap<>();
-        for (Object[] row : rows) {
-            int year = ((Number) row[0]).intValue();
-            int month = ((Number) row[1]).intValue();
-            LocalDate monthStart = LocalDate.of(year, month, 1);
-            if (monthStart.isAfter(rangeEnd)) {
-                continue;
-            }
-            TransactionType type = TransactionType.valueOf(row[2].toString());
-            String currency = row[3] != null ? row[3].toString() : target;
-            BigDecimal total = (BigDecimal) row[4];
-            BigDecimal converted = convertToUserCurrency(total, currency, target);
-
-            String key = year + "-" + month;
-            ReportDto.MonthlyTrendItem item = map.computeIfAbsent(key, k ->
-                    ReportDto.MonthlyTrendItem.builder()
-                            .year(year).month(month)
-                            .income(BigDecimal.ZERO).expense(BigDecimal.ZERO).net(BigDecimal.ZERO)
-                            .build());
-
-            if (type == TransactionType.IN) {
-                item.setIncome(item.getIncome().add(converted));
-            } else {
-                item.setExpense(item.getExpense().add(converted));
-            }
-            item.setNet(item.getIncome().subtract(item.getExpense()));
-        }
-
+        // Riempie i mesi senza transazioni con zeri
         List<ReportDto.MonthlyTrendItem> items = new ArrayList<>();
         LocalDate cursor = rangeStart;
         while (!cursor.isAfter(rangeEnd)) {
-            String key = cursor.getYear() + "-" + cursor.getMonthValue();
-            ReportDto.MonthlyTrendItem item = map.get(key);
-            if (item == null) {
-                item = ReportDto.MonthlyTrendItem.builder()
-                        .year(cursor.getYear()).month(cursor.getMonthValue())
-                        .income(BigDecimal.ZERO).expense(BigDecimal.ZERO).net(BigDecimal.ZERO)
-                        .build();
-            }
-            items.add(item);
+            int key = cursor.getYear() * 12 + cursor.getMonthValue();
+            items.add(map.getOrDefault(key, ReportDto.MonthlyTrendItem.builder()
+                    .year(cursor.getYear()).month(cursor.getMonthValue())
+                    .income(BigDecimal.ZERO).expense(BigDecimal.ZERO).net(BigDecimal.ZERO)
+                    .build()));
             cursor = cursor.plusMonths(1);
         }
 
@@ -133,6 +171,9 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public ReportDto.CategoryBreakdownResponse getCategoryBreakdown(User user, LocalDate startDate, LocalDate endDate) {
+        if (endDate.isBefore(startDate)) {
+            throw new IllegalArgumentException("endDate must be on or after startDate");
+        }
         String target = targetCurrency(user);
         List<Object[]> rows = transactionRepository.findCategoryNetBreakdown(user, startDate, endDate);
 
@@ -169,13 +210,15 @@ public class ReportService {
                 .reduce(BigDecimal.ZERO, BigDecimal::add);
 
         List<ReportDto.CategoryBreakdownItem> categories = aggregatedNet.entrySet().stream()
-                .filter(e -> e.getValue().compareTo(BigDecimal.ZERO) != 0)
+                // Includi tutte le categorie che hanno avuto movimenti nel periodo, anche se il net è 0
+                // (es. spese interamente rimborsate). Solo le voci senza alcun movimento vengono scartate.
                 .sorted((a, b) -> b.getValue().abs().compareTo(a.getValue().abs()))
                 .map(e -> {
                     BigDecimal net = e.getValue();
+                    // Categoria con net == 0: mantenuta nell'elenco (tipo OUT per default, spesa rimborsata).
                     TransactionType inferredType = e.getKey().forcedType() != null
                             ? e.getKey().forcedType()
-                            : (net.compareTo(BigDecimal.ZERO) > 0 ? TransactionType.OUT : TransactionType.IN);
+                            : (net.compareTo(BigDecimal.ZERO) >= 0 ? TransactionType.OUT : TransactionType.IN);
                     BigDecimal groupTotal = inferredType == TransactionType.OUT ? outGroupTotal : inGroupTotal;
                     double percentage = groupTotal.compareTo(BigDecimal.ZERO) == 0 ? 0.0
                             : net.abs().divide(groupTotal, 4, RoundingMode.HALF_UP).multiply(BigDecimal.valueOf(100)).doubleValue();
@@ -189,7 +232,10 @@ public class ReportService {
         return ReportDto.CategoryBreakdownResponse.builder()
                 .startDate(startDate).endDate(endDate)
                 .currency(target)
-                .grandTotal(outGroupTotal.add(inGroupTotal)).categories(categories)
+                .totalExpense(outGroupTotal)
+                .totalIncome(inGroupTotal)
+                .grandTotal(outGroupTotal)  // retro-compatibilità: valorizzato come totalExpense
+                .categories(categories)
                 .build();
     }
 
@@ -201,26 +247,29 @@ public class ReportService {
         LocalDate prevStart = currentStart.minusMonths(1);
         LocalDate prevEnd = prevStart.withDayOfMonth(prevStart.lengthOfMonth());
 
-        BigDecimal currIncome = sumConverted(user, TransactionType.IN, currentStart, currentEnd, target);
-        BigDecimal currExpense = sumConverted(user, TransactionType.OUT, currentStart, currentEnd, target);
-        BigDecimal prevIncome = sumConverted(user, TransactionType.IN, prevStart, prevEnd, target);
-        BigDecimal prevExpense = sumConverted(user, TransactionType.OUT, prevStart, prevEnd, target);
+        NetTotals current = aggregateNetTotals(
+                transactionRepository.findCategoryNetBreakdown(user, currentStart, currentEnd),
+                transactionRepository.findUncategorizedTotalsByType(user, currentStart, currentEnd),
+                target);
+        NetTotals previous = aggregateNetTotals(
+                transactionRepository.findCategoryNetBreakdown(user, prevStart, prevEnd),
+                transactionRepository.findUncategorizedTotalsByType(user, prevStart, prevEnd),
+                target);
 
-        ReportDto.MonthComparisonItem current = ReportDto.MonthComparisonItem.builder()
+        ReportDto.MonthComparisonItem currentItem = ReportDto.MonthComparisonItem.builder()
                 .year(year).month(month)
-                .income(currIncome).expense(currExpense).net(currIncome.subtract(currExpense))
+                .income(current.income()).expense(current.expense()).net(current.net())
                 .build();
-
-        ReportDto.MonthComparisonItem previous = ReportDto.MonthComparisonItem.builder()
+        ReportDto.MonthComparisonItem previousItem = ReportDto.MonthComparisonItem.builder()
                 .year(prevStart.getYear()).month(prevStart.getMonthValue())
-                .income(prevIncome).expense(prevExpense).net(prevIncome.subtract(prevExpense))
+                .income(previous.income()).expense(previous.expense()).net(previous.net())
                 .build();
 
         return ReportDto.MonthComparisonResponse.builder()
                 .currency(target)
-                .currentMonth(current).previousMonth(previous)
-                .incomeChange(currIncome.subtract(prevIncome))
-                .expenseChange(currExpense.subtract(prevExpense))
+                .currentMonth(currentItem).previousMonth(previousItem)
+                .incomeChange(current.income().subtract(previous.income()))
+                .expenseChange(current.expense().subtract(previous.expense()))
                 .build();
     }
 

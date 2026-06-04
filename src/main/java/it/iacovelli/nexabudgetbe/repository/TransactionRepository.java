@@ -190,4 +190,23 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
                      "AND t.transferId IS NULL " +
                      "GROUP BY t.account.currency")
        List<Object[]> sumNetByUserBeforePerCurrency(@Param("user") User user, @Param("date") LocalDate date);
+
+       @Query("SELECT YEAR(t.date), MONTH(t.date), t.category.id, t.account.currency, " +
+                     "SUM(CASE WHEN t.type = 'OUT' THEN t.amount ELSE -t.amount END) " +
+                     "FROM Transaction t WHERE t.user = :user " +
+                     "AND t.date BETWEEN :from AND :to AND t.category IS NOT NULL " +
+                     "AND t.transferId IS NULL " +
+                     "GROUP BY YEAR(t.date), MONTH(t.date), t.category.id, t.account.currency " +
+                     "ORDER BY YEAR(t.date), MONTH(t.date)")
+       List<Object[]> findMonthlyCategoryNetBreakdown(@Param("user") User user,
+                     @Param("from") LocalDate from, @Param("to") LocalDate to);
+
+       @Query("SELECT YEAR(t.date), MONTH(t.date), t.account.currency, t.type, COALESCE(SUM(t.amount), 0) " +
+                     "FROM Transaction t WHERE t.user = :user " +
+                     "AND t.date BETWEEN :from AND :to AND t.category IS NULL " +
+                     "AND t.transferId IS NULL " +
+                     "GROUP BY YEAR(t.date), MONTH(t.date), t.account.currency, t.type " +
+                     "ORDER BY YEAR(t.date), MONTH(t.date)")
+       List<Object[]> findMonthlyUncategorizedTotalsByType(@Param("user") User user,
+                     @Param("from") LocalDate from, @Param("to") LocalDate to);
 }
