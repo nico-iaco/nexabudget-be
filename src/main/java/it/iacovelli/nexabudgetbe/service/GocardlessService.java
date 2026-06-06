@@ -18,6 +18,7 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -96,7 +97,7 @@ public class GocardlessService {
             int bankCount = banksResponse != null && banksResponse.getData() != null ? banksResponse.getData().size() : 0;
             logger.info("Recuperate {} banche per il paese: {}", bankCount, countryCode);
 
-            return banksResponse != null ? banksResponse.getData() : List.of();
+            return banksResponse != null ? banksResponse.getData() : new ArrayList<>();
         } catch (RestClientException e) {
             logger.error("Errore nel recupero delle banche per il paese: {}", countryCode, e);
             throw e;
@@ -106,7 +107,7 @@ public class GocardlessService {
     @Recover
     public List<GocardlessBank> recoverGetBanks(RestClientException e, String countryCode) {
         logger.error("Impossibile recuperare banche per {} dopo i retry: {}", countryCode, e.getMessage());
-        return List.of();
+        return new ArrayList<>();
     }
 
     @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
@@ -160,7 +161,7 @@ public class GocardlessService {
 
             if (accountsResponse == null) {
                 logger.warn("Risposta vuota nel recupero dei conti per requisitionId: {}", requisitionId);
-                return List.of();
+                return new ArrayList<>();
             }
 
             GocardlessGetAccounts accountsResponseData = accountsResponse.getData();
@@ -168,7 +169,7 @@ public class GocardlessService {
                     accountsResponseData.getAccounts().size() : 0;
             logger.info("Recuperati {} conti bancari per requisitionId: {}", accountCount, requisitionId);
 
-            return accountsResponseData != null ? accountsResponseData.getAccounts() : List.of();
+            return accountsResponseData != null ? accountsResponseData.getAccounts() : new ArrayList<>();
         } catch (RestClientException e) {
             logger.error("Errore nel recupero dei conti per requisitionId: {}", requisitionId, e);
             throw e;
@@ -178,7 +179,7 @@ public class GocardlessService {
     @Recover
     public List<GocardlessBankDetail> recoverGetBankAccounts(RestClientException e, String requisitionId) {
         logger.error("Impossibile recuperare conti per {} dopo i retry: {}", requisitionId, e.getMessage());
-        return List.of();
+        return new ArrayList<>();
     }
 
     @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
@@ -199,17 +200,17 @@ public class GocardlessService {
 
             if (transactionsResponse == null) {
                 logger.warn("Risposta vuota nel recupero delle transazioni per accountId: {}", accountId);
-                return List.of();
+                return new ArrayList<>();
             }
 
             GocardlessBankTransaction transactionsResponseData = transactionsResponse.getData();
             if (transactionsResponseData == null) {
                 logger.warn("Dati transazioni vuoti per accountId: {}", accountId);
-                return List.of();
+                return new ArrayList<>();
             }
 
             List<GocardlessTransaction> transactions = transactionsResponseData.getTransactions() != null ? 
-                    transactionsResponseData.getTransactions().getAll() : List.of();
+                    transactionsResponseData.getTransactions().getAll() : new ArrayList<>();
             logger.info("Recuperate {} transazioni per accountId: {}", transactions.size(), accountId);
 
             return transactions;
@@ -222,6 +223,6 @@ public class GocardlessService {
     @Recover
     public List<GocardlessTransaction> recoverGetGoCardlessTransaction(RestClientException e, String requisitionId, String accountId) {
         logger.error("Impossibile recuperare transazioni per accountId {} dopo i retry: {}", accountId, e.getMessage());
-        return List.of();
+        return new ArrayList<>();
     }
 }
