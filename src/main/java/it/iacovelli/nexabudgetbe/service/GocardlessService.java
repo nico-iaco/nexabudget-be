@@ -79,7 +79,7 @@ public class GocardlessService {
     }
 
     @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
-    @Cacheable(value = GOCARDLESS_BANKS_CACHE, key = "#countryCode", unless = "#result.isEmpty()")
+    @Cacheable(value = GOCARDLESS_BANKS_CACHE, key = "#countryCode", unless = "#result.size() == 0")
     public List<GocardlessBank> getBanks(String countryCode) {
         logger.info("Recupero lista banche per il paese: {}", countryCode);
         try {
@@ -144,7 +144,7 @@ public class GocardlessService {
     }
 
     @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
-    @Cacheable(value = BANK_ACCOUNTS_CACHE, key = "#requisitionId", unless = "#result.isEmpty()")
+    @Cacheable(value = BANK_ACCOUNTS_CACHE, key = "#requisitionId", unless = "#result.size() == 0")
     public List<GocardlessBankDetail> getBankAccounts(String requisitionId) {
         logger.info("Recupero conti bancari per requisitionId: {}", requisitionId);
         try {
@@ -182,7 +182,7 @@ public class GocardlessService {
     }
 
     @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
-    @Cacheable(value = GOCARDLESS_TRANSACTIONS_CACHE, key = "#requisitionId + '_' + #accountId", unless = "#result.isEmpty()")
+    @Cacheable(value = GOCARDLESS_TRANSACTIONS_CACHE, key = "#requisitionId + '_' + #accountId", unless = "#result.size() == 0")
     public List<GocardlessTransaction> getGoCardlessTransaction(String requisitionId, String accountId) {
         logger.info("Recupero transazioni per requisitionId: {}, accountId: {}", requisitionId, accountId);
         try {
