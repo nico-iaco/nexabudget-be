@@ -43,7 +43,8 @@ import static it.iacovelli.nexabudgetbe.config.CacheConfig.*;
         GocardlessTransactions.class,
         GocardlessTransaction.class,
         GocardlessBalance.class,
-        GocardlessAmount.class
+        GocardlessAmount.class,
+        BankAccountsResponse.class
 })
 @Service
 public class GocardlessService {
@@ -145,8 +146,10 @@ public class GocardlessService {
     }
 
     @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
-    @Cacheable(value = BANK_ACCOUNTS_CACHE, key = "#requisitionId", unless = "#result.size() == 0")
-    public List<GocardlessBankDetail> getBankAccounts(String requisitionId) {
+    @Cacheable(value = BANK_ACCOUNTS_CACHE, key = "#requisitionId",
+            unless = "#result == null || #result.getData() == null" +
+                     " || #result.getData().getAccounts() == null || #result.getData().getAccounts().isEmpty()")
+    public GocardlessGetAccountsResponse getBankAccounts(String requisitionId) {
         logger.info("Recupero conti bancari per requisitionId: {}", requisitionId);
         try {
             String path = "/get-accounts";
@@ -161,15 +164,19 @@ public class GocardlessService {
 
             if (accountsResponse == null) {
                 logger.warn("Risposta vuota nel recupero dei conti per requisitionId: {}", requisitionId);
-                return new ArrayList<>();
+                GocardlessGetAccountsResponse empty = new GocardlessGetAccountsResponse();
+                empty.setLinkedStatus("unknown");
+                empty.setRenewable(false);
+                return empty;
             }
 
             GocardlessGetAccounts accountsResponseData = accountsResponse.getData();
-            int accountCount = accountsResponseData != null && accountsResponseData.getAccounts() != null ? 
+            int accountCount = accountsResponseData != null && accountsResponseData.getAccounts() != null ?
                     accountsResponseData.getAccounts().size() : 0;
-            logger.info("Recuperati {} conti bancari per requisitionId: {}", accountCount, requisitionId);
+            logger.info("Recuperati {} conti bancari per requisitionId: {}, linkedStatus: {}",
+                    accountCount, requisitionId, accountsResponse.getLinkedStatus());
 
-            return accountsResponseData != null ? accountsResponseData.getAccounts() : new ArrayList<>();
+            return accountsResponse;
         } catch (RestClientException e) {
             logger.error("Errore nel recupero dei conti per requisitionId: {}", requisitionId, e);
             throw e;
@@ -177,9 +184,13 @@ public class GocardlessService {
     }
 
     @Recover
-    public List<GocardlessBankDetail> recoverGetBankAccounts(RestClientException e, String requisitionId) {
+    public GocardlessGetAccountsResponse recoverGetBankAccounts(RestClientException e, String requisitionId) {
         logger.error("Impossibile recuperare conti per {} dopo i retry: {}", requisitionId, e.getMessage());
-        return new ArrayList<>();
+        GocardlessGetAccountsResponse fallback = new GocardlessGetAccountsResponse();
+        fallback.setLinkedStatus("unknown");
+        fallback.setRenewable(false);
+        fallback.setReason(e.getMessage());
+        return fallback;
     }
 
     @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
