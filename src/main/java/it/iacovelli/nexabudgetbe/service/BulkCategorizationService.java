@@ -31,6 +31,9 @@ public class BulkCategorizationService {
     @Value("${nexabudget.ai.bulk.categorization.timeout-seconds:90}")
     private int aiCallTimeoutSeconds;
 
+    @Value("${nexabudget.ai.bulk.categorization.delay-ms:500}")
+    private long delayBetweenCallsMs;
+
     // In-memory store: non dipende da Redis, non blocca mai su rete
     private final ConcurrentHashMap<UUID, BulkCategorizationStatusResponse> jobStore = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<UUID, UUID> jobOwners = new ConcurrentHashMap<>();
@@ -60,6 +63,12 @@ public class BulkCategorizationService {
 
         try {
             for (Transaction tx : uncategorized) {
+                if (tx.getDescription() == null || tx.getDescription().isBlank()) {
+                    log.debug("[BulkCategorization] Job {} - transazione {} saltata: descrizione vuota", jobId, tx.getId());
+                    processed++;
+                    jobStore.put(jobId, new BulkCategorizationStatusResponse(jobId, "IN_PROGRESS", total, processed, categorized));
+                    continue;
+                }
                 Optional<Category> category = categorizeWithTimeout(jobId, tx, user);
                 try {
                     if (category.isPresent()) {
@@ -73,6 +82,16 @@ public class BulkCategorizationService {
 
                 processed++;
                 jobStore.put(jobId, new BulkCategorizationStatusResponse(jobId, "IN_PROGRESS", total, processed, categorized));
+
+                if (processed < total && delayBetweenCallsMs > 0) {
+                    try {
+                        Thread.sleep(delayBetweenCallsMs);
+                    } catch (InterruptedException ie) {
+                        Thread.currentThread().interrupt();
+                        log.warn("[BulkCategorization] Job {} interrotto durante il delay", jobId);
+                        break;
+                    }
+                }
             }
 
             jobStore.put(jobId, new BulkCategorizationStatusResponse(jobId, "COMPLETED", total, processed, categorized));
