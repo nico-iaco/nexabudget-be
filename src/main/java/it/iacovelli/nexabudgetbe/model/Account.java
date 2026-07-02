@@ -49,6 +49,9 @@ public class Account {
     @Column(name = "is_synchronizing")
     private Boolean isSynchronizing;
 
+    @Column(name = "requires_reauth")
+    private Boolean requiresReauth;
+
     @Column(name = "created_at", updatable = false)
     private LocalDateTime createdAt;
 
@@ -64,6 +67,9 @@ public class Account {
         createdAt = LocalDateTime.now();
         if (isSynchronizing == null) {
             isSynchronizing = false;
+        }
+        if (requiresReauth == null) {
+            requiresReauth = false;
         }
         if (deleted == null) deleted = false;
     }
