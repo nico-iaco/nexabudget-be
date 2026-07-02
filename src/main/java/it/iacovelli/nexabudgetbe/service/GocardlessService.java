@@ -249,4 +249,15 @@ public class GocardlessService {
         logger.error("Impossibile recuperare transazioni per accountId {} dopo i retry: {}", accountId, e.getMessage());
         return new ArrayList<>();
     }
+
+    /**
+     * GocardlessRequisitionExpiredException non è tra le retryFor del metodo, ma essendoci un @Recover
+     * sullo stesso metodo Spring Retry tenta comunque il recovery a fine tentativi: senza questa firma
+     * fallirebbe con "Cannot locate recovery method" mascherando l'eccezione originale. Qui la rilanciamo
+     * inalterata così AccountService può gestirla esplicitamente.
+     */
+    @Recover
+    public List<GocardlessTransaction> recoverGetGoCardlessTransactionExpired(GocardlessRequisitionExpiredException e, String requisitionId, String accountId) {
+        throw e;
+    }
 }
