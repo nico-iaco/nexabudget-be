@@ -46,6 +46,7 @@ public class AccountDto {
         private String currency;
         private boolean isLinkedToExternal;
         private boolean isSynchronizing;
+        private boolean requiresReauth;
         private String createdAt;
     }
 

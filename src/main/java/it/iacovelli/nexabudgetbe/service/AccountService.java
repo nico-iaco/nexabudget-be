@@ -3,6 +3,7 @@ package it.iacovelli.nexabudgetbe.service;
 import it.iacovelli.nexabudgetbe.dto.AccountDto;
 import it.iacovelli.nexabudgetbe.dto.GocardlessTransaction;
 import it.iacovelli.nexabudgetbe.dto.SyncBankTransactionsRequest;
+import it.iacovelli.nexabudgetbe.exception.GocardlessRequisitionExpiredException;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.AccountRepository;
 import org.slf4j.Logger;
@@ -220,10 +221,10 @@ public class AccountService {
 
         LocalDate startDate = lastExternalSync != null ? lastExternalSync.toLocalDate() : null;
 
-        List<GocardlessTransaction> goCardlessTransaction = gocardlessService.getGoCardlessTransaction(account.getRequisitionId(), account.getExternalAccountId());
-        logger.info("Recuperate {} transazioni da GoCardless per account ID: {}", goCardlessTransaction.size(), accountId);
-
         try {
+            List<GocardlessTransaction> goCardlessTransaction = gocardlessService.getGoCardlessTransaction(account.getRequisitionId(), account.getExternalAccountId());
+            logger.info("Recuperate {} transazioni da GoCardless per account ID: {}", goCardlessTransaction.size(), accountId);
+
             transactionService.importTransactionsFromGocardless(goCardlessTransaction, user, account, startDate);
 
             if (request.getActualBalance() != null) {
@@ -247,7 +248,12 @@ public class AccountService {
             }
 
             account.setLastExternalSync(LocalDateTime.now());
+            account.setRequiresReauth(false);
             logger.info("Sincronizzazione completata per account ID: {}", accountId);
+        } catch (GocardlessRequisitionExpiredException e) {
+            account.setRequiresReauth(true);
+            logger.warn("Requisition scaduta per account ID: {} — errorCode: {}, requisitionStatus: {}, renewable: {}. Serve un nuovo collegamento tramite POST /api/gocardless/bank/link.",
+                    accountId, e.getErrorCode(), e.getRequisitionStatus(), e.isRenewable());
         } catch (Exception e) {
             logger.error("Errore durante la sincronizzazione delle transazioni GoCardless per account ID: {}, motivo: {}", accountId, e.getMessage());
         } finally {
@@ -267,6 +273,7 @@ public class AccountService {
                 .actualBalance(balance)
                 .isLinkedToExternal(account.getExternalAccountId() != null)
                 .isSynchronizing(account.getIsSynchronizing() != null && account.getIsSynchronizing())
+                .requiresReauth(account.getRequiresReauth() != null && account.getRequiresReauth())
                 .build();
     }
 

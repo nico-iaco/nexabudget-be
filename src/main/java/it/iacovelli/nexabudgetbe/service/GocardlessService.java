@@ -2,6 +2,7 @@ package it.iacovelli.nexabudgetbe.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import it.iacovelli.nexabudgetbe.dto.*;
+import it.iacovelli.nexabudgetbe.exception.GocardlessRequisitionExpiredException;
 import jakarta.annotation.PostConstruct;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -220,7 +221,19 @@ public class GocardlessService {
                 return new ArrayList<>();
             }
 
-            List<GocardlessTransaction> transactions = transactionsResponseData.getTransactions() != null ? 
+            if (transactionsResponseData.getErrorCode() != null) {
+                boolean renewable = Boolean.TRUE.equals(transactionsResponseData.getRenewable());
+                logger.warn("[GoCardless] Requisition non valida per accountId: {} — errorCode: {}, requisitionStatus: {}, renewable: {}, reason: {}",
+                        accountId, transactionsResponseData.getErrorCode(), transactionsResponseData.getRequisitionStatus(),
+                        renewable, transactionsResponseData.getReason());
+                throw new GocardlessRequisitionExpiredException(
+                        transactionsResponseData.getReason() != null ? transactionsResponseData.getReason() : "Requisition non valida",
+                        transactionsResponseData.getErrorCode(),
+                        transactionsResponseData.getRequisitionStatus(),
+                        renewable);
+            }
+
+            List<GocardlessTransaction> transactions = transactionsResponseData.getTransactions() != null ?
                     transactionsResponseData.getTransactions().getAll() : new ArrayList<>();
             logger.info("Recuperate {} transazioni per accountId: {}", transactions.size(), accountId);
 
