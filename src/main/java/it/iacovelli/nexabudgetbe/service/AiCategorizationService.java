@@ -72,10 +72,14 @@ public class AiCategorizationService {
         Optional<String> cached = semanticCacheService.findSimilar(description, user.getId());
         if (cached.isPresent()) {
             String cachedName = cached.get();
-            log.debug("Cache hit per '{}': '{}'", description, cachedName);
-            return availableCategories.stream()
+            Optional<Category> cachedMatch = availableCategories.stream()
                     .filter(c -> c.getName().equalsIgnoreCase(cachedName))
                     .findFirst();
+            if (cachedMatch.isPresent()) {
+                log.debug("Cache hit per '{}': '{}'", description, cachedName);
+                return cachedMatch;
+            }
+            log.debug("Cache hit per '{}' ma categoria '{}' non trovata, fallback AI", description, cachedName);
         }
 
         String prompt = buildPrompt(description, availableCategories, type);
@@ -140,7 +144,7 @@ public class AiCategorizationService {
         if (raw == null || raw.isBlank()) return NONE;
         try {
             String category = objectMapper.readValue(raw, AiCategoryResponse.class).category();
-            return category != null ? category : NONE;
+            return category != null ? category.trim() : NONE;
         } catch (Exception parseEx) {
             log.warn("Impossibile parsare risposta JSON '{}': {}", raw, parseEx.getMessage());
             return raw.replaceAll("[*_`\"'\\n]+", "").trim();

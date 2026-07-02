@@ -114,16 +114,18 @@ class AiCategorizationServiceTest {
     }
 
     @Test
-    void cacheHit_butCategoryNotInUserList_returnsEmpty() {
+    void cacheHit_butCategoryNotInUserList_fallsBackToAI() throws Exception {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(trasporti));
         when(semanticCacheService.findSimilar("Esselunga", user.getId()))
                 .thenReturn(Optional.of("Alimentari e Supermercati"));
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(fakeResponse("NONE"));
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
 
         assertTrue(result.isEmpty());
-        verifyNoInteractions(genaiModels);
+        verify(genaiModels).generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class));
     }
 
     // ─── AI: risposta esatta ─────────────────────────────────────────────────────
