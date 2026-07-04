@@ -166,7 +166,14 @@ public class BudgetAlertService {
                             alert.getId(), alert.getLastNotifiedAt());
                 }
             } else {
-                logger.debug("[BudgetAlert] Alert {}: utilizzo sotto soglia, nessuna notifica", alert.getId());
+                if (alert.getLastNotifiedAt() != null) {
+                    logger.info("[BudgetAlert] Alert {}: utilizzo rientrato sotto soglia ({}% < {}%), alert ri-armato per il periodo corrente",
+                            alert.getId(), String.format("%.1f", usagePercent), alert.getThresholdPercentage());
+                    alert.setLastNotifiedAt(null);
+                    budgetAlertRepository.save(alert);
+                } else {
+                    logger.debug("[BudgetAlert] Alert {}: utilizzo sotto soglia, nessuna notifica", alert.getId());
+                }
             }
         }
 
