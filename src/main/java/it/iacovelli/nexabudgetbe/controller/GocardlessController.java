@@ -20,9 +20,14 @@ import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 
+/**
+ * @deprecated superato da {@link BankingController} (endpoint unificato multi-provider,
+ * {@code /api/banking/{provider}/...}). Mantenuto invariato per retrocompatibilità col frontend esistente.
+ */
+@Deprecated
 @RestController
 @RequestMapping("/api/gocardless")
-@Tag(name = "Conti", description = "Gestione dell'integrazione dei conti dell'utente con GoCardless")
+@Tag(name = "Conti", description = "[Deprecato: usare /api/banking/gocardless] Gestione dell'integrazione dei conti dell'utente con GoCardless")
 @SecurityRequirement(name = "bearerAuth")
 public class GocardlessController {
 

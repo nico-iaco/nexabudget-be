@@ -25,6 +25,8 @@ public class CacheConfig {
         public static final String BANK_ACCOUNTS_CACHE = "bankAccounts";
         public static final String GOCARDLESS_TRANSACTIONS_CACHE = "gocardlessTransactions";
         public static final String GOCARDLESS_BANKS_CACHE = "gocardlessCountryBanks";
+        public static final String ENABLE_BANKING_ASPSPS_CACHE = "enableBankingAspsps";
+        public static final String ENABLE_BANKING_TRANSACTIONS_CACHE = "enableBankingTransactions";
         public static final String CRYPTO_PRICES_CACHE = "cryptoPrices";
         public static final String EXCHANGE_RATES_CACHE = "exchangeRates";
         public static final String PORTFOLIO_CACHE = "portfolio";

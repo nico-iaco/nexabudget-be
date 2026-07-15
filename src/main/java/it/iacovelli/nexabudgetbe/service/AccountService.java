@@ -1,11 +1,12 @@
 package it.iacovelli.nexabudgetbe.service;
 
 import it.iacovelli.nexabudgetbe.dto.AccountDto;
-import it.iacovelli.nexabudgetbe.dto.GocardlessTransaction;
 import it.iacovelli.nexabudgetbe.dto.SyncBankTransactionsRequest;
-import it.iacovelli.nexabudgetbe.exception.GocardlessRequisitionExpiredException;
+import it.iacovelli.nexabudgetbe.dto.bank.NormalizedBankTransaction;
+import it.iacovelli.nexabudgetbe.exception.BankReauthRequiredException;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.AccountRepository;
+import it.iacovelli.nexabudgetbe.service.bank.BankAggregationProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -18,8 +19,10 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 
 @Service
 public class AccountService {
@@ -28,20 +31,85 @@ public class AccountService {
 
     private final AccountRepository accountRepository;
     private final TransactionService transactionService;
-    private final GocardlessService gocardlessService;
     private final UserService userService;
     private final CurrencyConversionService currencyConversionService;
+    private final Map<BankProvider, BankAggregationProvider> bankProviders;
 
     public AccountService(AccountRepository accountRepository,
                           TransactionService transactionService,
-                          GocardlessService gocardlessService,
                           UserService userService,
-                          CurrencyConversionService currencyConversionService) {
+                          CurrencyConversionService currencyConversionService,
+                          List<BankAggregationProvider> bankAggregationProviders) {
         this.accountRepository = accountRepository;
         this.transactionService = transactionService;
-        this.gocardlessService = gocardlessService;
         this.userService = userService;
         this.currencyConversionService = currencyConversionService;
+        this.bankProviders = bankAggregationProviders.stream()
+                .collect(java.util.stream.Collectors.toMap(BankAggregationProvider::getProvider, Function.identity()));
+    }
+
+    /**
+     * Risolve la strategy per il provider collegato al conto. Un conto senza provider (mai collegato,
+     * o legacy prima della colonna `provider`) non può essere sincronizzato.
+     */
+    private BankAggregationProvider resolveProvider(Account account) {
+        BankProvider provider = account.getProvider();
+        if (provider == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Il conto non è collegato a nessun provider bancario");
+        }
+        BankAggregationProvider aggregationProvider = bankProviders.get(provider);
+        if (aggregationProvider == null) {
+            throw new IllegalStateException("Nessun provider registrato per: " + provider);
+        }
+        return aggregationProvider;
+    }
+
+    private BankAggregationProvider resolveProvider(BankProvider provider) {
+        BankAggregationProvider aggregationProvider = bankProviders.get(provider);
+        if (aggregationProvider == null) {
+            throw new IllegalStateException("Nessun provider registrato per: " + provider);
+        }
+        return aggregationProvider;
+    }
+
+    /**
+     * Avvia il collegamento di un conto locale a un provider bancario: verifica l'ownership,
+     * delega alla strategy corrispondente e persiste il {@code providerReference} già disponibile
+     * (requisitionId per GoCardless; per Enable Banking arriva solo dopo {@link #completeBankLink}).
+     */
+    @Transactional
+    public it.iacovelli.nexabudgetbe.dto.bank.BankLinkResult startBankLink(BankProvider provider, String institutionId, UUID localAccountId, User user) {
+        accountRepository.findByIdAndUser(localAccountId, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
+
+        it.iacovelli.nexabudgetbe.dto.bank.BankLinkResult result = resolveProvider(provider).startLink(institutionId, localAccountId);
+        addRequisitionIdToAccount(localAccountId, result.getProviderReference(), provider);
+        return result;
+    }
+
+    /**
+     * Completa un collegamento avviato da {@link #startBankLink} (scambio del code Enable Banking,
+     * o poll GoCardless) e persiste il nuovo {@code providerReference}.
+     */
+    @Transactional
+    public it.iacovelli.nexabudgetbe.dto.bank.BankLinkCompletionResult completeBankLink(BankProvider provider, UUID localAccountId, String code, User user) {
+        Account account = accountRepository.findByIdAndUser(localAccountId, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
+
+        it.iacovelli.nexabudgetbe.dto.bank.BankLinkCompletionResult result =
+                resolveProvider(provider).completeLink(localAccountId, account.getRequisitionId(), code);
+        if (result.getProviderReference() != null) {
+            addRequisitionIdToAccount(localAccountId, result.getProviderReference(), provider);
+        }
+        return result;
+    }
+
+    /** Conti disponibili presso il provider per il conto locale già collegato. */
+    public it.iacovelli.nexabudgetbe.dto.bank.BankLinkCompletionResult getBankProviderAccounts(BankProvider provider, UUID localAccountId, User user) {
+        Account account = accountRepository.findByIdAndUser(localAccountId, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato"));
+        return resolveProvider(provider).getProviderAccounts(account);
     }
 
     @Transactional
@@ -170,19 +238,31 @@ public class AccountService {
 
     @Transactional
     public void addRequisitionIdToAccount(UUID accountId, String requisitionId) {
-        logger.info("Aggiunta requisitionId {} all'account ID: {}", requisitionId, accountId);
+        addRequisitionIdToAccount(accountId, requisitionId, BankProvider.GOCARDLESS);
+    }
+
+    @Transactional
+    public void addRequisitionIdToAccount(UUID accountId, String requisitionId, BankProvider provider) {
+        logger.info("Aggiunta requisitionId {} all'account ID: {} (provider: {})", requisitionId, accountId, provider);
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
         account.setRequisitionId(requisitionId);
+        account.setProvider(provider);
         accountRepository.save(account);
     }
 
     @Transactional
     public void linkAccountToGocardless(UUID accountId, String gocardlessAccountId) {
-        logger.info("Collegamento account ID: {} a GoCardless accountId: {}", accountId, gocardlessAccountId);
+        linkAccountToProvider(accountId, gocardlessAccountId, BankProvider.GOCARDLESS);
+    }
+
+    @Transactional
+    public void linkAccountToProvider(UUID accountId, String providerAccountId, BankProvider provider) {
+        logger.info("Collegamento account ID: {} a provider {} accountId: {}", accountId, provider, providerAccountId);
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
-        account.setExternalAccountId(gocardlessAccountId);
+        account.setExternalAccountId(providerAccountId);
+        account.setProvider(provider);
         accountRepository.save(account);
     }
 
@@ -197,9 +277,16 @@ public class AccountService {
         return accountRepository.markSynchronizing(accountId) > 0;
     }
 
+    /** @deprecated usa {@link #syncAccountTransactions(UUID, User, SyncBankTransactionsRequest)}, provider-agnostico. */
+    @Deprecated
     @Async
     public void syncAccountTransactionWithGocardless(UUID accountId, User user, SyncBankTransactionsRequest request) {
-        logger.info("Sincronizzazione asincrona transazioni GoCardless per account ID: {}", accountId);
+        syncAccountTransactions(accountId, user, request);
+    }
+
+    @Async
+    public void syncAccountTransactions(UUID accountId, User user, SyncBankTransactionsRequest request) {
+        logger.info("Sincronizzazione asincrona transazioni bancarie per account ID: {}", accountId);
 
         Account account = accountRepository.findByIdAndUser(accountId, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
@@ -222,10 +309,11 @@ public class AccountService {
         LocalDate startDate = lastExternalSync != null ? lastExternalSync.toLocalDate() : null;
 
         try {
-            List<GocardlessTransaction> goCardlessTransaction = gocardlessService.getGoCardlessTransaction(account.getRequisitionId(), account.getExternalAccountId());
-            logger.info("Recuperate {} transazioni da GoCardless per account ID: {}", goCardlessTransaction.size(), accountId);
+            BankAggregationProvider provider = resolveProvider(account);
+            List<NormalizedBankTransaction> bankTransactions = provider.fetchTransactions(account, startDate);
+            logger.info("Recuperate {} transazioni da {} per account ID: {}", bankTransactions.size(), provider.getProvider(), accountId);
 
-            transactionService.importTransactionsFromGocardless(goCardlessTransaction, user, account, startDate);
+            transactionService.importNormalizedTransactions(bankTransactions, user, account, startDate);
 
             if (request.getActualBalance() != null) {
                 // Controlla adesso il bilancio del conto corrente e lo allinea con quello atteso della request
@@ -250,12 +338,12 @@ public class AccountService {
             account.setLastExternalSync(LocalDateTime.now());
             account.setRequiresReauth(false);
             logger.info("Sincronizzazione completata per account ID: {}", accountId);
-        } catch (GocardlessRequisitionExpiredException e) {
+        } catch (BankReauthRequiredException e) {
             account.setRequiresReauth(true);
-            logger.warn("Requisition scaduta per account ID: {} — errorCode: {}, requisitionStatus: {}, renewable: {}. Serve un nuovo collegamento tramite POST /api/gocardless/bank/link.",
-                    accountId, e.getErrorCode(), e.getRequisitionStatus(), e.isRenewable());
+            logger.warn("Consenso scaduto per account ID: {} — errorCode: {}, providerStatus: {}, renewable: {}. Serve un nuovo collegamento.",
+                    accountId, e.getErrorCode(), e.getProviderStatus(), e.isRenewable());
         } catch (Exception e) {
-            logger.error("Errore durante la sincronizzazione delle transazioni GoCardless per account ID: {}, motivo: {}", accountId, e.getMessage());
+            logger.error("Errore durante la sincronizzazione delle transazioni bancarie per account ID: {}, motivo: {}", accountId, e.getMessage());
         } finally {
             account.setIsSynchronizing(false);
             accountRepository.save(account);
@@ -271,6 +359,7 @@ public class AccountService {
                 .currency(account.getCurrency())
                 .type(account.getType())
                 .actualBalance(balance)
+                .provider(account.getProvider())
                 .isLinkedToExternal(account.getExternalAccountId() != null)
                 .isSynchronizing(account.getIsSynchronizing() != null && account.getIsSynchronizing())
                 .requiresReauth(account.getRequiresReauth() != null && account.getRequiresReauth())

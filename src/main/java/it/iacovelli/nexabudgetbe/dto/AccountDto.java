@@ -2,6 +2,7 @@ package it.iacovelli.nexabudgetbe.dto;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import it.iacovelli.nexabudgetbe.model.AccountType;
+import it.iacovelli.nexabudgetbe.model.BankProvider;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.PositiveOrZero;
@@ -44,6 +45,7 @@ public class AccountDto {
         private AccountType type;
         private BigDecimal actualBalance;
         private String currency;
+        private BankProvider provider;
         private boolean isLinkedToExternal;
         private boolean isSynchronizing;
         private boolean requiresReauth;

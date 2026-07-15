@@ -43,6 +43,16 @@ public class Account {
     @Column(name = "external_account_id")
     private String externalAccountId;
 
+    /**
+     * Provider di aggregazione bancaria collegato a questo conto (GoCardless, Enable Banking, ...).
+     * Null per i conti gestiti manualmente (mai collegati a un provider esterno).
+     * {@code requisitionId} ospita l'identificativo di sessione/requisition del provider,
+     * {@code externalAccountId} l'id del conto lato provider — entrambi generici e riusati da ogni provider.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "provider")
+    private BankProvider provider;
+
     @Column(name = "last_external_sync")
     private LocalDateTime lastExternalSync;
 

@@ -1,7 +1,7 @@
 package it.iacovelli.nexabudgetbe.service;
 
-import it.iacovelli.nexabudgetbe.dto.GocardlessTransaction;
 import it.iacovelli.nexabudgetbe.dto.TransactionDto;
+import it.iacovelli.nexabudgetbe.dto.bank.NormalizedBankTransaction;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
 import jakarta.persistence.criteria.Join;
@@ -511,41 +511,46 @@ public class TransactionService {
         return sum;
     }
 
-    public void importTransactionsFromGocardless(List<GocardlessTransaction> transactions, User user, Account account, LocalDate startDate) {
+    /**
+     * Importa transazioni bancarie normalizzate provenienti da un {@link it.iacovelli.nexabudgetbe.service.bank.BankAggregationProvider}
+     * (GoCardless, Enable Banking, ...). Generalizzazione della precedente {@code importTransactionsFromGocardless}:
+     * stessa dedup per externalId (scoped al conto, per evitare collisioni tra provider diversi), stessa
+     * hook di categorizzazione AI.
+     */
+    public void importNormalizedTransactions(List<NormalizedBankTransaction> transactions, User user, Account account, LocalDate startDate) {
         transactions
-                //.filter(gc -> startDate == null || LocalDate.parse(gc.getDate()).isAfter(startDate.minusDays(1L)))
-                .forEach(gt -> {
-                    if (transactionRepository.findByExternalId(gt.getTransactionId()).isEmpty()) {
-                        logger.debug("Importing Gocardless Transaction: {}", gt.getTransactionId());
-                        BigDecimal rawAmount = new BigDecimal(gt.getTransactionAmount().getAmount());
+                //.filter(nt -> startDate == null || LocalDate.parse(nt.getDate()).isAfter(startDate.minusDays(1L)))
+                .forEach(nt -> {
+                    if (transactionRepository.findByExternalIdAndAccount(nt.getExternalId(), account).isEmpty()) {
+                        logger.debug("Importing bank transaction: {}", nt.getExternalId());
+                        BigDecimal rawAmount = nt.getAmount();
                         TransactionType txType = rawAmount.signum() > 0 ? TransactionType.IN : TransactionType.OUT;
-                        String description = resolveGocardlessDescription(gt, txType);
+                        String description = resolveBankTransactionDescription(nt, txType);
 
                         Transaction t = new Transaction();
-                        t.setExternalId(gt.getTransactionId());
+                        t.setExternalId(nt.getExternalId());
                         t.setAmount(rawAmount.abs());
                         t.setType(txType);
                         t.setUser(user);
                         t.setDescription(description);
-                        String rawDate = gt.getValueDate() != null ? gt.getValueDate() : gt.getBookingDate();
-                        t.setDate(LocalDate.parse(rawDate, formatter));
+                        t.setDate(LocalDate.parse(nt.getDate(), formatter));
                         t.setAccount(account);
 
                         Optional<Category> foundCategory = aiCategorizationService.categorizeTransaction(description, user, t.getType());
 
                         if (foundCategory.isPresent()) {
                             t.setCategory(foundCategory.get());
-                            logger.debug("Transazione {} categorizzata automaticamente come: {}", gt.getTransactionId(), foundCategory.get().getName());
+                            logger.debug("Transazione {} categorizzata automaticamente come: {}", nt.getExternalId(), foundCategory.get().getName());
                         } else {
                             // Se l'AI fallisce o non trova, la categoria resta null (come prima)
                             // L'utente dovrà categorizzarla manualmente
-                            logger.debug("Transazione {} non categorizzata automaticamente.", gt.getTransactionId());
+                            logger.debug("Transazione {} non categorizzata automaticamente.", nt.getExternalId());
                             t.setCategory(null);
                         }
 
                         transactionRepository.save(t);
                     } else {
-                        logger.debug("Gocardless Transaction already exists: {}", gt.getTransactionId());
+                        logger.debug("Bank transaction already exists: {}", nt.getExternalId());
                     }
                 });
 
@@ -562,22 +567,21 @@ public class TransactionService {
     }
 
     /**
-     * Builds the best available description from a GoCardless transaction.
+     * Builds the best available description from a normalized bank transaction.
      * Priority: creditorName (OUT) / debtorName (IN) → remittanceInformation → payeeName.
      */
-    private String resolveGocardlessDescription(GocardlessTransaction gt, TransactionType type) {
-        if (type == TransactionType.OUT && gt.getCreditorName() != null && !gt.getCreditorName().isBlank()) {
-            return gt.getCreditorName();
+    private String resolveBankTransactionDescription(NormalizedBankTransaction nt, TransactionType type) {
+        if (type == TransactionType.OUT && nt.getCreditorName() != null && !nt.getCreditorName().isBlank()) {
+            return nt.getCreditorName();
         }
-        if (type == TransactionType.IN && gt.getDebtorName() != null && !gt.getDebtorName().isBlank()) {
-            return gt.getDebtorName();
+        if (type == TransactionType.IN && nt.getDebtorName() != null && !nt.getDebtorName().isBlank()) {
+            return nt.getDebtorName();
         }
-        List<String> remittance = gt.getRemittanceInformationUnstructuredArray();
-        if (remittance != null && !remittance.isEmpty() && remittance.get(0) != null && !remittance.get(0).isBlank()) {
-            return remittance.get(0);
+        if (nt.getRemittanceInformation() != null && !nt.getRemittanceInformation().isBlank()) {
+            return nt.getRemittanceInformation();
         }
-        if (gt.getPayeeName() != null && !gt.getPayeeName().isBlank()) {
-            return gt.getPayeeName();
+        if (nt.getPayeeName() != null && !nt.getPayeeName().isBlank()) {
+            return nt.getPayeeName();
         }
         return "";
     }
