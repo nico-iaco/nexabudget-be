@@ -142,7 +142,9 @@ public class EnableBankingService {
         cachedToken = Jwts.builder()
                 .header().keyId(appId).and()
                 .issuer("enablebanking.com")
-                .audience().add("api.enablebanking.com").and()
+                // .single(...) è deprecato in jjwt ma è l'unico modo per emettere "aud" come stringa
+                // singola invece che array: Enable Banking rifiuta l'array con 401 "JWT audience is not valid".
+                .audience().single("api.enablebanking.com")
                 .issuedAt(issuedAt)
                 .expiration(expiration)
                 .signWith(privateKey, Jwts.SIG.RS256)
