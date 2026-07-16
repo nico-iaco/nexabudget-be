@@ -1,7 +1,9 @@
 package it.iacovelli.nexabudgetbe.service.bank;
 
+import it.iacovelli.nexabudgetbe.dto.bank.BankInstitutionDto;
 import it.iacovelli.nexabudgetbe.dto.bank.NormalizedBankTransaction;
 import it.iacovelli.nexabudgetbe.dto.enablebanking.EnableBankingAmount;
+import it.iacovelli.nexabudgetbe.dto.enablebanking.EnableBankingAspsp;
 import it.iacovelli.nexabudgetbe.dto.enablebanking.EnableBankingParty;
 import it.iacovelli.nexabudgetbe.dto.enablebanking.EnableBankingTransaction;
 import it.iacovelli.nexabudgetbe.model.Account;
@@ -42,6 +44,21 @@ class EnableBankingAggregationProviderTest {
     @Test
     void getProvider_returnsEnableBanking() {
         assertEquals(BankProvider.ENABLE_BANKING, provider.getProvider());
+    }
+
+    @Test
+    void getInstitutions_encodesNameAndCountryIntoId() {
+        EnableBankingAspsp aspsp = new EnableBankingAspsp();
+        aspsp.setName("BBVA");
+        aspsp.setCountry("IT");
+        when(enableBankingService.getAspsps("IT")).thenReturn(List.of(aspsp));
+
+        List<BankInstitutionDto> result = provider.getInstitutions("IT");
+
+        assertEquals(1, result.size());
+        // startLink() fa split("\\|") su questo id per ricavare aspspName/aspspCountry: senza il
+        // country incluso qui, l'autorizzazione Enable Banking fallisce con 422 (country=null).
+        assertEquals("BBVA|IT", result.get(0).getId());
     }
 
     @Test

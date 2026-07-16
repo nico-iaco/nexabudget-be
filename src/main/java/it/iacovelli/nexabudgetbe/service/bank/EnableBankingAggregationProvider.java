@@ -50,7 +50,7 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
 
     private BankInstitutionDto toInstitutionDto(EnableBankingAspsp aspsp) {
         return BankInstitutionDto.builder()
-                .id(aspsp.getName())
+                .id(aspsp.getName() + "|" + aspsp.getCountry())
                 .name(aspsp.getName())
                 .countries(aspsp.getCountry() != null ? List.of(aspsp.getCountry()) : List.of())
                 .logo(aspsp.getLogo())
