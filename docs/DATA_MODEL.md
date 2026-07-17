@@ -53,10 +53,12 @@ erDiagram
         string name
         enum type "CONTO_CORRENTE|RISPARMIO|INVESTIMENTO|CONTANTI"
         string currency
-        string requisition_id "GoCardless"
-        string external_account_id "GoCardless"
+        enum provider "GOCARDLESS|ENABLE_BANKING, nullable"
+        string requisition_id "provider-agnostic: GoCardless requisitionId or Enable Banking session_id"
+        string external_account_id "provider-agnostic: GoCardless account id or Enable Banking account uid"
         timestamp last_external_sync
         boolean is_synchronizing "atomic sync lock"
+        boolean requires_reauth "consent/session expired for either provider"
         boolean deleted
         timestamp deleted_at
         timestamp created_at
@@ -185,6 +187,7 @@ erDiagram
 | Enum | Values |
 | :--- | :--- |
 | `AccountType` | `CONTO_CORRENTE`, `RISPARMIO`, `INVESTIMENTO`, `CONTANTI` |
+| `BankProvider` | `GOCARDLESS`, `ENABLE_BANKING` — `Account.provider`, nullable (null = manual account, never linked) |
 | `TransactionType` | `IN`, `OUT` (signed convention: net = OUT − IN) |
 | `HoldingSource` | `MANUAL`, `BINANCE`, `COINBASE` |
 | `RecurrenceType` | `MONTHLY`, `QUARTERLY`, `YEARLY` |
@@ -206,3 +209,4 @@ Because DDL mode is `validate`, the following schema changes must be applied man
 * **Phase 4** — add `transactions.deleted`, `transactions.deleted_at`, `accounts.deleted`, `accounts.deleted_at`; create `budget_templates`, `budget_alerts`.
 * **Phase 5** — add `transactions.exchange_rate`, `original_currency`, `original_amount`, `import_hash`; create `audit_logs`, `api_keys`.
 * **Net category accounting** — deduplicate `(user_id, name)` rows in `categories`, remap dependent `transactions.category_id` / `budgets.category_id`, then `DROP CONSTRAINT uk_category_user_name_type`, `DROP COLUMN transaction_type`, `ADD CONSTRAINT uk_category_user_name UNIQUE (user_id, name)`.
+* **Enable Banking integration** (`db/V12__add_bank_provider_to_accounts.sql`) — add `accounts.provider VARCHAR(32)` (nullable); backfill existing GoCardless-linked rows (`requisition_id`/`external_account_id` not null) to `'GOCARDLESS'`. See [ENABLE_BANKING_SETUP.md](ENABLE_BANKING_SETUP.md) for the provider setup itself.

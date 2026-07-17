@@ -30,6 +30,12 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
 
        Optional<Transaction> findByExternalId(String externalId);
 
+       /**
+        * Dedup scoped per conto: usata dall'import multi-provider per evitare collisioni qualora due
+        * provider diversi emettano lo stesso externalId su conti differenti.
+        */
+       Optional<Transaction> findByExternalIdAndAccount(String externalId, Account account);
+
        boolean existsByImportHash(String importHash);
 
        @Query("SELECT t FROM Transaction t JOIN FETCH t.account LEFT JOIN FETCH t.category WHERE t.user = :user")
