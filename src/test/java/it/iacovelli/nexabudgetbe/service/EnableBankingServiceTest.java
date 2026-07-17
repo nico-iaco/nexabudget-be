@@ -99,6 +99,50 @@ class EnableBankingServiceTest {
         assertEquals(first, second, "il token andrebbe rigenerato solo in prossimità della scadenza");
     }
 
+    @Test
+    void isConfigured_isTrueAfterSuccessfulInit() {
+        assertTrue(enableBankingService.isConfigured());
+    }
+
+    @Test
+    void init_withBlankCredentials_doesNotThrow_andLeavesServiceUnconfigured() {
+        EnableBankingService unconfigured = new EnableBankingService(new ObjectMapper());
+        ReflectionTestUtils.setField(unconfigured, "baseUrl", "https://api.enablebanking.com");
+        ReflectionTestUtils.setField(unconfigured, "appId", "");
+        ReflectionTestUtils.setField(unconfigured, "privateKeyPem", "");
+
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(unconfigured, "init"),
+                "l'app deve avviarsi anche senza credenziali Enable Banking (provider opzionale)");
+        assertFalse(unconfigured.isConfigured());
+    }
+
+    @Test
+    void init_withMalformedPrivateKey_doesNotThrow_andLeavesServiceUnconfigured() {
+        EnableBankingService unconfigured = new EnableBankingService(new ObjectMapper());
+        ReflectionTestUtils.setField(unconfigured, "baseUrl", "https://api.enablebanking.com");
+        ReflectionTestUtils.setField(unconfigured, "appId", TEST_APP_ID);
+        ReflectionTestUtils.setField(unconfigured, "privateKeyPem", "-----BEGIN PRIVATE KEY-----\nnot-valid-base64!!\n-----END PRIVATE KEY-----");
+
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(unconfigured, "init"),
+                "una private key non valida non deve impedire l'avvio dell'applicazione");
+        assertFalse(unconfigured.isConfigured());
+    }
+
+    @Test
+    void currentToken_whenNotConfigured_throwsInsteadOfNpe() {
+        EnableBankingService unconfigured = new EnableBankingService(new ObjectMapper());
+        ReflectionTestUtils.setField(unconfigured, "baseUrl", "https://api.enablebanking.com");
+        ReflectionTestUtils.setField(unconfigured, "appId", "");
+        ReflectionTestUtils.setField(unconfigured, "privateKeyPem", "");
+        ReflectionTestUtils.invokeMethod(unconfigured, "init");
+
+        Exception ex = assertThrows(Exception.class,
+                () -> ReflectionTestUtils.invokeMethod(unconfigured, "currentToken"));
+        // invokeMethod tramite reflection incapsula l'eccezione originale: verifichiamo il messaggio.
+        assertTrue(ex.getMessage() != null && ex.getMessage().contains("non configurato")
+                || (ex.getCause() != null && ex.getCause().getMessage() != null && ex.getCause().getMessage().contains("non configurato")));
+    }
+
     /** Deriva la chiave pubblica dalla private key di test per verificare la firma nel test. */
     private PublicKey derivePublicKey() {
         try {

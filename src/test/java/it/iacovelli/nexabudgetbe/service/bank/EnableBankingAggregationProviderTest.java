@@ -14,19 +14,24 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
  * Unit test della mappatura EnableBankingTransaction -> NormalizedBankTransaction: verifica
  * che il segno derivi da credit_debit_indicator, la data preferisca value_date su booking_date,
- * e la descrizione sia risolta da remittance_information.
+ * e la descrizione sia risolta da remittance_information. Copre anche il fallback grazioso quando
+ * Enable Banking non è configurato (provider opzionale, vedi EnableBankingService.isConfigured()).
  */
 @ExtendWith(MockitoExtension.class)
 class EnableBankingAggregationProviderTest {
@@ -38,6 +43,10 @@ class EnableBankingAggregationProviderTest {
 
     @BeforeEach
     void setUp() {
+        // Configurato di default in tutti i test tranne quelli della sezione "not configured" sotto,
+        // che sovrascrivono esplicitamente lo stub. lenient() evita fallimenti di strict-stubbing
+        // per i test che non arrivano mai a controllare isConfigured() (es. getProvider()).
+        lenient().when(enableBankingService.isConfigured()).thenReturn(true);
         provider = new EnableBankingAggregationProvider(enableBankingService);
     }
 
@@ -105,6 +114,48 @@ class EnableBankingAggregationProviderTest {
         NormalizedBankTransaction nt = provider.fetchTransactions(account, null).get(0);
 
         assertEquals("Comune di Milano", nt.getCreditorName());
+    }
+
+    @Test
+    void getInstitutions_whenNotConfigured_throws503WithoutCallingService() {
+        when(enableBankingService.isConfigured()).thenReturn(false);
+
+        ResponseStatusException ex = assertThrows(ResponseStatusException.class,
+                () -> provider.getInstitutions("IT"));
+        assertEquals(503, ex.getStatusCode().value());
+        org.mockito.Mockito.verify(enableBankingService, org.mockito.Mockito.never()).getAspsps(anyString());
+    }
+
+    @Test
+    void startLink_whenNotConfigured_throws503() {
+        when(enableBankingService.isConfigured()).thenReturn(false);
+
+        assertThrows(ResponseStatusException.class,
+                () -> provider.startLink("BBVA|IT", UUID.randomUUID()));
+    }
+
+    @Test
+    void completeLink_whenNotConfigured_throws503() {
+        when(enableBankingService.isConfigured()).thenReturn(false);
+
+        assertThrows(ResponseStatusException.class,
+                () -> provider.completeLink(UUID.randomUUID(), null, "some-code"));
+    }
+
+    @Test
+    void getProviderAccounts_whenNotConfigured_throws503() {
+        when(enableBankingService.isConfigured()).thenReturn(false);
+
+        assertThrows(ResponseStatusException.class,
+                () -> provider.getProviderAccounts(accountWithUid("uid-1")));
+    }
+
+    @Test
+    void fetchTransactions_whenNotConfigured_throws503() {
+        when(enableBankingService.isConfigured()).thenReturn(false);
+
+        assertThrows(ResponseStatusException.class,
+                () -> provider.fetchTransactions(accountWithUid("uid-1"), LocalDate.now()));
     }
 
     private Account accountWithUid(String uid) {

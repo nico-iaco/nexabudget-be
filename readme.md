@@ -1,6 +1,6 @@
 # NexaBudget - Backend
 
-This is the backend service for **NexaBudget**, a personal finance management application. It provides a robust, highly scalable RESTful API built on **Java 25** and **Spring Boot 4.x**, featuring integrations with Open Banking, cryptocurrency exchanges (Binance, Coinbase), and Google Gemini AI.
+This is the backend service for **NexaBudget**, a personal finance management application. It provides a robust, highly scalable RESTful API built on **Java 25** and **Spring Boot 4.x**, featuring integrations with Open Banking (GoCardless, Enable Banking), cryptocurrency exchanges (Binance, Coinbase), and Google Gemini AI.
 
 ## 📚 Documentation Index
 
@@ -10,7 +10,8 @@ We have organized the technical documentation into specialized modules within th
 | :--- | :--- |
 | **[Architecture Guide](./docs/ARCHITECTURE.md)** | Layered design, Virtual Threads, async processing, and system diagrams. |
 | **[Data Model](./docs/DATA_MODEL.md)** | PostgreSQL relational schema, MongoDB vector store, and ER diagrams. |
-| **[API & Features Guide](./docs/API_GUIDE.md)** | Breakdown of core features (GoCardless, Binance, Coinbase, AI Reports) and controller list. |
+| **[API & Features Guide](./docs/API_GUIDE.md)** | Breakdown of core features (GoCardless, Enable Banking, Binance, Coinbase, AI Reports) and controller list. |
+| **[Enable Banking Setup Guide](./docs/ENABLE_BANKING_SETUP.md)** | Registering an Enable Banking application, generating the RSA key pair, env vars, and troubleshooting. |
 | **[Security Architecture](./docs/SECURITY.md)** | JWT, M2M API Keys, cryptography, and rate limiting details. |
 | **[Deployment Guide](./docs/DEPLOYMENT.md)** | Docker, GraalVM Native Image, and Kubernetes Kustomize instructions. |
 
@@ -46,8 +47,10 @@ Ensure the following environment variables are set (e.g., in a `.env` file):
 | `GEMINI_API_KEY` | Your Google Gemini API Key |
 | `MONGODB_URI` | `mongodb://localhost:27017/nexabudget-be` |
 | `CRYPTO_ENCRYPTION_KEY` | 32-char key for Binance and Coinbase API encryption |
+| `ENABLEBANKING_APP_ID`, `ENABLEBANKING_PRIVATE_KEY`, `ENABLEBANKING_REDIRECT_URL` | Enable Banking Cloud API auth — see [Enable Banking Setup Guide](./docs/ENABLE_BANKING_SETUP.md) |
 
 > Note: Coinbase Advanced Trade credentials (API Key Name + Private Key) are stored per user via the API and encrypted with `CRYPTO_ENCRYPTION_KEY`.
+> Note: Enable Banking is **optional** — if `ENABLEBANKING_APP_ID`/`ENABLEBANKING_PRIVATE_KEY` are unset or invalid, the app still starts normally (GoCardless keeps working); Enable Banking endpoints simply respond `503` until configured. See the [Enable Banking Setup Guide](./docs/ENABLE_BANKING_SETUP.md) to enable it.
 
 ### 4. Build and Run
 

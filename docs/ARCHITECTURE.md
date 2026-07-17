@@ -2,7 +2,7 @@
 
 ## 1. System Overview
 
-NexaBudget is a comprehensive personal finance management application. The backend service is designed as a robust RESTful API built on **Java 25** and **Spring Boot 4.0.5**. It adopts a strict layered architecture pattern, optimizing for high scalability, secure data handling, and seamless integration with modern external systems like AI (Google Gemini) and Open Banking (GoCardless).
+NexaBudget is a comprehensive personal finance management application. The backend service is designed as a robust RESTful API built on **Java 25** and **Spring Boot 4.0.5**. It adopts a strict layered architecture pattern, optimizing for high scalability, secure data handling, and seamless integration with modern external systems like AI (Google Gemini) and Open Banking (GoCardless, Enable Banking).
 
 ## 2. Technology Stack
 
@@ -11,7 +11,7 @@ NexaBudget is a comprehensive personal finance management application. The backe
 * **Vector Database:** MongoDB Atlas (Utilized for AI semantic caching and vector embeddings)
 * **Caching:** Valkey / Redis via Spring Data Redis (Lettuce client) and Spring Cache abstraction (used for exchange rates, crypto pricing, GoCardless metadata, async-job status)
 * **AI Integration:** Google Gemini via Spring AI (Handles transaction categorization, financial analysis, and chatbot functionalities)
-* **Security:** Spring Security (stateless JWT via `jjwt 0.13`, API Keys for M2M, BCrypt for passwords, Bucket4j-based per-IP rate limiting on auth endpoints)
+* **Security:** Spring Security (stateless JWT via `jjwt 0.13`, API Keys for M2M, BCrypt for passwords, Bucket4j-based per-IP rate limiting on auth endpoints). `jjwt` is also used server-side to sign the RS256 application JWTs required by the Enable Banking Cloud API — a separate concern from user session auth.
 * **PDF Generation:** OpenPDF 1.3.32 for AI report rendering
 * **CSV Parsing:** Apache Commons CSV 1.12 for transaction import
 * **Crypto Integrations:** Binance Spot API, Coinbase Advanced Trade API
@@ -28,7 +28,7 @@ The application strictly adheres to a standard 4-tier RESTful architecture, ensu
 2. **Business Layer (Services):**
    - Contains the core business rules and logic.
    - Orchestrates transactions (`@Transactional`).
-   - Interacts with external APIs (GoCardless, Binance, Coinbase, Gemini) and abstracts their complexities.
+   - Interacts with external APIs (GoCardless, Enable Banking, Binance, Coinbase, Gemini) and abstracts their complexities.
 3. **Data Access Layer (Repositories):**
    - Utilizes Spring Data JPA interfaces for PostgreSQL interactions.
    - Utilizes Spring Data MongoDB interfaces for vector operations.
@@ -54,7 +54,9 @@ graph TD
     
     Services --> |Distributed Locks / Cache| Redis[(Valkey/Redis)]
     
-    Services -.-> |External API| GC[GoCardless Open Banking]
+    Services --> BankStrategy[BankAggregationProvider\nstrategy dispatch]
+    BankStrategy -.-> |External API, via integrator| GC[GoCardless Open Banking]
+    BankStrategy -.-> |External API, direct JWT auth| EB[Enable Banking Open Banking]
     Services -.-> |External API| Binance[Binance API]
    Services -.-> |External API| Coinbase[Coinbase Advanced Trade API]
     Services -.-> |External API| Gemini[Google Gemini\nSpring AI]
@@ -86,6 +88,32 @@ The application uses **Spring Cache backed by Spring Data Redis (Lettuce client)
 - **Caching:** Frequent but slow operations are cached — default TTL 6h for most caches and 5m for crypto prices. `CacheWarmupRunner` pre-populates the exchange-rate cache (USD → EUR/GBP) at startup. Cached methods use `unless` conditions to avoid caching empty fallback results, so retries are not blocked. Async AI-report job status is also tracked through cached entries.
 - **Concurrency control on GoCardless sync:** Race conditions are prevented by a **database-level atomic lock**, not a Redis lock: `AccountService.tryAcquireSyncLock()` calls `AccountRepository.markSynchronizing()`, a JPQL `UPDATE accounts SET is_synchronizing = true WHERE id = :id AND is_synchronizing = false`. The row count returned tells the caller whether it acquired the lock.
 
+### 5.3.1 Bank Aggregation Strategy Pattern
+
+Bank account linking and transaction sync are abstracted behind a provider-agnostic
+`service.bank.BankAggregationProvider` interface (`getInstitutions`, `startLink`, `completeLink`,
+`getProviderAccounts`, `fetchTransactions`), so `AccountService` never talks to a provider SDK
+directly:
+
+- `GocardlessAggregationProvider` — thin adapter over the pre-existing `GocardlessService` (which
+  itself calls the external `gocardless-integrator` microservice; unchanged by this pattern).
+- `EnableBankingAggregationProvider` — wraps `EnableBankingService`, which calls Enable Banking's
+  Cloud API directly (JWT RS256, no intermediary — see [ENABLE_BANKING_SETUP.md](ENABLE_BANKING_SETUP.md)).
+
+`AccountService` holds a `Map<BankProvider, BankAggregationProvider>`, built from every registered
+implementation bean, and dispatches on `Account.provider` (enum `GOCARDLESS` / `ENABLE_BANKING`,
+nullable — `null` means a manual, never-linked account). `Account.requisitionId` and
+`Account.externalAccountId` are intentionally generic, provider-agnostic columns: GoCardless stores
+its requisition id / provider account id there, Enable Banking stores its `session_id` / account
+`uid`. Both `syncAccountTransactions()` (lock acquisition, 6-hour freshness guard, balance
+alignment, `requiresReauth` handling) and the transaction-import/dedup path are fully
+provider-agnostic, operating on a normalized `NormalizedBankTransaction` DTO that each provider
+adapter produces from its own wire format.
+
+The two providers differ in **link topology**: GoCardless completes a link via polling
+(`getProviderAccounts`), while Enable Banking requires an explicit `completeLink` step exchanging
+an OAuth-style `code` for a session — see [API_GUIDE.md](API_GUIDE.md#bank-aggregation-gocardless--enable-banking).
+
 ### 5.4 Cross-Cutting Concerns (AOP & Filters)
 
 Aspect-Oriented Programming (AOP) and Servlet Filters are used to cleanly implement system-wide behaviors:
@@ -95,15 +123,33 @@ Aspect-Oriented Programming (AOP) and Servlet Filters are used to cleanly implem
 - **Exception Handling:** A `@RestControllerAdvice` (`GlobalExceptionHandler`) intercepts all unhandled exceptions (e.g., `EntityNotFoundException`, `IllegalArgumentException`) and formats them into a standardized JSON error response.
 - **Logging Filter:** `LoggingFilter` intercepts incoming requests and outgoing responses to log execution time and inject correlation IDs (`requestId`) and user context into the MDC. The log pattern includes `[%X{requestId}] [%X{username}]`.
 - **Rate Limiting:** `RateLimitingFilter` (Bucket4j token bucket per client IP) protects authentication endpoints from brute-force. Configurable via `security.rate-limit.requests-per-minute` (default `10`) and `security.rate-limit.enabled`.
-- **Resilience:** Spring Retry (`@EnableRetry` on `AsyncConfig`) decorates GoCardless and ExchangeRate calls with `@Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = 1s × 2)`. HTTP timeouts: GoCardless 5 s / 10 s, Binance 5 s / 5 s, ExchangeRate 5 s / 5 s.
+- **Resilience:** Spring Retry (`@EnableRetry` on `AsyncConfig`) decorates GoCardless, Enable Banking, and ExchangeRate calls with `@Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = 1s × 2)`. HTTP timeouts: GoCardless 5 s / 10 s, Enable Banking 5 s / 10 s, Binance 5 s / 5 s, ExchangeRate 5 s / 5 s. A recurring gotcha with this stack: any `@Retryable` method that has an `@Recover` also requires a matching `@Recover` overload for any custom checked-style exception thrown from it (e.g. `GocardlessRequisitionExpiredException`, `BankReauthRequiredException`) — otherwise Spring Retry masks it with `ExhaustedRetryException: Cannot locate recovery method`. Both `GocardlessService` and `EnableBankingService` include a dedicated rethrow-only `@Recover` for this reason.
 
 ## 6. External Integrations Workflow
 
-### 6.1 Open Banking (GoCardless)
+### 6.1 Open Banking — GoCardless + Enable Banking
 
-1. **Link Initiation:** The user requests to link a bank. The backend calls GoCardless to create a requisition and returns a link.
-2. **User Consent:** The user completes the flow on the bank's page.
-3. **Synchronization:** NexaBudget fetches accounts and transactions. Data is sanitized, duplicated entries are prevented, and amounts are converted if the currency differs from the primary account setting.
+Both providers converge on the same conceptual flow, dispatched through the
+`BankAggregationProvider` strategy described in §5.3.1:
+
+1. **Link Initiation:** The user picks a provider and a bank. The backend asks that provider to
+   start a consent flow and returns a redirect URL.
+   - GoCardless: creates a requisition via the `gocardless-integrator` microservice.
+   - Enable Banking: calls `POST /auth` directly on `api.enablebanking.com` with a JWT signed
+     in-app; `state` carries the local `accountId` so the (single, static) callback route can
+     identify which account the flow belongs to.
+2. **User Consent:** The user completes the flow on the bank's page and is redirected back.
+   - GoCardless: the frontend polls `GET /api/banking/gocardless/{id}/accounts` until linked.
+   - Enable Banking: the frontend's callback page extracts `code`/`state` from the query string and
+     calls `POST /api/banking/enable-banking/{id}/session` to exchange the code for a session.
+3. **Synchronization:** NexaBudget fetches accounts and transactions through the resolved provider
+   adapter, normalizes them into `NormalizedBankTransaction`, and imports via the shared,
+   provider-agnostic dedup/import path in `TransactionService`. Duplicated entries are prevented
+   (externalId scoped per account), and amounts are converted if the currency differs from the
+   primary account setting.
+
+See [ENABLE_BANKING_SETUP.md](ENABLE_BANKING_SETUP.md) for registering an Enable Banking
+application, generating the RSA key pair, and required environment variables.
 
 ### 6.2 AI Engine (Google Gemini)
 

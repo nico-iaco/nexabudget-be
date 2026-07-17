@@ -69,6 +69,9 @@ Kubernetes manifests are managed using **Kustomize**, structured in the `k8s/` d
 | `REDIS_USERNAME`, `REDIS_PASSWORD`, `REDIS_SSL_ENABLED` | Optional Redis auth/TLS | SSL default `false` |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PWD`, `SMTP_AUTH`, `SMTP_STARTTLS` | Outbound mail | dev uses Mailhog on `localhost:1025` |
 | `MAIL_FROM` | Sender address | default `noreply@nexabudget.it` |
+| `ENABLEBANKING_APP_ID`, `ENABLEBANKING_PRIVATE_KEY` | Enable Banking Cloud API auth | **Optional** — app id + RSA private key (PKCS8 PEM) from the control panel, see [ENABLE_BANKING_SETUP.md](ENABLE_BANKING_SETUP.md). If unset or unparseable, the app still boots normally and Enable Banking endpoints respond `503` instead of crashing startup — GoCardless is unaffected either way. |
+| `ENABLEBANKING_REDIRECT_URL` | Enable Banking consent callback | Required only once the two vars above are set. **Must be an absolute URL**, registered verbatim in the control panel — relative paths are rejected by Enable Banking (422). |
+| `ENABLEBANKING_BASE_URL`, `ENABLEBANKING_CONSENT_VALID_DAYS` | Enable Banking optional overrides | default `https://api.enablebanking.com`, `90` days |
 | `VIRTUAL_THREADS_ENABLED` | Toggle Loom virtual threads | default `true` |
 | `GEMINI_MODEL`, `NEXABUDGET_CHAT_MODEL`, `NEXABUDGET_REPORT_MODEL` | AI model overrides | — |
 | `NEXABUDGET_BULK_CATEGORIZATION_TIMEOUT_SECONDS` | Bulk AI categorization timeout | default `120` |

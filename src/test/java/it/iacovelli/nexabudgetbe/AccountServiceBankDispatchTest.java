@@ -88,6 +88,11 @@ class AccountServiceBankDispatchTest {
                 .passwordHash("hashedPassword")
                 .build();
         testUser = userRepository.save(testUser);
+
+        // Enable Banking è un provider opzionale (EnableBankingAggregationProvider.requireConfigured()):
+        // il mock di EnableBankingService restituirebbe altrimenti false di default, bloccando ogni
+        // chiamata prima ancora di raggiungere gli stub su getTransactions(...) sotto.
+        when(enableBankingService.isConfigured()).thenReturn(true);
     }
 
     @AfterEach

@@ -85,6 +85,13 @@ public class EnableBankingService {
     private volatile String cachedToken;
     private volatile Instant cachedTokenExpiry = Instant.EPOCH;
 
+    /**
+     * false quando ENABLEBANKING_APP_ID/ENABLEBANKING_PRIVATE_KEY sono assenti o la key non è
+     * parsabile: il provider Enable Banking resta disabilitato a runtime invece di impedire
+     * l'avvio dell'intera applicazione (utile per ambienti che usano solo GoCardless).
+     */
+    private volatile boolean configured;
+
     public EnableBankingService(ObjectMapper objectMapper) {
         this.objectMapper = objectMapper;
     }
@@ -102,8 +109,27 @@ public class EnableBankingService {
                 .defaultHeader("Content-Type", "application/json")
                 .defaultHeader("Accept", "application/json")
                 .build();
-        this.privateKey = parsePrivateKey(privateKeyPem);
-        logger.info("EnableBankingService inizializzato con baseUrl: {}", baseUrl);
+
+        if (appId == null || appId.isBlank() || privateKeyPem == null || privateKeyPem.isBlank()) {
+            logger.warn("Enable Banking non configurato (ENABLEBANKING_APP_ID/ENABLEBANKING_PRIVATE_KEY " +
+                    "mancanti): il provider Enable Banking sarà disabilitato a runtime, GoCardless resta disponibile.");
+            this.configured = false;
+            return;
+        }
+        try {
+            this.privateKey = parsePrivateKey(privateKeyPem);
+            this.configured = true;
+            logger.info("EnableBankingService inizializzato con baseUrl: {}", baseUrl);
+        } catch (Exception e) {
+            logger.error("ENABLEBANKING_PRIVATE_KEY non valida: il provider Enable Banking sarà disabilitato " +
+                    "a runtime invece di impedire l'avvio dell'applicazione. Motivo: {}", e.getMessage());
+            this.configured = false;
+        }
+    }
+
+    /** True se app_id e private key sono stati caricati correttamente all'avvio. */
+    public boolean isConfigured() {
+        return configured;
     }
 
     /**
@@ -132,6 +158,11 @@ public class EnableBankingService {
      * Cache in memoria fino a poco prima della scadenza per evitare di rifirmare ad ogni richiesta.
      */
     private synchronized String currentToken() {
+        // Difesa in profondità: EnableBankingAggregationProvider verifica isConfigured() prima di
+        // invocare qualsiasi metodo pubblico, quindi questo ramo non dovrebbe mai eseguire in pratica.
+        if (!configured) {
+            throw new IllegalStateException("Enable Banking non configurato: ENABLEBANKING_APP_ID/ENABLEBANKING_PRIVATE_KEY mancanti o non validi");
+        }
         Instant now = Instant.now();
         if (cachedToken != null && now.isBefore(cachedTokenExpiry.minus(TOKEN_EXPIRY_SAFETY_MARGIN))) {
             return cachedToken;

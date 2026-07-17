@@ -8,7 +8,9 @@ import it.iacovelli.nexabudgetbe.model.Account;
 import it.iacovelli.nexabudgetbe.model.BankProvider;
 import it.iacovelli.nexabudgetbe.service.EnableBankingService;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -41,8 +43,23 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
         return BankProvider.ENABLE_BANKING;
     }
 
+    /**
+     * Enable Banking è un provider opzionale: se ENABLEBANKING_APP_ID/ENABLEBANKING_PRIVATE_KEY
+     * non sono configurati (o non validi), EnableBankingService.init() disabilita il servizio senza
+     * impedire l'avvio dell'app (GoCardless resta comunque disponibile). Questo è l'unico punto in
+     * cui lo stato viene verificato: nessuno dei metodi sotto invoca EnableBankingService se non
+     * dopo questo controllo, quindi currentToken() non dovrebbe mai vedere configured=false.
+     */
+    private void requireConfigured() {
+        if (!enableBankingService.isConfigured()) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "Enable Banking non configurato in questo ambiente (ENABLEBANKING_APP_ID/ENABLEBANKING_PRIVATE_KEY mancanti)");
+        }
+    }
+
     @Override
     public List<BankInstitutionDto> getInstitutions(String countryCode) {
+        requireConfigured();
         return enableBankingService.getAspsps(countryCode).stream()
                 .map(this::toInstitutionDto)
                 .toList();
@@ -65,6 +82,7 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
      */
     @Override
     public BankLinkResult startLink(String institutionId, java.util.UUID localAccountId) {
+        requireConfigured();
         String[] parts = institutionId.split("\\|", 2);
         String aspspName = parts[0];
         String aspspCountry = parts.length > 1 ? parts[1] : null;
@@ -82,6 +100,7 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
 
     @Override
     public BankLinkCompletionResult completeLink(java.util.UUID localAccountId, String providerReference, String code) {
+        requireConfigured();
         EnableBankingSessionResponse session = enableBankingService.createSession(code);
 
         List<NormalizedBankAccount> accounts = session.getAccounts() != null
@@ -101,6 +120,7 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
 
     @Override
     public BankLinkCompletionResult getProviderAccounts(Account account) {
+        requireConfigured();
         // Enable Banking non espone un endpoint di poll separato: i conti sono noti solo al momento
         // della creazione della sessione (completeLink). Una volta collegato l'account locale,
         // basta l'externalAccountId (uid) già salvato per sincronizzare le transazioni.
@@ -112,6 +132,7 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
 
     @Override
     public List<NormalizedBankTransaction> fetchTransactions(Account account, LocalDate startDate) {
+        requireConfigured();
         String dateFrom = startDate != null ? startDate.format(DateTimeFormatter.ISO_LOCAL_DATE) : null;
         List<EnableBankingTransaction> transactions = enableBankingService.getTransactions(account.getExternalAccountId(), dateFrom);
         return transactions.stream().map(this::toNormalized).toList();
