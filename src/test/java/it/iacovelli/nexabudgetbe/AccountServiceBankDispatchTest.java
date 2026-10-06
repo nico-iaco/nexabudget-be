@@ -132,11 +132,23 @@ class AccountServiceBankDispatchTest {
 
     /** Attende il completamento della sincronizzazione asincrona (bounded, senza dipendenze esterne). */
     private Account waitForSyncOutcome(java.util.UUID accountId) throws InterruptedException {
+        return waitForSyncOutcome(accountId, null);
+    }
+
+    /**
+     * Come {@link #waitForSyncOutcome(java.util.UUID)}, ma considera concluso il sync solo se
+     * {@code lastExternalSync} è successivo a {@code syncedAfter}: serve quando l'account ha già un
+     * lastExternalSync da un giro precedente, altrimenti il test proseguirebbe (e il tearDown
+     * cancellerebbe i dati) mentre il sync asincrono è ancora in esecuzione.
+     */
+    private Account waitForSyncOutcome(java.util.UUID accountId, java.time.LocalDateTime syncedAfter) throws InterruptedException {
         long deadline = System.currentTimeMillis() + 5000;
         while (System.currentTimeMillis() < deadline) {
             Account a = accountRepository.findById(accountId).orElseThrow();
+            boolean synced = a.getLastExternalSync() != null
+                    && (syncedAfter == null || a.getLastExternalSync().isAfter(syncedAfter));
             boolean settled = Boolean.FALSE.equals(a.getIsSynchronizing())
-                    && (a.getLastExternalSync() != null || Boolean.TRUE.equals(a.getRequiresReauth()));
+                    && (synced || Boolean.TRUE.equals(a.getRequiresReauth()));
             if (settled) {
                 return a;
             }
@@ -178,12 +190,13 @@ class AccountServiceBankDispatchTest {
         waitForSyncOutcome(account.getId());
 
         // Forza un secondo giro di sync resettando la guardia delle 6h e il lock.
+        java.time.LocalDateTime forcedLastSync = java.time.LocalDateTime.now().minusHours(7);
         Account afterFirst = accountRepository.findById(account.getId()).orElseThrow();
-        afterFirst.setLastExternalSync(java.time.LocalDateTime.now().minusHours(7));
+        afterFirst.setLastExternalSync(forcedLastSync);
         accountRepository.save(afterFirst);
 
         accountService.syncAccountTransactions(account.getId(), testUser, new SyncBankTransactionsRequest());
-        waitForSyncOutcome(account.getId());
+        waitForSyncOutcome(account.getId(), forcedLastSync);
 
         List<Transaction> transactions = transactionRepository.findByAccount(accountRepository.findById(account.getId()).orElseThrow());
         assertEquals(1, transactions.size(), "la stessa externalId sullo stesso conto non deve essere reimportata");
