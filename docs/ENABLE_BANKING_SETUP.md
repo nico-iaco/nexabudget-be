@@ -20,7 +20,11 @@ environment variables, and validating the integration end-to-end. It assumes fam
 2. Create a new **application**. Choose the environment matching your deployment:
    - **Sandbox** — for development/testing, connects to mock/test ASPSPs only.
    - **Production** — requires a completed onboarding review by Enable Banking before it can reach
-     real banks.
+     real banks. A newly registered production application starts as **pending (restricted)**: until
+     the contractual formalities are cleared it can only access accounts you have **whitelisted**
+     yourself from the control panel (link your own accounts to the application there, logging in to
+     the bank from the control panel). In this state `POST /sessions` succeeds but returns **no
+     accounts** for any account that is not whitelisted — see §7.
 3. Note the **Application ID** (`app_id`) shown in the control panel — this maps to
    `ENABLEBANKING_APP_ID`.
 4. Register the **redirect URL** for the OAuth-style consent callback (see §4 below) — it must be
@@ -139,6 +143,10 @@ The frontend must implement **one dedicated page** at that URL which:
 3. Presents the returned accounts to the user and completes the link via
    `POST /api/banking/enable-banking/{localAccountId}/link`.
 
+If the user cancels or the bank rejects the consent, Enable Banking redirects to the same URL with
+`error` and `error_description` (plus `state`) **instead of** `code`. The page must check for `error`
+first and show `error_description` rather than calling `/session` without a code.
+
 See [API_GUIDE.md](API_GUIDE.md#bank-aggregation-gocardless--enable-banking) for the full endpoint
 reference and the two-step vs. one-step flow difference from GoCardless.
 
@@ -217,6 +225,9 @@ With the app running and the variables above set:
 | `422 {"detail":[{"loc":["body","redirect_url"],"msg":"Input should be a valid URL, relative URL without a base"}]}` | `ENABLEBANKING_REDIRECT_URL` is unset or a relative path (e.g. `/banking/enable-banking/callback`) | Set it to a full absolute URL (`https://.../banking/enable-banking/callback`) matching what's registered in the control panel. |
 | `503 Service Unavailable` on every `/api/banking/enable-banking/...` call, app boots fine | `ENABLEBANKING_APP_ID`/`ENABLEBANKING_PRIVATE_KEY` unset, or the key failed to parse (check startup logs for `ENABLEBANKING_PRIVATE_KEY non valida` or `Enable Banking non configurato`) | This is the intended graceful-degradation behavior, not a crash — Enable Banking is optional. Fix the env vars and restart; `EnableBankingService.isConfigured()` flips to `true` once they're valid. Re-export the key as PKCS8 if the log mentions a parse failure (see §2, `openssl pkcs8 -topk8`). |
 | `requiresReauth: true` on `AccountResponse` after a previously-working sync | Enable Banking session expired (analogous to a GoCardless requisition expiring) | Detected as a 401/403 from `/accounts/{uid}/transactions`, translated to `BankReauthRequiredException`. Re-run the link flow (§4) for that account — same UX as GoCardless re-auth. |
+| Callback reached, but `POST /session` returns `accounts: []` (frontend shows no account to sync); backend logs `Sessione Enable Banking ... creata senza conti` | Production application still **pending/restricted**: only accounts whitelisted on the control panel are returned | Check the application status on the control panel. Either complete the activation with Enable Banking or link (whitelist) your own accounts to the application from the control panel, then repeat the link flow. |
+| Bank asks you to log in twice before redirecting to the callback (e.g. Isybank, Intesa Sanpaolo) | Some ASPSPs run a two-step PSD2 consent: one SCA to list the accounts, a second to authorize access to the chosen ones | Expected bank behavior, not an app bug — the backend issues a single `/auth` redirect. Complete both logins. |
+| `422` on `POST /link` for a specific bank only | Requested `valid_until` exceeds the bank's `maximum_consent_validity` | Handled: `startLink()` caps `ENABLEBANKING_CONSENT_VALID_DAYS` to the ASPSP maximum (Enable Banking returns it in **seconds**, converted to days). If it still happens, the ASPSP was not found in the `/aspsps` list for that country. |
 | Only some transactions imported on a large history | `MAX_TRANSACTION_PAGES` (50) reached while paginating `continuation_key` | A warning is logged (`Raggiunto il limite di 50 pagine ...`); it will fully catch up on the next scheduled sync since dedup is by `externalId` scoped to the account. Not a bug, just a safety cap — no silent data loss across syncs. |
 
 ## 8. Native image builds

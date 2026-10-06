@@ -7,6 +7,8 @@ import it.iacovelli.nexabudgetbe.dto.enablebanking.EnableBankingSessionResponse;
 import it.iacovelli.nexabudgetbe.model.Account;
 import it.iacovelli.nexabudgetbe.model.BankProvider;
 import it.iacovelli.nexabudgetbe.service.EnableBankingService;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
@@ -25,6 +27,10 @@ import java.util.List;
  */
 @Component
 public class EnableBankingAggregationProvider implements BankAggregationProvider {
+
+    private static final Logger logger = LoggerFactory.getLogger(EnableBankingAggregationProvider.class);
+
+    private static final long SECONDS_PER_DAY = 86_400L;
 
     private final EnableBankingService enableBankingService;
 
@@ -71,8 +77,36 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
                 .name(aspsp.getName())
                 .countries(aspsp.getCountry() != null ? List.of(aspsp.getCountry()) : List.of())
                 .logo(aspsp.getLogo())
-                .maxAccessValidForDays(aspsp.getMaximumConsentValidity() != null ? aspsp.getMaximumConsentValidity() : consentValidDays)
+                .maxAccessValidForDays(maxConsentDays(aspsp))
                 .build();
+    }
+
+    /**
+     * Enable Banking espone {@code maximum_consent_validity} in secondi (non in giorni come GoCardless):
+     * va convertito prima di esporlo come {@code maxAccessValidForDays} o di usarlo per {@code valid_until}.
+     */
+    private int maxConsentDays(EnableBankingAspsp aspsp) {
+        Integer seconds = aspsp.getMaximumConsentValidity();
+        if (seconds == null || seconds <= 0) {
+            return consentValidDays;
+        }
+        return (int) Math.max(1, seconds / SECONDS_PER_DAY);
+    }
+
+    /**
+     * Durata del consenso da richiedere: {@code consentValidDays} limitato al massimo supportato dalla banca,
+     * altrimenti /auth viene rifiutato per le banche con validità inferiore. Se l'ASPSP non si trova nella
+     * lista (cache vuota, nome cambiato) si usa il valore configurato.
+     */
+    private int resolveConsentValidDays(String aspspName, String aspspCountry) {
+        if (aspspCountry == null) {
+            return consentValidDays;
+        }
+        return enableBankingService.getAspsps(aspspCountry).stream()
+                .filter(a -> aspspName.equals(a.getName()))
+                .findFirst()
+                .map(a -> Math.min(consentValidDays, maxConsentDays(a)))
+                .orElse(consentValidDays);
     }
 
     /**
@@ -88,7 +122,8 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
         String aspspCountry = parts.length > 1 ? parts[1] : null;
 
         String state = localAccountId.toString();
-        String url = enableBankingService.startAuthorization(aspspName, aspspCountry, redirectUrl, state, consentValidDays);
+        int validForDays = resolveConsentValidDays(aspspName, aspspCountry);
+        String url = enableBankingService.startAuthorization(aspspName, aspspCountry, redirectUrl, state, validForDays);
 
         // Nessun providerReference disponibile finché l'utente non completa il consenso e arriva il code:
         // il session_id verrà salvato in completeLink().
@@ -111,6 +146,14 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
                         .iban(a.getAccountId() != null ? a.getAccountId().getIban() : null)
                         .build()).toList()
                 : List.of();
+
+        if (accounts.isEmpty()) {
+            // Tipico delle applicazioni di produzione non ancora attivate (stato "pending"/restricted):
+            // la sessione viene creata ma Enable Banking restituisce solo i conti whitelistati sul control panel.
+            logger.warn("Sessione Enable Banking {} creata senza conti per l'account locale {}: se l'applicazione " +
+                    "non è ancora attiva, collegare (whitelist) i conti dal control panel Enable Banking",
+                    session.getSessionId(), localAccountId);
+        }
 
         return BankLinkCompletionResult.builder()
                 .providerReference(session.getSessionId())

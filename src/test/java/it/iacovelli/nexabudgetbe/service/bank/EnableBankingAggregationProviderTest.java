@@ -14,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
@@ -24,7 +25,9 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -48,6 +51,8 @@ class EnableBankingAggregationProviderTest {
         // per i test che non arrivano mai a controllare isConfigured() (es. getProvider()).
         lenient().when(enableBankingService.isConfigured()).thenReturn(true);
         provider = new EnableBankingAggregationProvider(enableBankingService);
+        ReflectionTestUtils.setField(provider, "consentValidDays", 90);
+        ReflectionTestUtils.setField(provider, "redirectUrl", "https://app.example/callback");
     }
 
     @Test
@@ -68,6 +73,38 @@ class EnableBankingAggregationProviderTest {
         // startLink() fa split("\\|") su questo id per ricavare aspspName/aspspCountry: senza il
         // country incluso qui, l'autorizzazione Enable Banking fallisce con 422 (country=null).
         assertEquals("BBVA|IT", result.get(0).getId());
+    }
+
+    @Test
+    void getInstitutions_convertsMaximumConsentValidityFromSecondsToDays() {
+        EnableBankingAspsp aspsp = aspsp("Isybank", "IT", 180 * 86_400);
+        when(enableBankingService.getAspsps("IT")).thenReturn(List.of(aspsp));
+
+        BankInstitutionDto dto = provider.getInstitutions("IT").get(0);
+
+        assertEquals(180, dto.getMaxAccessValidForDays());
+    }
+
+    @Test
+    void startLink_clampsConsentValidityToBankMaximum() {
+        when(enableBankingService.getAspsps("IT")).thenReturn(List.of(aspsp("Banca Breve", "IT", 60 * 86_400)));
+        when(enableBankingService.startAuthorization(anyString(), anyString(), anyString(), anyString(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn("https://bank.example/auth");
+
+        provider.startLink("Banca Breve|IT", UUID.randomUUID());
+
+        verify(enableBankingService).startAuthorization(eq("Banca Breve"), eq("IT"), anyString(), anyString(), eq(60));
+    }
+
+    @Test
+    void startLink_usesConfiguredValidityWhenBankAllowsMore() {
+        when(enableBankingService.getAspsps("IT")).thenReturn(List.of(aspsp("Isybank", "IT", 180 * 86_400)));
+        when(enableBankingService.startAuthorization(anyString(), anyString(), anyString(), anyString(), org.mockito.ArgumentMatchers.anyInt()))
+                .thenReturn("https://bank.example/auth");
+
+        provider.startLink("Isybank|IT", UUID.randomUUID());
+
+        verify(enableBankingService).startAuthorization(eq("Isybank"), eq("IT"), anyString(), anyString(), eq(90));
     }
 
     @Test
@@ -181,6 +218,14 @@ class EnableBankingAggregationProviderTest {
         List<NormalizedBankTransaction> result = provider.fetchTransactions(accountWithUid("uid-1"), null);
 
         assertEquals("eb-tx-42", result.get(0).getExternalId());
+    }
+
+    private EnableBankingAspsp aspsp(String name, String country, Integer maxConsentSeconds) {
+        EnableBankingAspsp aspsp = new EnableBankingAspsp();
+        aspsp.setName(name);
+        aspsp.setCountry(country);
+        aspsp.setMaximumConsentValidity(maxConsentSeconds);
+        return aspsp;
     }
 
     private Account accountWithUid(String uid) {
