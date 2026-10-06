@@ -1,10 +1,15 @@
 package it.iacovelli.nexabudgetbe.service.bank;
 
 import it.iacovelli.nexabudgetbe.dto.bank.BankInstitutionDto;
+import it.iacovelli.nexabudgetbe.dto.bank.BankLinkCompletionResult;
+import it.iacovelli.nexabudgetbe.dto.bank.NormalizedBankAccount;
 import it.iacovelli.nexabudgetbe.dto.bank.NormalizedBankTransaction;
 import it.iacovelli.nexabudgetbe.dto.enablebanking.EnableBankingAmount;
+import it.iacovelli.nexabudgetbe.dto.enablebanking.EnableBankingAccount;
 import it.iacovelli.nexabudgetbe.dto.enablebanking.EnableBankingAspsp;
+import it.iacovelli.nexabudgetbe.dto.enablebanking.EnableBankingAspspRef;
 import it.iacovelli.nexabudgetbe.dto.enablebanking.EnableBankingParty;
+import it.iacovelli.nexabudgetbe.dto.enablebanking.EnableBankingSessionResponse;
 import it.iacovelli.nexabudgetbe.dto.enablebanking.EnableBankingTransaction;
 import it.iacovelli.nexabudgetbe.model.Account;
 import it.iacovelli.nexabudgetbe.model.BankProvider;
@@ -177,6 +182,25 @@ class EnableBankingAggregationProviderTest {
 
         assertThrows(ResponseStatusException.class,
                 () -> provider.completeLink(UUID.randomUUID(), null, "some-code"));
+    }
+
+    @Test
+    void completeLink_mapsInstitutionNameFromSessionAspsp() {
+        EnableBankingAccount account = new EnableBankingAccount();
+        account.setUid("uid-1");
+        account.setName("Conto corrente");
+        EnableBankingSessionResponse session = new EnableBankingSessionResponse();
+        session.setSessionId("session-1");
+        session.setAccounts(List.of(account));
+        session.setAspsp(new EnableBankingAspspRef("Intesa Sanpaolo", "IT"));
+        when(enableBankingService.createSession("code-1")).thenReturn(session);
+
+        BankLinkCompletionResult result = provider.completeLink(UUID.randomUUID(), null, "code-1");
+
+        assertEquals("session-1", result.getProviderReference());
+        NormalizedBankAccount normalized = result.getAccounts().get(0);
+        assertEquals("uid-1", normalized.getProviderAccountId());
+        assertEquals("Intesa Sanpaolo", normalized.getInstitutionName());
     }
 
     @Test

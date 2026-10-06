@@ -12,4 +12,6 @@ public class EnableBankingSessionResponse {
     @JsonProperty("session_id")
     private String sessionId;
     private List<EnableBankingAccount> accounts;
+    /** Banca su cui è stato dato il consenso: unica fonte del nome istituto, i singoli conti non lo riportano. */
+    private EnableBankingAspspRef aspsp;
 }

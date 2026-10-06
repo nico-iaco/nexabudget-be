@@ -137,6 +137,7 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
     public BankLinkCompletionResult completeLink(java.util.UUID localAccountId, String providerReference, String code) {
         requireConfigured();
         EnableBankingSessionResponse session = enableBankingService.createSession(code);
+        String institutionName = session.getAspsp() != null ? session.getAspsp().getName() : null;
 
         List<NormalizedBankAccount> accounts = session.getAccounts() != null
                 ? session.getAccounts().stream().map(a -> NormalizedBankAccount.builder()
@@ -144,6 +145,7 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
                         .name(a.getName())
                         .currency(a.getCurrency())
                         .iban(a.getAccountId() != null ? a.getAccountId().getIban() : null)
+                        .institutionName(institutionName)
                         .build()).toList()
                 : List.of();
 
