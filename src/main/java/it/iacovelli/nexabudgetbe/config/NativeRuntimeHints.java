@@ -124,10 +124,10 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
         // Native image doesn't include classpath resources automatically.
         // OpenPDF needs its error message files (.lng), font metrics (.afm),
         // font property files (.properties), and CMap files (.cmap) at runtime.
-        hints.resources().registerPattern("com/lowagie/text/error_messages/*");
-        hints.resources().registerPattern("com/lowagie/text/pdf/fonts/*");
+        hints.resources().registerPattern("org/openpdf/text/error_messages/*");
+        hints.resources().registerPattern("org/openpdf/text/pdf/fonts/*");
         hints.resources().registerPattern("font-fallback/*");
-        hints.resources().registerPattern("com/lowagie/text/version.properties");
+        hints.resources().registerPattern("org/openpdf/text/version.properties");
 
         // ─── Apache Commons CSV ──────────────────────────────────────────────────
         // CSVFormat uses an internal Predicate via lambda — register the top-level class
