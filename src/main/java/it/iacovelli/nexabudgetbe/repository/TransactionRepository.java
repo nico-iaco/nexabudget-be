@@ -15,6 +15,7 @@ import org.springframework.data.domain.Pageable;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -35,6 +36,26 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
         * provider diversi emettano lo stesso externalId su conti differenti.
         */
        Optional<Transaction> findByExternalIdAndAccount(String externalId, Account account);
+
+       /**
+        * Dedup dell'import bancario: native per ignorare {@code @SQLRestriction("deleted = false")}, così una
+        * transazione cancellata dall'utente (o rimossa dal riallineamento duplicati) non viene reimportata
+        * al sync successivo.
+        */
+       @Query(value = "SELECT COUNT(*) FROM transactions WHERE account_id = :accountId AND external_id = :externalId", nativeQuery = true)
+       long countByAccountIdAndExternalIdIncludingDeleted(@Param("accountId") UUID accountId, @Param("externalId") String externalId);
+
+       /** Righe non cancellate del conto che condividono lo stesso externalId con almeno un'altra riga. */
+       @Query("SELECT t FROM Transaction t LEFT JOIN FETCH t.category WHERE t.account = :account AND t.externalId IN " +
+               "(SELECT t2.externalId FROM Transaction t2 WHERE t2.account = :account AND t2.externalId IS NOT NULL " +
+               "GROUP BY t2.externalId HAVING COUNT(t2) > 1)")
+       List<Transaction> findDuplicatedExternalIdsByAccount(@Param("account") Account account);
+
+       @Query("SELECT t FROM Transaction t LEFT JOIN FETCH t.category WHERE t.account = :account AND t.externalId IS NOT NULL " +
+               "AND t.date BETWEEN :start AND :end")
+       List<Transaction> findWithExternalIdByAccountAndDateBetween(@Param("account") Account account,
+                                                                    @Param("start") LocalDate start,
+                                                                    @Param("end") LocalDate end);
 
        boolean existsByImportHash(String importHash);
 
@@ -87,6 +108,10 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
        @Modifying(clearAutomatically = true, flushAutomatically = true)
        @Query(value = "UPDATE transactions SET deleted = true, deleted_at = :now WHERE id = :id AND deleted = false", nativeQuery = true)
        void softDeleteById(@Param("id") UUID id, @Param("now") LocalDateTime now);
+
+       @Modifying(clearAutomatically = true, flushAutomatically = true)
+       @Query(value = "UPDATE transactions SET deleted = true, deleted_at = :now WHERE id IN (:ids) AND deleted = false", nativeQuery = true)
+       int softDeleteByIds(@Param("ids") Collection<UUID> ids, @Param("now") LocalDateTime now);
 
        @Modifying(clearAutomatically = true, flushAutomatically = true)
        @Query(value = "UPDATE transactions SET deleted = true, deleted_at = :now WHERE account_id = :accountId AND deleted = false", nativeQuery = true)

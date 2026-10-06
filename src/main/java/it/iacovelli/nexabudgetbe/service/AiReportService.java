@@ -1,21 +1,14 @@
 package it.iacovelli.nexabudgetbe.service;
 
-import com.google.genai.Models;
-import com.google.genai.types.Content;
-import com.google.genai.types.FunctionCall;
-import com.google.genai.types.GenerateContentConfig;
-import com.google.genai.types.GenerateContentResponse;
-import com.google.genai.types.Part;
-import com.google.genai.types.ThinkingConfig;
 import it.iacovelli.nexabudgetbe.config.CacheConfig;
 import it.iacovelli.nexabudgetbe.dto.AiReportStatusResponse;
-import it.iacovelli.nexabudgetbe.dto.TransactionDto.TransactionResponse;
 import it.iacovelli.nexabudgetbe.model.User;
-import it.iacovelli.nexabudgetbe.service.chat.FinanceToolRegistry;
+import it.iacovelli.nexabudgetbe.service.chat.FinanceTools;
+import it.iacovelli.nexabudgetbe.service.chat.GenAiChatOptionsFactory;
+import it.iacovelli.nexabudgetbe.service.chat.TrackedToolCallbacks;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.apache.commons.csv.CSVFormat;
-import org.apache.commons.csv.CSVPrinter;
+import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
@@ -24,13 +17,8 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
-import java.io.StringWriter;
-import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
-import java.util.ArrayList;
-import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 @Slf4j
@@ -38,7 +26,8 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AiReportService {
 
-    private static final int MAX_TOOL_ITERATIONS = 10;
+    /** Per singola chiamata al modello (bozza e self-review hanno ciascuna il proprio tetto). */
+    private static final int MAX_TOOL_CALLS = 25;
 
     @Value("${nexabudget.ai.report.model}")
     private String reportModelName;
@@ -49,12 +38,15 @@ public class AiReportService {
     @Value("${nexabudget.ai.report.thinking-level}")
     private String thinkingLevel;
 
+    @Value("${nexabudget.ai.report.self-review.enabled:true}")
+    private boolean selfReviewEnabled;
+
     private final TransactionService transactionService;
-    private final Models genaiModels;
+    private final ChatClient chatClient;
+    private final FinanceTools financeTools;
     private final CacheManager cacheManager;
     private final EmailService emailService;
     private final AiReportPdfService aiReportPdfService;
-    private final FinanceToolRegistry financeToolRegistry;
 
     private static final String SYSTEM_PROMPT = """
             Sei un consulente finanziario esperto. Il tuo compito è generare un report finanziario dettagliato e professionale per il periodo dal %s al %s.
@@ -71,17 +63,19 @@ public class AiReportService {
             - getMonthComparison: confronto mese corrente vs precedente
             - getMonthlyProjection: proiezione fine mese basata sul ritmo attuale
             - getCryptoPortfolio: valore portafoglio crypto
+            - getTransactionsInPeriod: elenco grezzo delle transazioni in un intervallo di date
             - searchTransactions: ricerca transazioni con filtri (tipo, categoria, testo)
+            - getTransactionsByCategory: tutte le transazioni di una categoria specifica
 
             ISTRUZIONI OPERATIVE:
-            1. Usa i tool per raccogliere tutti i dati necessari PRIMA di scrivere il report. Non inventare dati: usa esclusivamente ciò che i tool restituiscono.
-            2. Il file CSV allegato contiene l'elenco grezzo delle transazioni del periodo — usalo per identificare pattern ricorrenti, anomalie e singole operazioni significative.
-            3. Combina i dati aggregati dei tool con i dettagli del CSV per produrre un'analisi profonda.
+            1. Usa i tool per raccogliere TUTTI i dati necessari del periodo %s - %s PRIMA di scrivere il report. Non inventare dati: usa esclusivamente ciò che i tool restituiscono.
+            2. Recupera sia gli aggregati (totali, breakdown per categoria, trend) sia il dettaglio delle singole transazioni (getTransactionsInPeriod o searchTransactions) per identificare pattern ricorrenti, abbonamenti e anomalie.
+            3. Combina i dati aggregati con i dettagli delle transazioni per produrre un'analisi profonda.
 
             IL REPORT DEVE INCLUDERE OBBLIGATORIAMENTE QUESTE 4 SEZIONI:
             1. **Riassunto Generale**: saldo totale del periodo, andamento entrate vs uscite, tasso di risparmio, confronto col mese precedente.
             2. **Analisi per Categoria**: categorie di spesa principali con importi e percentuali; valuta se qualcuna è eccessiva rispetto ai budget impostati.
-            3. **Pattern e Anomalie**: spese ricorrenti, abbonamenti, transazioni insolite o anomale identificate dal CSV.
+            3. **Pattern e Anomalie**: spese ricorrenti, abbonamenti, transazioni insolite o anomale identificate tra le transazioni recuperate.
             4. **Suggerimenti di Miglioramento**: 3-5 consigli pratici e specifici basati ESCLUSIVAMENTE sui dati raccolti.
 
             REGOLE TASSATIVE PER L'OUTPUT:
@@ -89,6 +83,21 @@ public class AiReportService {
             - NON INCLUDERE log di ragionamento interno, "scratchpad", o passaggi intermedi.
             - FORNISCI DIRETTAMENTE ED ESCLUSIVAMENTE il report finale pronto per la lettura, formattato in Markdown.
             - Usa un tono professionale ma amichevole.
+            """;
+
+    private static final String SELF_REVIEW_PROMPT = """
+            Sei un revisore finanziario. Di seguito trovi una bozza di report finanziario per il periodo dal %s al %s.
+            Verifica quanto segue, usando nuovamente i tool a disposizione se necessario per ricontrollare i numeri:
+            1. Coerenza numerica: i totali, le percentuali e i confronti citati sono plausibili e coerenti tra loro.
+            2. Completezza: sono presenti tutte e 4 le sezioni obbligatorie (Riassunto Generale, Analisi per Categoria, Pattern e Anomalie, Suggerimenti di Miglioramento).
+            3. Nessun dato inventato: ogni cifra deve provenire dai tool.
+
+            Se trovi errori o sezioni mancanti, CORREGGI il report e restituisci la versione finale completa.
+            Se il report è già corretto e completo, restituiscilo INVARIATO.
+            Rispondi ESCLUSIVAMENTE con il report finale in Markdown, nella lingua %s, senza commenti sulla revisione stessa.
+
+            BOZZA DA REVISIONARE:
+            %s
             """;
 
     public UUID startAiReportJob(User user, LocalDate startDate, LocalDate endDate, String language) {
@@ -105,8 +114,8 @@ public class AiReportService {
             }
         }
 
-        List<TransactionResponse> transactions = transactionService.getTransactionsByUserAndDateRangeForReport(user, startDate, endDate);
-        if (transactions.isEmpty()) {
+        boolean hasTransactions = !transactionService.getTransactionsByUserAndDateRangeForReport(user, startDate, endDate).isEmpty();
+        if (!hasTransactions) {
             throw new IllegalArgumentException("Nessuna transazione trovata nel periodo specificato");
         }
 
@@ -121,32 +130,13 @@ public class AiReportService {
         var authToken = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
         SecurityContextHolder.getContext().setAuthentication(authToken);
         try {
-            List<TransactionResponse> transactions = transactionService.getTransactionsByUserAndDateRangeForReport(user, startDate, endDate);
-            byte[] csvBytes = generateCsv(transactions).getBytes(StandardCharsets.UTF_8);
+            String instruction = String.format(SYSTEM_PROMPT, startDate, endDate, startDate, endDate, language);
 
-            String instruction = String.format(SYSTEM_PROMPT, startDate, endDate, language);
+            String draftReport = callWithTools(instruction);
 
-            Part textPart = Part.fromText(instruction);
-            Part csvPart = Part.fromBytes(csvBytes, "text/csv");
-            Content userContent = Content.builder()
-                    .role("user")
-                    .parts(List.of(textPart, csvPart))
-                    .build();
-
-            List<Content> contents = new ArrayList<>();
-            contents.add(userContent);
-
-            GenerateContentConfig.Builder cfgBuilder = GenerateContentConfig.builder()
-                    .temperature(0.4f)
-                    .tools(List.of(financeToolRegistry.buildFinanceTool()));
-
-            if (supportsThinking(reportModelName)) {
-                cfgBuilder.thinkingConfig(buildThinkingConfig(reportModelName, thinkingBudget, thinkingLevel));
-            }
-
-            GenerateContentConfig cfg = cfgBuilder.build();
-
-            String responseContent = runToolLoop(contents, cfg);
+            String responseContent = selfReviewEnabled
+                    ? selfReviewReport(draftReport, startDate, endDate, language)
+                    : draftReport;
 
             String cacheKey = user.getId() + "_" + startDate + "_" + endDate + "_" + language;
             Cache resultsCache = cacheManager.getCache(CacheConfig.AI_REPORTS_RESULTS_CACHE);
@@ -175,35 +165,26 @@ public class AiReportService {
         }
     }
 
-    private String runToolLoop(List<Content> contents, GenerateContentConfig cfg) {
-        for (int iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-            GenerateContentResponse resp = genaiModels.generateContent(reportModelName, contents, cfg);
-
-            List<FunctionCall> calls = resp.functionCalls();
-            if (calls == null || calls.isEmpty()) {
-                return resp.text();
-            }
-
-            resp.candidates()
-                    .flatMap(cs -> cs.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(cs.get(0)))
-                    .flatMap(c -> c.content())
-                    .ifPresent(contents::add);
-
-            List<Part> responseParts = new ArrayList<>();
-            for (FunctionCall fc : calls) {
-                String name = fc.name().orElse("unknown");
-                Map<String, Object> args = fc.args().orElse(Map.of());
-                log.debug("[AiReportService] Tool invocato: {} con args: {}", name, args);
-                String toolResult = financeToolRegistry.dispatchTool(name, args);
-                responseParts.add(Part.fromFunctionResponse(name, Map.of("result", toolResult)));
-            }
-
-            contents.add(Content.builder().role("user").parts(responseParts).build());
+    private String selfReviewReport(String draftReport, LocalDate startDate, LocalDate endDate, String language) {
+        try {
+            String reviewInstruction = String.format(SELF_REVIEW_PROMPT, startDate, endDate, language, draftReport);
+            return callWithTools(reviewInstruction);
+        } catch (Exception e) {
+            log.warn("[AiReportService] Self-review fallita, uso la bozza originale: {}", e.getMessage());
+            return draftReport;
         }
+    }
 
-        log.warn("[AiReportService] Raggiunto il limite di {} iterazioni tool calling per il report", MAX_TOOL_ITERATIONS);
-        GenerateContentResponse finalResp = genaiModels.generateContent(reportModelName, contents, cfg);
-        return finalResp.text();
+    private String callWithTools(String instruction) {
+        TrackedToolCallbacks tools = TrackedToolCallbacks.of(financeTools, MAX_TOOL_CALLS);
+        String content = chatClient.prompt()
+                .user(instruction)
+                .toolCallbacks(tools.callbacks())
+                .options(GenAiChatOptionsFactory.build(reportModelName, 0.4, thinkingBudget, thinkingLevel))
+                .call()
+                .content();
+        log.debug("[AiReportService] Tool usati: {}", tools.toolsUsed());
+        return content;
     }
 
     public AiReportStatusResponse getJobStatus(UUID jobId, User user) {
@@ -229,17 +210,6 @@ public class AiReportService {
         }
     }
 
-    private static boolean supportsThinking(String modelName) {
-        return modelName.startsWith("gemini-") || modelName.startsWith("gemma-4-");
-    }
-
-    private static ThinkingConfig buildThinkingConfig(String modelName, int budget, String level) {
-        if (modelName.startsWith("gemma-4-")) {
-            return ThinkingConfig.builder().thinkingLevel(level).includeThoughts(false).build();
-        }
-        return ThinkingConfig.builder().thinkingBudget(budget).includeThoughts(false).build();
-    }
-
     private void validateDateRange(LocalDate startDate, LocalDate endDate) {
         if (endDate.isBefore(startDate)) {
             throw new IllegalArgumentException("La data di fine non può essere precedente alla data di inizio");
@@ -248,25 +218,5 @@ public class AiReportService {
         if (monthsBetween > 12) {
             throw new IllegalArgumentException("Il periodo richiesto non può superare 1 anno");
         }
-    }
-
-    private String generateCsv(List<TransactionResponse> transactions) throws Exception {
-        StringWriter sw = new StringWriter();
-        CSVFormat format = CSVFormat.DEFAULT.builder()
-                .setHeader("Data", "Importo", "Tipo", "Categoria", "Descrizione")
-                .build();
-
-        try (CSVPrinter printer = new CSVPrinter(sw, format)) {
-            for (TransactionResponse tx : transactions) {
-                printer.printRecord(
-                        tx.getDate(),
-                        tx.getAmount(),
-                        tx.getType(),
-                        tx.getCategoryName() != null ? tx.getCategoryName() : "N/D",
-                        tx.getDescription()
-                );
-            }
-        }
-        return sw.toString();
     }
 }

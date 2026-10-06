@@ -7,6 +7,7 @@ import it.iacovelli.nexabudgetbe.exception.BankReauthRequiredException;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.AccountRepository;
 import it.iacovelli.nexabudgetbe.service.bank.BankAggregationProvider;
+import it.iacovelli.nexabudgetbe.service.bank.BankDuplicateReconciliationService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -33,17 +34,20 @@ public class AccountService {
     private final TransactionService transactionService;
     private final UserService userService;
     private final CurrencyConversionService currencyConversionService;
+    private final BankDuplicateReconciliationService bankDuplicateReconciliationService;
     private final Map<BankProvider, BankAggregationProvider> bankProviders;
 
     public AccountService(AccountRepository accountRepository,
                           TransactionService transactionService,
                           UserService userService,
                           CurrencyConversionService currencyConversionService,
+                          BankDuplicateReconciliationService bankDuplicateReconciliationService,
                           List<BankAggregationProvider> bankAggregationProviders) {
         this.accountRepository = accountRepository;
         this.transactionService = transactionService;
         this.userService = userService;
         this.currencyConversionService = currencyConversionService;
+        this.bankDuplicateReconciliationService = bankDuplicateReconciliationService;
         this.bankProviders = bankAggregationProviders.stream()
                 .collect(java.util.stream.Collectors.toMap(BankAggregationProvider::getProvider, Function.identity()));
     }
@@ -314,6 +318,7 @@ public class AccountService {
             logger.info("Recuperate {} transazioni da {} per account ID: {}", bankTransactions.size(), provider.getProvider(), accountId);
 
             transactionService.importNormalizedTransactions(bankTransactions, user, account, startDate);
+            reconcileBankDuplicates(account, bankTransactions);
 
             if (request.getActualBalance() != null) {
                 // Controlla adesso il bilancio del conto corrente e lo allinea con quello atteso della request
@@ -347,6 +352,22 @@ public class AccountService {
         } finally {
             account.setIsSynchronizing(false);
             accountRepository.save(account);
+        }
+    }
+
+    /**
+     * Rimuove i duplicati lasciati dai sync precedenti (vedi {@link BankDuplicateReconciliationService}). Gira prima
+     * dell'allineamento del saldo, così l'eventuale transazione di allineamento tiene conto dei duplicati rimossi.
+     * Un errore qui non deve far fallire il sync: le transazioni sono già importate.
+     */
+    private void reconcileBankDuplicates(Account account, List<NormalizedBankTransaction> bankTransactions) {
+        try {
+            int removed = bankDuplicateReconciliationService.reconcile(account, bankTransactions);
+            if (removed > 0) {
+                logger.info("Riallineamento duplicati per account ID: {} — rimosse {} transazioni duplicate", account.getId(), removed);
+            }
+        } catch (Exception e) {
+            logger.error("Errore durante il riallineamento dei duplicati per account ID: {}, motivo: {}", account.getId(), e.getMessage(), e);
         }
     }
 

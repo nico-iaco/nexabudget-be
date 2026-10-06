@@ -233,15 +233,35 @@ public class GocardlessService {
                         renewable);
             }
 
-            List<GocardlessTransaction> transactions = transactionsResponseData.getTransactions() != null ?
-                    transactionsResponseData.getTransactions().getAll() : new ArrayList<>();
-            logger.info("Recuperate {} transazioni per accountId: {}", transactions.size(), accountId);
-
-            return transactions;
+            return extractBookedTransactions(transactionsResponseData.getTransactions(), accountId);
         } catch (RestClientException e) {
             logger.error("Errore nel recupero delle transazioni per accountId: {}", accountId, e);
             throw e;
         }
+    }
+
+    /**
+     * Restituisce solo le transazioni contabilizzate (booked). Le pending vengono escluse perché molte banche
+     * assegnano loro un transactionId provvisorio (o nessuno) che cambia alla contabilizzazione: importarle
+     * produceva un duplicato per ogni pending poi diventata booked. Fallback su {@code all} solo se
+     * l'integrator non espone la lista booked separata.
+     */
+    static List<GocardlessTransaction> extractBookedTransactions(GocardlessTransactions transactions, String accountId) {
+        if (transactions == null) {
+            return new ArrayList<>();
+        }
+        if (transactions.getBooked() != null) {
+            int pending = transactions.getPending() != null ? transactions.getPending().size() : 0;
+            logger.info("Recuperate {} transazioni booked per accountId: {} ({} pending ignorate)",
+                    transactions.getBooked().size(), accountId, pending);
+            return transactions.getBooked();
+        }
+        if (transactions.getAll() != null) {
+            logger.warn("[GoCardless] Lista booked assente nella risposta dell'integrator per accountId: {} — uso 'all' ({} transazioni), possibili duplicati da pending",
+                    accountId, transactions.getAll().size());
+            return transactions.getAll();
+        }
+        return new ArrayList<>();
     }
 
     @Recover

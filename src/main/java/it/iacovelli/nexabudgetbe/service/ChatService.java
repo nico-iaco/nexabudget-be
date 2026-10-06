@@ -1,22 +1,20 @@
 package it.iacovelli.nexabudgetbe.service;
 
-import com.google.genai.Models;
-import com.google.genai.errors.ApiException;
-import com.google.genai.types.Content;
-import com.google.genai.types.FunctionCall;
-import com.google.genai.types.GenerateContentConfig;
-import com.google.genai.types.GenerateContentResponse;
-import com.google.genai.types.Part;
-import com.google.genai.types.ThinkingConfig;
 import it.iacovelli.nexabudgetbe.dto.ChatDto;
 import it.iacovelli.nexabudgetbe.model.ChatMessage;
 import it.iacovelli.nexabudgetbe.model.ChatSession;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.repository.ChatMessageRepository;
 import it.iacovelli.nexabudgetbe.repository.ChatSessionRepository;
-import it.iacovelli.nexabudgetbe.service.chat.FinanceToolRegistry;
+import it.iacovelli.nexabudgetbe.service.chat.FinanceTools;
+import it.iacovelli.nexabudgetbe.service.chat.GenAiChatOptionsFactory;
+import it.iacovelli.nexabudgetbe.service.chat.TrackedToolCallbacks;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.ai.chat.client.ChatClient;
+import org.springframework.ai.chat.messages.AssistantMessage;
+import org.springframework.ai.chat.messages.Message;
+import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -26,7 +24,6 @@ import org.springframework.web.server.ResponseStatusException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -37,7 +34,7 @@ import java.util.stream.Collectors;
 public class ChatService {
 
     private static final int MAX_HISTORY_MESSAGES = 20;
-    private static final int MAX_TOOL_ITERATIONS = 10;
+    private static final int MAX_TOOL_CALLS = 15;
 
     private static final String SYSTEM_PROMPT_TEMPLATE = """
             Sei NexaBot, l'assistente finanziario personale di NexaBudget.
@@ -77,8 +74,8 @@ public class ChatService {
     @Value("${nexabudget.ai.chat.thinking-level}")
     private String thinkingLevel;
 
-    private final Models genaiModels;
-    private final FinanceToolRegistry financeToolRegistry;
+    private final ChatClient chatClient;
+    private final FinanceTools financeTools;
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
 
@@ -96,26 +93,11 @@ public class ChatService {
                 user.getDefaultCurrency(),
                 LocalDate.now());
 
-        Content systemInstruction = Content.builder()
-                .parts(List.of(Part.fromText(systemText)))
-                .build();
-
-        List<Content> contents = buildContents(session, request.message());
-
-        GenerateContentConfig.Builder cfgBuilder = GenerateContentConfig.builder()
-                .temperature(0.4f)
-                .systemInstruction(systemInstruction)
-                .tools(List.of(financeToolRegistry.buildFinanceTool()));
-
-        if (supportsThinking(chatModelName)) {
-            cfgBuilder.thinkingConfig(buildThinkingConfig(chatModelName, thinkingBudget, thinkingLevel));
-        }
-
-        GenerateContentConfig cfg = cfgBuilder.build();
+        List<Message> history = buildHistory(session);
 
         log.debug("[ChatService] Invocazione modello {} per sessione {}", chatModelName, session.getId());
 
-        ChatResult result = callWithFunctionLoop(contents, cfg);
+        ChatResult result = callWithTools(systemText, history, request.message());
 
         chatMessageRepository.save(ChatMessage.builder()
                 .session(session)
@@ -178,73 +160,39 @@ public class ChatService {
         return chatSessionRepository.save(newSession);
     }
 
-    private List<Content> buildContents(ChatSession session, String userMessage) {
-        List<Content> contents = new ArrayList<>();
+    private List<Message> buildHistory(ChatSession session) {
+        List<Message> messages = new ArrayList<>();
         List<ChatMessage> history = chatMessageRepository.findLastNBySessionId(session.getId(), MAX_HISTORY_MESSAGES);
         // findLastN returns DESC — reverse for chronological order
         for (int i = history.size() - 1; i >= 0; i--) {
             ChatMessage m = history.get(i);
             if ("USER".equals(m.getRole()) && m.getContent() != null) {
-                contents.add(Content.builder().role("user").parts(List.of(Part.fromText(m.getContent()))).build());
+                messages.add(new UserMessage(m.getContent()));
             } else if ("ASSISTANT".equals(m.getRole()) && m.getContent() != null) {
-                contents.add(Content.builder().role("model").parts(List.of(Part.fromText(m.getContent()))).build());
+                messages.add(new AssistantMessage(m.getContent()));
             }
         }
-        contents.add(Content.builder().role("user").parts(List.of(Part.fromText(userMessage))).build());
-        return contents;
+        return messages;
     }
 
-    private ChatResult callWithFunctionLoop(List<Content> contents, GenerateContentConfig cfg) {
-        List<String> toolsUsed = new ArrayList<>();
-        for (int iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
-            GenerateContentResponse resp;
-            try {
-                resp = genaiModels.generateContent(chatModelName, contents, cfg);
-            } catch (ApiException e) {
-                log.error("[ChatService] Errore API Gemini ({}): {}", e.code(), e.getMessage());
-                return new ChatResult("Si è verificato un errore nella comunicazione con l'AI. Riprova tra poco.", toolsUsed);
-            } catch (Exception e) {
-                log.error("[ChatService] Errore chiamata Gemini ({}): {}", e.getClass().getSimpleName(), e.getMessage());
-                return new ChatResult("L'assistente AI non è al momento raggiungibile. Riprova tra qualche istante.", toolsUsed);
-            }
+    private ChatResult callWithTools(String systemText, List<Message> history, String userMessage) {
+        TrackedToolCallbacks tools = TrackedToolCallbacks.of(financeTools, MAX_TOOL_CALLS);
+        try {
+            var response = chatClient.prompt()
+                    .system(systemText)
+                    .messages(history)
+                    .user(userMessage)
+                    .toolCallbacks(tools.callbacks())
+                    .options(GenAiChatOptionsFactory.build(chatModelName, 0.4, thinkingBudget, thinkingLevel))
+                    .call()
+                    .chatResponse();
 
-            List<FunctionCall> calls = resp.functionCalls();
-            if (calls == null || calls.isEmpty()) {
-                return new ChatResult(stripThinking(resp.text()), toolsUsed);
-            }
-
-            // collect the model's function-call content for the conversation history
-            resp.candidates()
-                    .flatMap(cs -> cs.isEmpty() ? java.util.Optional.empty() : java.util.Optional.of(cs.get(0)))
-                    .flatMap(c -> c.content())
-                    .ifPresent(contents::add);
-
-            // execute each tool and build function response parts
-            List<Part> responseParts = new ArrayList<>();
-            for (FunctionCall fc : calls) {
-                String name = fc.name().orElse("unknown");
-                Map<String, Object> args = fc.args().orElse(Map.of());
-                toolsUsed.add(name);
-                log.debug("[ChatService] Tool invocato: {} con args: {}", name, args);
-                String toolResult = financeToolRegistry.dispatchTool(name, args);
-                responseParts.add(Part.fromFunctionResponse(name, Map.of("result", toolResult)));
-            }
-
-            contents.add(Content.builder().role("user").parts(responseParts).build());
+            String replyText = stripThinking(response.getResult().getOutput().getText());
+            return new ChatResult(replyText, tools.toolsUsed());
+        } catch (Exception e) {
+            log.error("[ChatService] Errore chiamata Gemini ({}): {}", e.getClass().getSimpleName(), e.getMessage());
+            return new ChatResult("L'assistente AI non è al momento raggiungibile. Riprova tra qualche istante.", tools.toolsUsed());
         }
-        log.warn("[ChatService] Raggiunto il limite di {} iterazioni tool calling", MAX_TOOL_ITERATIONS);
-        return new ChatResult("Non sono riuscito a completare la richiesta nel tempo previsto.", toolsUsed);
-    }
-
-    private static boolean supportsThinking(String modelName) {
-        return modelName.startsWith("gemini-") || modelName.startsWith("gemma-4-");
-    }
-
-    private static ThinkingConfig buildThinkingConfig(String modelName, int budget, String level) {
-        if (modelName.startsWith("gemma-4-")) {
-            return ThinkingConfig.builder().thinkingLevel(level).includeThoughts(false).build();
-        }
-        return ThinkingConfig.builder().thinkingBudget(budget).includeThoughts(false).build();
     }
 
     private boolean isFirstExchange(ChatSession session) {

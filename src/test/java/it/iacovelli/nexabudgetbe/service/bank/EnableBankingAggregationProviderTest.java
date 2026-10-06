@@ -158,6 +158,31 @@ class EnableBankingAggregationProviderTest {
                 () -> provider.fetchTransactions(accountWithUid("uid-1"), LocalDate.now()));
     }
 
+    @Test
+    void fetchTransactions_skipsPendingTransactions() {
+        EnableBankingTransaction booked = transaction("tx-book", "10.00", "DBIT", "2026-02-10", "2026-02-10", "Bar");
+        booked.setStatus("BOOK");
+        EnableBankingTransaction pending = transaction("tx-pdng", "20.00", "DBIT", "2026-02-11", null, "Supermercato");
+        pending.setStatus("PDNG");
+        EnableBankingTransaction noStatus = transaction("tx-none", "30.00", "DBIT", "2026-02-09", "2026-02-09", "Farmacia");
+        when(enableBankingService.getTransactions(anyString(), any())).thenReturn(List.of(booked, pending, noStatus));
+
+        List<NormalizedBankTransaction> result = provider.fetchTransactions(accountWithUid("uid-1"), null);
+
+        assertEquals(List.of("tx-book", "tx-none"), result.stream().map(NormalizedBankTransaction::getExternalId).toList());
+    }
+
+    @Test
+    void fetchTransactions_missingEntryReference_fallsBackToTransactionId() {
+        EnableBankingTransaction t = transaction(null, "10.00", "DBIT", "2026-02-10", "2026-02-10", "Bar");
+        t.setTransactionId("eb-tx-42");
+        when(enableBankingService.getTransactions(anyString(), any())).thenReturn(List.of(t));
+
+        List<NormalizedBankTransaction> result = provider.fetchTransactions(accountWithUid("uid-1"), null);
+
+        assertEquals("eb-tx-42", result.get(0).getExternalId());
+    }
+
     private Account accountWithUid(String uid) {
         Account account = new Account();
         account.setExternalAccountId(uid);

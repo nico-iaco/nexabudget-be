@@ -108,8 +108,14 @@ public class GocardlessAggregationProvider implements BankAggregationProvider {
         List<String> remittance = gt.getRemittanceInformationUnstructuredArray();
         String remittanceInfo = (remittance != null && !remittance.isEmpty()) ? remittance.get(0) : null;
 
+        // transactionId è opzionale per molte banche: internalTransactionId (generato da GoCardless) come
+        // secondo tentativo, poi l'hash deterministico di BankTransactionIds in fase di import.
+        String externalId = gt.getTransactionId() != null && !gt.getTransactionId().isBlank()
+                ? gt.getTransactionId()
+                : gt.getInternalTransactionId();
+
         return NormalizedBankTransaction.builder()
-                .externalId(gt.getTransactionId())
+                .externalId(externalId)
                 .amount(new java.math.BigDecimal(gt.getTransactionAmount().getAmount()))
                 .currency(gt.getTransactionAmount().getCurrency())
                 .date(rawDate)

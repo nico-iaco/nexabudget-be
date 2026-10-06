@@ -4,11 +4,13 @@ import it.iacovelli.nexabudgetbe.dto.TransactionDto;
 import it.iacovelli.nexabudgetbe.dto.bank.NormalizedBankTransaction;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
+import it.iacovelli.nexabudgetbe.service.bank.BankTransactionIds;
 import jakarta.persistence.criteria.Join;
 import jakarta.persistence.criteria.JoinType;
 import jakarta.persistence.criteria.Predicate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.jpa.domain.Specification;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -516,12 +518,18 @@ public class TransactionService {
      * (GoCardless, Enable Banking, ...). Generalizzazione della precedente {@code importTransactionsFromGocardless}:
      * stessa dedup per externalId (scoped al conto, per evitare collisioni tra provider diversi), stessa
      * hook di categorizzazione AI.
+     * <p>
+     * La dedup considera anche le righe cancellate (soft delete): una transazione bancaria rimossa dall'utente o
+     * dal riallineamento duplicati non ricompare al sync successivo. Gli externalId mancanti sono valorizzati da
+     * {@link BankTransactionIds#ensureExternalIds} (mai una ricerca con externalId null). L'indice univoco
+     * parziale su {@code (account_id, external_id)} fa da ultima difesa: una violazione viene loggata e la
+     * transazione saltata senza interrompere il resto del sync.
      */
     public void importNormalizedTransactions(List<NormalizedBankTransaction> transactions, User user, Account account, LocalDate startDate) {
+        BankTransactionIds.ensureExternalIds(transactions, account.getId());
         transactions
-                //.filter(nt -> startDate == null || LocalDate.parse(nt.getDate()).isAfter(startDate.minusDays(1L)))
                 .forEach(nt -> {
-                    if (transactionRepository.findByExternalIdAndAccount(nt.getExternalId(), account).isEmpty()) {
+                    if (transactionRepository.countByAccountIdAndExternalIdIncludingDeleted(account.getId(), nt.getExternalId()) == 0) {
                         logger.debug("Importing bank transaction: {}", nt.getExternalId());
                         BigDecimal rawAmount = nt.getAmount();
                         TransactionType txType = rawAmount.signum() > 0 ? TransactionType.IN : TransactionType.OUT;
@@ -548,7 +556,11 @@ public class TransactionService {
                             t.setCategory(null);
                         }
 
-                        transactionRepository.save(t);
+                        try {
+                            transactionRepository.save(t);
+                        } catch (DataIntegrityViolationException e) {
+                            logger.warn("Transazione bancaria {} già presente sul conto {} (vincolo univoco), saltata", nt.getExternalId(), account.getId());
+                        }
                     } else {
                         logger.debug("Bank transaction already exists: {}", nt.getExternalId());
                     }

@@ -135,7 +135,12 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
         requireConfigured();
         String dateFrom = startDate != null ? startDate.format(DateTimeFormatter.ISO_LOCAL_DATE) : null;
         List<EnableBankingTransaction> transactions = enableBankingService.getTransactions(account.getExternalAccountId(), dateFrom);
-        return transactions.stream().map(this::toNormalized).toList();
+        // Come per GoCardless, solo le contabilizzate: le pending cambiano riferimento alla contabilizzazione
+        // e verrebbero reimportate come duplicati. Status assente = trattata come booked.
+        return transactions.stream()
+                .filter(t -> t.getStatus() == null || "BOOK".equalsIgnoreCase(t.getStatus()))
+                .map(this::toNormalized)
+                .toList();
     }
 
     private NormalizedBankTransaction toNormalized(EnableBankingTransaction t) {
@@ -148,8 +153,12 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
         String remittance = (t.getRemittanceInformation() != null && !t.getRemittanceInformation().isEmpty())
                 ? t.getRemittanceInformation().get(0) : null;
 
+        String externalId = t.getEntryReference() != null && !t.getEntryReference().isBlank()
+                ? t.getEntryReference()
+                : t.getTransactionId();
+
         return NormalizedBankTransaction.builder()
-                .externalId(t.getEntryReference())
+                .externalId(externalId)
                 .amount(amount)
                 .currency(t.getTransactionAmount() != null ? t.getTransactionAmount().getCurrency() : null)
                 .date(date)

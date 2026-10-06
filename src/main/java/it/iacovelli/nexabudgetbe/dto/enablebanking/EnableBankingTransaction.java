@@ -11,6 +11,10 @@ import java.util.List;
 public class EnableBankingTransaction {
     @JsonProperty("entry_reference")
     private String entryReference;
+    @JsonProperty("transaction_id")
+    private String transactionId;
+    /** "BOOK" (contabilizzata), "PDNG" (in attesa), ... — assente per alcune ASPSP. */
+    private String status;
     @JsonProperty("booking_date")
     private String bookingDate;
     @JsonProperty("value_date")

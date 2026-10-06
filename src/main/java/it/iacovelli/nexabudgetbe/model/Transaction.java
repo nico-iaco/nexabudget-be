@@ -60,6 +60,7 @@ public class Transaction {
     @Column(name = "transfer_id")
     private String transferId;
 
+    /** Univoco per conto via indice parziale (db/V13__unique_external_id_per_account.sql), non esprimibile in JPA. */
     private String externalId;
 
     @Column(name = "created_at", updatable = false)
