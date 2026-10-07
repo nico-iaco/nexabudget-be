@@ -74,6 +74,7 @@ Kubernetes manifests are managed using **Kustomize**, structured in the `k8s/` d
 | `ENABLEBANKING_BASE_URL`, `ENABLEBANKING_CONSENT_VALID_DAYS` | Enable Banking optional overrides | default `https://api.enablebanking.com`, `90` days |
 | `VIRTUAL_THREADS_ENABLED` | Toggle Loom virtual threads | default `true` |
 | `GEMINI_MODEL`, `NEXABUDGET_CHAT_MODEL`, `NEXABUDGET_REPORT_MODEL` | AI model overrides | — |
+| `NEXABUDGET_REPORT_FALLBACK_MODEL` | Model retried when the AI report primary model fails or replies empty | default `gemini-flash-lite-latest`; empty = no fallback |
 | `NEXABUDGET_BULK_CATEGORIZATION_TIMEOUT_SECONDS` | Bulk AI categorization timeout | default `120` |
 | `SEMANTIC_CACHE_COLLECTION_NAME`, `SEMANTIC_CACHE_INDEX_NAME` | Atlas vector store overrides | — |
 

@@ -32,6 +32,10 @@ public class AiReportService {
     @Value("${nexabudget.ai.report.model}")
     private String reportModelName;
 
+    /** Usato se la chiamata al modello primario fallisce o risponde vuoto; vuoto = nessun fallback. */
+    @Value("${nexabudget.ai.report.fallback-model:}")
+    private String fallbackModelName;
+
     @Value("${nexabudget.ai.report.thinking-budget}")
     private int thinkingBudget;
 
@@ -176,14 +180,31 @@ public class AiReportService {
     }
 
     private String callWithTools(String instruction) {
+        try {
+            return callWithTools(instruction, reportModelName);
+        } catch (RuntimeException e) {
+            if (fallbackModelName == null || fallbackModelName.isBlank() || fallbackModelName.equals(reportModelName)) {
+                throw e;
+            }
+            log.warn("[AiReportService] Modello primario {} fallito ({}), riprovo con il fallback {}",
+                    reportModelName, e.getMessage(), fallbackModelName);
+            return callWithTools(instruction, fallbackModelName);
+        }
+    }
+
+    private String callWithTools(String instruction, String modelName) {
         TrackedToolCallbacks tools = TrackedToolCallbacks.of(financeTools, MAX_TOOL_CALLS);
         String content = chatClient.prompt()
                 .user(instruction)
                 .toolCallbacks(tools.callbacks())
-                .options(GenAiChatOptionsFactory.build(reportModelName, 0.4, thinkingBudget, thinkingLevel))
+                .options(GenAiChatOptionsFactory.build(modelName, 0.4, thinkingBudget, thinkingLevel))
                 .call()
                 .content();
-        log.debug("[AiReportService] Tool usati: {}", tools.toolsUsed());
+        log.debug("[AiReportService] Modello {}, tool usati: {}", modelName, tools.toolsUsed());
+        // Una risposta vuota finirebbe in cache e nell'email come report COMPLETED
+        if (content == null || content.isBlank()) {
+            throw new IllegalStateException("Risposta vuota dal modello " + modelName);
+        }
         return content;
     }
 
