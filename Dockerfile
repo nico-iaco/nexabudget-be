@@ -1,5 +1,8 @@
+# Immagine Maven usata sia dal builder JVM sia (solo per i binari di Maven) dal builder nativo
+FROM maven:3.9-eclipse-temurin-25 AS maven-base
+
 # Stage 1: Builder con cache delle dipendenze
-FROM maven:3.9-eclipse-temurin-25 AS builder-jvm
+FROM maven-base AS builder-jvm
 WORKDIR /app
 # Copia solo il pom.xml per cachare le dipendenze
 COPY pom.xml .
@@ -22,17 +25,17 @@ FROM ghcr.io/graalvm/native-image-community:25 AS builder-native
 WORKDIR /app
 # Maven copiato direttamente dall'immagine ufficiale (evita il segfault di microdnf su QEMU).
 # NON usare --from=builder-jvm: costringerebbe BuildKit a eseguire tutta la build JVM prima di quella nativa.
-COPY --from=maven:3.9-eclipse-temurin-25 /usr/share/maven /usr/share/maven
+COPY --from=maven-base /usr/share/maven /usr/share/maven
 ENV MAVEN_HOME=/usr/share/maven
 ENV PATH=${MAVEN_HOME}/bin:${PATH}
 
 COPY pom.xml .
 RUN mvn -B dependency:go-offline -Pnative
 COPY src ./src
-# Opzioni extra per native-image (es. "-Ob" per build rapide non ottimizzate nelle beta delle PR)
+# Opzioni extra per native-image, lette dall'ambiente (es. "-Ob" per build rapide non ottimizzate nelle beta delle PR)
 ARG NATIVE_IMAGE_OPTIONS=""
 # Solo il binario resta nel layer: target/ (jar, classi, sorgenti AOT) appesantirebbe l'export della cache
-RUN NATIVE_IMAGE_OPTIONS="${NATIVE_IMAGE_OPTIONS}" mvn -B -Pnative package -DskipTests \
+RUN mvn -B -Pnative package -DskipTests \
     && mv target/nexaBudget-be /app/nexaBudget-be \
     && rm -rf target
 
