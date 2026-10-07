@@ -18,6 +18,10 @@ public interface CategoryRepository extends JpaRepository<Category, UUID> {
     @Query("SELECT c FROM Category c WHERE c.id = :id AND (c.user = :user OR c.user IS NULL)")
     Optional<Category> findByIdAndUser(UUID id, User user);
 
+    /** Solo categorie possedute dall'utente: esclude le predefinite condivise (user IS NULL). */
+    @Query("SELECT c FROM Category c WHERE c.id = :id AND c.user = :user")
+    Optional<Category> findOwnedByIdAndUser(UUID id, User user);
+
     @Query("SELECT c FROM Category c WHERE (c.user = :user OR c.user IS NULL)")
     List<Category> findByUserOrDefault(User user);
 

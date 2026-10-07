@@ -70,9 +70,15 @@ public class UserService {
     public User updateUserProfile(User existingUser, String newUsername, String newEmail, String rawPassword, String defaultCurrency) {
         logger.info("Aggiornamento profilo utente: {} (ID: {})", existingUser.getUsername(), existingUser.getId());
         if (newUsername != null) {
+            if (!newUsername.equals(existingUser.getUsername()) && userRepository.existsByUsername(newUsername)) {
+                throw new IllegalStateException("Username già in uso");
+            }
             existingUser.setUsername(newUsername);
         }
         if (newEmail != null) {
+            if (!newEmail.equals(existingUser.getEmail()) && userRepository.existsByEmail(newEmail)) {
+                throw new IllegalStateException("Email già in uso");
+            }
             existingUser.setEmail(newEmail);
         }
         if (rawPassword != null) {

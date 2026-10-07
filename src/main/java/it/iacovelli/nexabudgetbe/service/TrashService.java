@@ -1,6 +1,7 @@
 package it.iacovelli.nexabudgetbe.service;
 
 import it.iacovelli.nexabudgetbe.model.Account;
+import it.iacovelli.nexabudgetbe.model.Transaction;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.repository.AccountRepository;
 import it.iacovelli.nexabudgetbe.repository.TrashTransactionView;
@@ -43,18 +44,42 @@ public class TrashService {
 
     @Transactional
     public void restoreTransaction(UUID transactionId, User user) {
-        transactionRepository.findDeletedByIdAndUserId(transactionId, user.getId())
+        Transaction transaction = transactionRepository.findDeletedByIdAndUserId(transactionId, user.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Transazione non trovata nel cestino"));
-        transactionRepository.restoreById(transactionId);
+
+        // Un trasferimento viene cancellato su entrambe le gambe: va ripristinato allo stesso modo,
+        // altrimenti un solo conto riavrebbe l'importo.
+        List<UUID> accountIds = transaction.getTransferId() != null
+                ? transactionRepository.findDeletedAccountIdsByTransferIdAndUserId(transaction.getTransferId(), user.getId())
+                : List.of(transaction.getAccount().getId());
+        for (UUID accountId : accountIds) {
+            if (accountRepository.findDeletedByIdAndUserId(accountId, user.getId()).isPresent()) {
+                throw new IllegalStateException("Il conto della transazione è nel cestino: ripristinare prima il conto");
+            }
+        }
+
+        if (transaction.getTransferId() != null) {
+            transactionRepository.restoreByTransferIdAndUserId(transaction.getTransferId(), user.getId());
+        } else {
+            transactionRepository.restoreById(transactionId);
+        }
         logger.info("Transazione {} ripristinata dall'utente {}", transactionId, user.getId());
     }
 
     @Transactional
     public void restoreAccount(UUID accountId, User user) {
-        accountRepository.findDeletedByIdAndUserId(accountId, user.getId())
+        Account account = accountRepository.findDeletedByIdAndUserId(accountId, user.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato nel cestino"));
         accountRepository.restoreById(accountId);
-        transactionRepository.restoreAllByAccountId(accountId);
+        // Solo le transazioni cancellate insieme al conto. La finestra di qualche secondo copre i conti
+        // cancellati prima che transazioni e conto condividessero lo stesso timestamp.
+        LocalDateTime deletedAt = account.getDeletedAt();
+        if (deletedAt != null) {
+            transactionRepository.restoreByAccountIdDeletedBetween(accountId,
+                    deletedAt.minusSeconds(5), deletedAt.plusSeconds(1));
+        } else {
+            transactionRepository.restoreAllByAccountId(accountId);
+        }
         logger.info("Conto {} e relative transazioni ripristinati dall'utente {}", accountId, user.getId());
     }
 

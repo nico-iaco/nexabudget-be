@@ -31,6 +31,7 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -215,5 +216,53 @@ class AccountServiceBankDispatchTest {
         assertTrue(updated.getRequiresReauth());
         assertNull(updated.getLastExternalSync());
         assertFalse(updated.getIsSynchronizing());
+    }
+
+    @Test
+    void tryAcquireSyncLock_heldRecently_isNotAcquired() {
+        Account account = createEnableBankingLinkedAccount();
+        account.setIsSynchronizing(true);
+        account.setSyncStartedAt(java.time.LocalDateTime.now().minusMinutes(10));
+        accountRepository.save(account);
+
+        assertFalse(accountService.tryAcquireSyncLock(account.getId()));
+    }
+
+    @Test
+    void tryAcquireSyncLock_orphanedLock_isReacquired() {
+        Account account = createEnableBankingLinkedAccount();
+        account.setIsSynchronizing(true);
+        account.setSyncStartedAt(java.time.LocalDateTime.now().minusHours(2));
+        accountRepository.save(account);
+
+        assertTrue(accountService.tryAcquireSyncLock(account.getId()));
+        assertNotNull(accountRepository.findById(account.getId()).orElseThrow().getSyncStartedAt());
+    }
+
+    @Test
+    void tryAcquireSyncLock_legacyLockWithoutTimestamp_isReacquired() {
+        Account account = createEnableBankingLinkedAccount();
+        account.setIsSynchronizing(true);
+        account.setSyncStartedAt(null);
+        accountRepository.save(account);
+
+        assertTrue(accountService.tryAcquireSyncLock(account.getId()));
+    }
+
+    @Test
+    void syncAccountTransactions_incrementalSync_overlapsPreviousSyncWindow() throws InterruptedException {
+        Account account = createEnableBankingLinkedAccount();
+        java.time.LocalDateTime lastSync = java.time.LocalDateTime.now().minusHours(7);
+        account.setLastExternalSync(lastSync);
+        accountRepository.save(account);
+
+        when(enableBankingService.getTransactions(anyString(), any())).thenReturn(List.of());
+
+        accountService.syncAccountTransactions(account.getId(), testUser, new SyncBankTransactionsRequest());
+        Account updated = waitForSyncOutcome(account.getId(), lastSync);
+
+        verify(enableBankingService).getTransactions("uid-1", lastSync.toLocalDate().minusDays(7).toString());
+        assertFalse(updated.getIsSynchronizing());
+        assertNull(updated.getSyncStartedAt());
     }
 }

@@ -227,14 +227,29 @@ public class TransactionService {
         LocalDate date = firstTransaction.getDate();
         String notes = firstTransaction.getNote();
 
-        inTransaction.setAmount(amount);
+        String inCurrency = inTransaction.getAccount().getCurrency();
+        String outCurrency = outTransaction.getAccount().getCurrency();
+        boolean multiCurrency = inCurrency != null && outCurrency != null
+                && !inCurrency.equalsIgnoreCase(outCurrency);
+
+        if (multiCurrency) {
+            // Valute diverse: gli importi reali dei due conti vanno preservati, si registra il cambio implicito
+            if (outTransaction.getAmount().signum() != 0) {
+                inTransaction.setExchangeRate(inTransaction.getAmount()
+                        .divide(outTransaction.getAmount(), 8, java.math.RoundingMode.HALF_UP));
+            }
+            inTransaction.setOriginalCurrency(outCurrency);
+            inTransaction.setOriginalAmount(outTransaction.getAmount());
+        } else {
+            inTransaction.setAmount(amount);
+            outTransaction.setAmount(amount);
+        }
         inTransaction.setDate(date);
         inTransaction.setNote(notes);
         inTransaction.setTransferId(transferId);
         inTransaction.setDescription("Trasferimento da " + outTransaction.getAccount().getName() + ": " + inTransaction.getDescription());
         inTransaction.setCategory(null); // I trasferimenti non hanno categoria
 
-        outTransaction.setAmount(amount);
         outTransaction.setDate(date);
         outTransaction.setNote(notes);
         outTransaction.setTransferId(transferId);
@@ -412,7 +427,8 @@ public class TransactionService {
                     .orElse(null);
 
             if (otherTransaction != null) {
-                otherTransaction.setAmount(newAmount);
+                syncTransferLegAmounts(oldTransaction, newAccount, newAmount, newType, otherTransaction);
+                otherTransaction.setType(newType == TransactionType.IN ? TransactionType.OUT : TransactionType.IN);
                 otherTransaction.setDate(newDate);
                 otherTransaction.setNote(newNotes);
                 transactionRepository.save(otherTransaction);
@@ -449,6 +465,35 @@ public class TransactionService {
     }
 
 
+    /**
+     * Allinea l'importo della gamba opposta di un trasferimento. Se i conti hanno valute diverse
+     * l'importo va convertito con il cambio salvato sulla gamba IN (IN = OUT * exchangeRate),
+     * altrimenti modificare una gamba sovrascriverebbe l'altra con un importo nella valuta sbagliata.
+     */
+    private void syncTransferLegAmounts(Transaction edited, Account editedAccount, BigDecimal newAmount,
+                                        TransactionType newType, Transaction other) {
+        String editedCurrency = editedAccount != null ? editedAccount.getCurrency() : null;
+        String otherCurrency = other.getAccount() != null ? other.getAccount().getCurrency() : null;
+        boolean multiCurrency = editedCurrency != null && otherCurrency != null
+                && !editedCurrency.equalsIgnoreCase(otherCurrency);
+        if (!multiCurrency) {
+            other.setAmount(newAmount);
+            return;
+        }
+        if (newType == TransactionType.OUT && other.getExchangeRate() != null) {
+            other.setAmount(newAmount.multiply(other.getExchangeRate()).setScale(4, java.math.RoundingMode.HALF_UP));
+            other.setOriginalAmount(newAmount);
+        } else if (newType == TransactionType.IN && edited.getExchangeRate() != null
+                && edited.getExchangeRate().signum() != 0) {
+            BigDecimal outAmount = newAmount.divide(edited.getExchangeRate(), 4, java.math.RoundingMode.HALF_UP);
+            other.setAmount(outAmount);
+            edited.setOriginalAmount(outAmount);
+        } else {
+            logger.warn("Trasferimento multi-valuta {} senza tasso di cambio: importo della gamba {} non modificato",
+                    edited.getTransferId(), other.getId());
+        }
+    }
+
     @Transactional
     public void deleteTransaction(Transaction transaction) {
         LocalDateTime now = LocalDateTime.now();
@@ -465,7 +510,12 @@ public class TransactionService {
 
     @Transactional
     public void softDeleteAllTransactionByAccount(Account account) {
-        transactionRepository.softDeleteAllByAccountId(account.getId(), LocalDateTime.now());
+        softDeleteAllTransactionByAccount(account, LocalDateTime.now());
+    }
+
+    @Transactional
+    public void softDeleteAllTransactionByAccount(Account account, LocalDateTime now) {
+        transactionRepository.softDeleteAllByAccountId(account.getId(), now);
     }
 
     public void deleteAllTransactionByAccount(Account account) {
@@ -473,12 +523,14 @@ public class TransactionService {
     }
 
     public BigDecimal getIncomeForAccountInPeriod(Account account, LocalDateTime start, LocalDateTime end) {
-        BigDecimal sum = transactionRepository.sumByAccountAndTypeAndDateRange(account, TransactionType.IN, start, end);
+        BigDecimal sum = transactionRepository.sumByAccountAndTypeAndDateRange(account, TransactionType.IN,
+                start.toLocalDate(), end.toLocalDate());
         return sum != null ? sum : BigDecimal.ZERO;
     }
 
     public BigDecimal getExpenseForAccountInPeriod(Account account, LocalDateTime start, LocalDateTime end) {
-        BigDecimal sum = transactionRepository.sumByAccountAndTypeAndDateRange(account, TransactionType.OUT, start, end);
+        BigDecimal sum = transactionRepository.sumByAccountAndTypeAndDateRange(account, TransactionType.OUT,
+                start.toLocalDate(), end.toLocalDate());
         return sum != null ? sum : BigDecimal.ZERO;
     }
 

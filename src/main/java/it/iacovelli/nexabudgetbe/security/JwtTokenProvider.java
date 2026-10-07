@@ -1,5 +1,6 @@
 package it.iacovelli.nexabudgetbe.security;
 
+
 import io.jsonwebtoken.Jwts;
 import io.jsonwebtoken.security.Keys;
 import it.iacovelli.nexabudgetbe.model.User;
@@ -12,6 +13,7 @@ import org.springframework.stereotype.Component;
 import javax.crypto.SecretKey;
 import java.nio.charset.StandardCharsets;
 import java.util.Date;
+import java.util.UUID;
 
 @Component
 public class JwtTokenProvider {
@@ -63,6 +65,15 @@ public class JwtTokenProvider {
                 .parseSignedClaims(token)
                 .getPayload()
                 .get("username", String.class);
+    }
+
+    public UUID getUserIdFromJWT(String token) {
+        return UUID.fromString(Jwts.parser()
+                .verifyWith(getSigningKey())
+                .build()
+                .parseSignedClaims(token)
+                .getPayload()
+                .getSubject());
     }
 
     public boolean validateToken(String authToken) {

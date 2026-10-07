@@ -176,6 +176,11 @@ public class EnableBankingAggregationProvider implements BankAggregationProvider
     }
 
     @Override
+    public boolean supportsIncrementalFetch() {
+        return true;
+    }
+
+    @Override
     public List<NormalizedBankTransaction> fetchTransactions(Account account, LocalDate startDate) {
         requireConfigured();
         String dateFrom = startDate != null ? startDate.format(DateTimeFormatter.ISO_LOCAL_DATE) : null;

@@ -59,6 +59,10 @@ public class Account {
     @Column(name = "is_synchronizing")
     private Boolean isSynchronizing;
 
+    /** Inizio del sync che detiene il lock: oltre il timeout il lock è considerato orfano (es. pod terminato). */
+    @Column(name = "sync_started_at")
+    private LocalDateTime syncStartedAt;
+
     @Column(name = "requires_reauth")
     private Boolean requiresReauth;
 

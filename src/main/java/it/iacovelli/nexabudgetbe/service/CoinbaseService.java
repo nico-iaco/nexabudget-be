@@ -53,6 +53,8 @@ public class CoinbaseService {
             
             Map<String, BigDecimal> aggregatedBalances = new HashMap<>();
             Set<String> retailPortfolioIds = new HashSet<>();
+            boolean accountsScanOk = false;
+            boolean portfoliosScanOk = false;
 
             // 2. Scansione Account Standard
             try {
@@ -68,6 +70,7 @@ public class CoinbaseService {
                         }
                     }
                 }
+                accountsScanOk = true;
             } catch (Exception e) {
                 logger.warn("Impossibile scansionare account standard: {}", e.getMessage(), e);
             }
@@ -96,8 +99,15 @@ public class CoinbaseService {
                     String portfolioLabel = portfolioNames.getOrDefault(portfolioId, "retail_portfolio_id");
                     processPortfolioBreakdown(portfoliosService, credentials, portfolioId, portfolioLabel, aggregatedBalances);
                 }
+                portfoliosScanOk = true;
             } catch (Exception e) {
                 logger.warn("Impossibile scansionare portafogli: {}", e.getMessage(), e);
+            }
+
+            // Entrambe le scansioni fallite (chiavi revocate, Coinbase down): una lista vuota farebbe
+            // cancellare al chiamante tutti gli holdings Coinbase dell'utente
+            if (!accountsScanOk && !portfoliosScanOk) {
+                throw new IllegalStateException("Nessuna risposta valida da Coinbase");
             }
 
             List<CryptoBalance> balances = new ArrayList<>();

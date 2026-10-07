@@ -99,7 +99,9 @@ public class BinanceService {
         }
     }
 
-    @Cacheable(value = CacheConfig.CRYPTO_PRICES_CACHE, key = "#symbol")
+    // Con Optional, #result è il valore estratto: senza unless un Optional.empty() verrebbe cachato come null,
+    // che la RedisCache (disableCachingNullValues) rifiuta con IllegalArgumentException
+    @Cacheable(value = CacheConfig.CRYPTO_PRICES_CACHE, key = "#symbol", unless = "#result == null")
     public Optional<BigDecimal> getTickerPrice(String symbol) {
         logger.info("Recupero prezzo non in cache per {}", symbol);
 

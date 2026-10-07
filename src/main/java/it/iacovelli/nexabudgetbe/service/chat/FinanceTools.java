@@ -153,7 +153,7 @@ public class FinanceTools {
         return sb.toString();
     }
 
-    @Tool(name = "getMonthlyTrend", description = "Restituisce il trend mensile di entrate e uscite degli ultimi N mesi.")
+    @Tool(name = "getMonthlyTrend", description = "Restituisce il trend mensile di entrate e uscite degli ultimi N mesi, calcolate sul netto per categoria (i rimborsi riducono la spesa della categoria).")
     public String getMonthlyTrend(
             @ToolParam(required = false, description = "Numero di mesi da analizzare (default 6, max 24)") Integer months) {
         User user = currentUser();
@@ -193,7 +193,7 @@ public class FinanceTools {
         return sb.toString();
     }
 
-    @Tool(name = "getMonthlyProjection", description = "Restituisce la proiezione di entrate e uscite per la fine del mese corrente basata sul ritmo attuale.")
+    @Tool(name = "getMonthlyProjection", description = "Restituisce la proiezione di entrate e uscite (netto per categoria) per la fine del mese corrente basata sulla media degli ultimi mesi.")
     public String getMonthlyProjection() {
         User user = currentUser();
         var projection = reportService.getMonthlyProjection(user);
@@ -355,7 +355,7 @@ public class FinanceTools {
         return sb.toString();
     }
 
-    @Tool(name = "getMonthComparison", description = "Confronta entrate, uscite e netto di un mese specifico con il mese precedente, mostrando la variazione.")
+    @Tool(name = "getMonthComparison", description = "Confronta entrate, uscite e netto (calcolati sul netto per categoria) di un mese specifico con il mese precedente, mostrando la variazione.")
     public String getMonthComparison(
             @ToolParam(required = true, description = "Anno (es. 2026)") Integer year,
             @ToolParam(required = true, description = "Mese (1-12)") Integer month) {

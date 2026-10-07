@@ -43,4 +43,12 @@ public interface BankAggregationProvider {
      * Lancia {@link it.iacovelli.nexabudgetbe.exception.BankReauthRequiredException} se il consenso non è più valido.
      */
     List<NormalizedBankTransaction> fetchTransactions(Account account, LocalDate startDate);
+
+    /**
+     * {@code true} se {@link #fetchTransactions} restituisce solo le transazioni a partire da {@code startDate}
+     * (sync incrementale), {@code false} se restituisce sempre l'intero storico disponibile.
+     */
+    default boolean supportsIncrementalFetch() {
+        return false;
+    }
 }

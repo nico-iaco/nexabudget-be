@@ -277,7 +277,7 @@ public class EnableBankingService {
     }
 
     @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
-    @Cacheable(value = ENABLE_BANKING_TRANSACTIONS_CACHE, key = "#accountUid", unless = "#result.size() == 0")
+    @Cacheable(value = ENABLE_BANKING_TRANSACTIONS_CACHE, key = "#accountUid + '_' + #dateFrom", unless = "#result.size() == 0")
     public List<EnableBankingTransaction> getTransactions(String accountUid, String dateFrom) {
         logger.info("Recupero transazioni Enable Banking per account uid: {}", accountUid);
         List<EnableBankingTransaction> all = new ArrayList<>();
@@ -333,7 +333,9 @@ public class EnableBankingService {
     @Recover
     public List<EnableBankingTransaction> recoverGetTransactions(RestClientException e, String accountUid, String dateFrom) {
         logger.error("Impossibile recuperare transazioni Enable Banking per {} dopo i retry: {}", accountUid, e.getMessage());
-        return new ArrayList<>();
+        // Non restituire una lista vuota: il sync la tratterebbe come riuscita (allineamento saldo fittizio,
+        // lastExternalSync avanzato e transazioni del periodo mai più richieste)
+        throw new IllegalStateException("Impossibile recuperare le transazioni Enable Banking: " + e.getMessage(), e);
     }
 
     /**

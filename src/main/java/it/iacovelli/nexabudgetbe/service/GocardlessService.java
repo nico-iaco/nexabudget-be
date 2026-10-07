@@ -99,7 +99,7 @@ public class GocardlessService {
             int bankCount = banksResponse != null && banksResponse.getData() != null ? banksResponse.getData().size() : 0;
             logger.info("Recuperate {} banche per il paese: {}", bankCount, countryCode);
 
-            return banksResponse != null ? banksResponse.getData() : new ArrayList<>();
+            return banksResponse != null && banksResponse.getData() != null ? banksResponse.getData() : new ArrayList<>();
         } catch (RestClientException e) {
             logger.error("Errore nel recupero delle banche per il paese: {}", countryCode, e);
             throw e;
@@ -267,7 +267,9 @@ public class GocardlessService {
     @Recover
     public List<GocardlessTransaction> recoverGetGoCardlessTransaction(RestClientException e, String requisitionId, String accountId) {
         logger.error("Impossibile recuperare transazioni per accountId {} dopo i retry: {}", accountId, e.getMessage());
-        return new ArrayList<>();
+        // Non restituire una lista vuota: il sync la tratterebbe come riuscita (allineamento saldo fittizio
+        // e lastExternalSync avanzato, che blocca i retry per 6h)
+        throw new IllegalStateException("Impossibile recuperare le transazioni GoCardless: " + e.getMessage(), e);
     }
 
     /**

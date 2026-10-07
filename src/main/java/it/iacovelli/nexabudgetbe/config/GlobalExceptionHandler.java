@@ -6,17 +6,24 @@ import lombok.NoArgsConstructor;
 import org.apache.catalina.connector.ClientAbortException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotWritableException;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.AuthenticationException;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 
 import java.time.LocalDateTime;
 import java.util.Map;
@@ -163,6 +170,48 @@ public class GlobalExceptionHandler {
                 new ErrorResponse(HttpStatus.INTERNAL_SERVER_ERROR.value(),
                         "Si è verificato un errore interno del server", LocalDateTime.now()),
                 HttpStatus.INTERNAL_SERVER_ERROR);
+    }
+
+    /**
+     * Errori del client che altrimenti finirebbero nel catch-all come 500: JSON malformato,
+     * parametri mancanti o di tipo errato (es. UUID non valido nel path).
+     */
+    @ExceptionHandler({HttpMessageNotReadableException.class, MethodArgumentTypeMismatchException.class,
+            MissingServletRequestParameterException.class})
+    public ResponseEntity<ErrorResponse> handleBadRequest(Exception ex, WebRequest request) {
+        logger.warn("Richiesta non valida: {}, richiesta: {}", ex.getMessage(), request.getDescription(false));
+        return errorResponse(HttpStatus.BAD_REQUEST, "Richiesta non valida");
+    }
+
+    @ExceptionHandler(AccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAccessDenied(AccessDeniedException ex, WebRequest request) {
+        logger.warn("Accesso negato: {}, richiesta: {}", ex.getMessage(), request.getDescription(false));
+        return errorResponse(HttpStatus.FORBIDDEN, "Accesso negato");
+    }
+
+    @ExceptionHandler(NoResourceFoundException.class)
+    public ResponseEntity<ErrorResponse> handleNoResourceFound(NoResourceFoundException ex, WebRequest request) {
+        logger.debug("Risorsa non trovata: {}", request.getDescription(false));
+        return errorResponse(HttpStatus.NOT_FOUND, "Risorsa non trovata");
+    }
+
+    @ExceptionHandler(HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleMethodNotSupported(HttpRequestMethodNotSupportedException ex,
+                                                                  WebRequest request) {
+        logger.debug("Metodo non supportato: {}, richiesta: {}", ex.getMessage(), request.getDescription(false));
+        return errorResponse(HttpStatus.METHOD_NOT_ALLOWED, ex.getMessage());
+    }
+
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex,
+                                                                      WebRequest request) {
+        logger.warn("Violazione di integrità dei dati: {}, richiesta: {}",
+                ex.getMostSpecificCause().getMessage(), request.getDescription(false));
+        return errorResponse(HttpStatus.CONFLICT, "Operazione in conflitto con dati esistenti");
+    }
+
+    private static ResponseEntity<ErrorResponse> errorResponse(HttpStatus status, String message) {
+        return new ResponseEntity<>(new ErrorResponse(status.value(), message, LocalDateTime.now()), status);
     }
 
     /**

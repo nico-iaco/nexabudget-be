@@ -24,8 +24,29 @@ public interface AccountRepository extends JpaRepository<Account, UUID> {
 
     @Transactional
     @Modifying(clearAutomatically = true, flushAutomatically = true)
-    @Query("UPDATE Account a SET a.isSynchronizing = true WHERE a.id = :id AND a.isSynchronizing = false")
-    int markSynchronizing(@Param("id") UUID id);
+    // Acquisisce il lock anche se è orfano: preso prima di staleBefore (sync interrotto da crash/redeploy senza
+    // passare dal finally) o senza timestamp (lock preso prima dell'introduzione di sync_started_at)
+    @Query("UPDATE Account a SET a.isSynchronizing = true, a.syncStartedAt = :now WHERE a.id = :id " +
+            "AND (a.isSynchronizing = false OR a.syncStartedAt IS NULL OR a.syncStartedAt < :staleBefore)")
+    int markSynchronizing(@Param("id") UUID id, @Param("now") LocalDateTime now,
+                          @Param("staleBefore") LocalDateTime staleBefore);
+
+    // Update mirati a fine sync: salvare l'entità caricata a inizio sync (che può durare minuti)
+    // sovrascriverebbe modifiche concorrenti (rinomina, nuovo collegamento, ...).
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE Account a SET a.isSynchronizing = false, a.syncStartedAt = null WHERE a.id = :id")
+    int releaseSyncLock(@Param("id") UUID id);
+
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE Account a SET a.lastExternalSync = :syncedAt, a.requiresReauth = false WHERE a.id = :id")
+    int markSyncCompleted(@Param("id") UUID id, @Param("syncedAt") LocalDateTime syncedAt);
+
+    @Transactional
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE Account a SET a.requiresReauth = true WHERE a.id = :id")
+    int markRequiresReauth(@Param("id") UUID id);
 
     @Modifying(clearAutomatically = true, flushAutomatically = true)
     @Query(value = "UPDATE accounts SET deleted = true, deleted_at = :now WHERE id = :id AND deleted = false", nativeQuery = true)

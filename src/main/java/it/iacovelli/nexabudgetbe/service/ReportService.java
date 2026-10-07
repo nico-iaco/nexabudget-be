@@ -241,6 +241,9 @@ public class ReportService {
 
     @Transactional(readOnly = true)
     public ReportDto.MonthComparisonResponse getMonthComparison(User user, int year, int month) {
+        if (month < 1 || month > 12) {
+            throw new IllegalArgumentException("Il mese deve essere compreso tra 1 e 12");
+        }
         String target = targetCurrency(user);
         LocalDate currentStart = LocalDate.of(year, month, 1);
         LocalDate currentEnd = currentStart.withDayOfMonth(currentStart.lengthOfMonth());
@@ -273,15 +276,12 @@ public class ReportService {
                 .build();
     }
 
-    private BigDecimal sumConverted(User user, TransactionType type, LocalDate start, LocalDate end, String target) {
-        List<Object[]> rows = transactionRepository.sumByUserAndTypeAndDateRangePerCurrency(user, type, start, end);
-        BigDecimal sum = BigDecimal.ZERO;
-        for (Object[] row : rows) {
-            String currency = row[0] != null ? row[0].toString() : target;
-            BigDecimal amount = (BigDecimal) row[1];
-            sum = sum.add(convertToUserCurrency(amount, currency, target));
-        }
-        return sum;
+    /** Totali netti per categoria del periodo: stessa semantica di monthly-trend e month-comparison. */
+    private NetTotals netTotals(User user, LocalDate start, LocalDate end, String target) {
+        return aggregateNetTotals(
+                transactionRepository.findCategoryNetBreakdown(user, start, end),
+                transactionRepository.findUncategorizedTotalsByType(user, start, end),
+                target);
     }
 
     @Transactional(readOnly = true)
@@ -344,8 +344,9 @@ public class ReportService {
         int daysElapsed = today.getDayOfMonth();
         int daysInMonth = today.lengthOfMonth();
 
-        BigDecimal currentExpense = sumConverted(user, TransactionType.OUT, monthStart, today, target);
-        BigDecimal currentIncome = sumConverted(user, TransactionType.IN, monthStart, today, target);
+        NetTotals current = netTotals(user, monthStart, today, target);
+        BigDecimal currentExpense = current.expense();
+        BigDecimal currentIncome = current.income();
 
         BigDecimal totalHistoricExpense = BigDecimal.ZERO;
         BigDecimal totalHistoricIncome = BigDecimal.ZERO;
@@ -355,8 +356,9 @@ public class ReportService {
             LocalDate refMonthStart = monthStart.minusMonths(i);
             LocalDate refMonthEnd = refMonthStart.withDayOfMonth(refMonthStart.lengthOfMonth());
 
-            BigDecimal monthExpense = sumConverted(user, TransactionType.OUT, refMonthStart, refMonthEnd, target);
-            BigDecimal monthIncome = sumConverted(user, TransactionType.IN, refMonthStart, refMonthEnd, target);
+            NetTotals month = netTotals(user, refMonthStart, refMonthEnd, target);
+            BigDecimal monthExpense = month.expense();
+            BigDecimal monthIncome = month.income();
 
             if (monthExpense.compareTo(BigDecimal.ZERO) > 0 || monthIncome.compareTo(BigDecimal.ZERO) > 0) {
                 totalHistoricExpense = totalHistoricExpense.add(monthExpense);

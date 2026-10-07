@@ -4,10 +4,12 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.ApiKeyDto;
 import it.iacovelli.nexabudgetbe.model.User;
+import it.iacovelli.nexabudgetbe.security.ApiKeyAuthenticationToken;
 import it.iacovelli.nexabudgetbe.service.ApiKeyService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
@@ -30,6 +32,9 @@ public class ApiKeyController {
     public ResponseEntity<ApiKeyDto.CreateApiKeyResponse> createApiKey(
             @Valid @RequestBody ApiKeyDto.CreateApiKeyRequest request,
             @AuthenticationPrincipal User currentUser) {
+        if (ApiKeyAuthenticationToken.isCurrentRequestApiKeyAuthenticated()) {
+            throw new AccessDeniedException("Una API key non può creare nuove API key: usare una sessione utente");
+        }
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(apiKeyService.createApiKey(request, currentUser));
     }

@@ -29,6 +29,9 @@ import java.util.function.Function;
 public class AccountService {
 
     private static final Logger logger = LoggerFactory.getLogger(AccountService.class);
+    private static final int SYNC_OVERLAP_DAYS = 7;
+    /** Oltre questa durata un lock di sync è considerato orfano e può essere ripreso. */
+    static final java.time.Duration SYNC_LOCK_TIMEOUT = java.time.Duration.ofHours(1);
 
     private final AccountRepository accountRepository;
     private final TransactionService transactionService;
@@ -206,8 +209,11 @@ public class AccountService {
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
 
-        transactionService.softDeleteAllTransactionByAccount(account);
-        accountRepository.softDeleteById(accountId, java.time.LocalDateTime.now());
+        // Stesso timestamp per conto e transazioni: il ripristino dal cestino lo usa per riconoscere
+        // le transazioni cancellate insieme al conto
+        java.time.LocalDateTime now = java.time.LocalDateTime.now().truncatedTo(java.time.temporal.ChronoUnit.MILLIS);
+        transactionService.softDeleteAllTransactionByAccount(account, now);
+        accountRepository.softDeleteById(accountId, now);
 
         logger.info("Account soft-eliminato: {} (ID: {})", account.getName(), accountId);
     }
@@ -250,6 +256,11 @@ public class AccountService {
         logger.info("Aggiunta requisitionId {} all'account ID: {} (provider: {})", requisitionId, accountId, provider);
         Account account = accountRepository.findById(accountId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
+        if (account.getProvider() != null && account.getProvider() != provider) {
+            // Cambio provider: l'externalAccountId del vecchio provider non è valido per il nuovo. Lasciarlo
+            // farebbe interrogare il nuovo provider con un id estraneo finché l'utente non sceglie il conto.
+            account.setExternalAccountId(null);
+        }
         account.setRequisitionId(requisitionId);
         account.setProvider(provider);
         accountRepository.save(account);
@@ -278,7 +289,8 @@ public class AccountService {
 
     @Transactional
     public boolean tryAcquireSyncLock(UUID accountId) {
-        return accountRepository.markSynchronizing(accountId) > 0;
+        LocalDateTime now = LocalDateTime.now();
+        return accountRepository.markSynchronizing(accountId, now, now.minus(SYNC_LOCK_TIMEOUT)) > 0;
     }
 
     /** @deprecated usa {@link #syncAccountTransactions(UUID, User, SyncBankTransactionsRequest)}, provider-agnostico. */
@@ -307,18 +319,29 @@ public class AccountService {
             return;
         }
 
-        account = accountRepository.findByIdAndUser(accountId, user)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
-
-        LocalDate startDate = lastExternalSync != null ? lastExternalSync.toLocalDate() : null;
+        // Sovrapposizione con il sync precedente: righe contabilizzate in ritardo con data antecedente
+        // all'ultimo sync altrimenti non verrebbero mai richieste (il dedup per externalId assorbe l'overlap)
+        LocalDate startDate = lastExternalSync != null
+                ? lastExternalSync.toLocalDate().minusDays(SYNC_OVERLAP_DAYS) : null;
 
         try {
+            // Dentro il try: se fallisce, il finally deve comunque rilasciare il lock
+            account = accountRepository.findByIdAndUser(accountId, user)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Conto non trovato con ID: " + accountId));
+
+            if (account.getExternalAccountId() == null) {
+                // Collegamento avviato ma conto del provider non ancora scelto (o sessione senza conti)
+                logger.warn("Account ID: {} senza conto del provider collegato, serve completare il collegamento", accountId);
+                accountRepository.markRequiresReauth(accountId);
+                return;
+            }
+
             BankAggregationProvider provider = resolveProvider(account);
             List<NormalizedBankTransaction> bankTransactions = provider.fetchTransactions(account, startDate);
             logger.info("Recuperate {} transazioni da {} per account ID: {}", bankTransactions.size(), provider.getProvider(), accountId);
 
             transactionService.importNormalizedTransactions(bankTransactions, user, account, startDate);
-            reconcileBankDuplicates(account, bankTransactions);
+            reconcileBankDuplicates(account, bankTransactions, provider.supportsIncrementalFetch() ? startDate : null);
 
             if (request.getActualBalance() != null) {
                 // Controlla adesso il bilancio del conto corrente e lo allinea con quello atteso della request
@@ -340,18 +363,16 @@ public class AccountService {
                 }
             }
 
-            account.setLastExternalSync(LocalDateTime.now());
-            account.setRequiresReauth(false);
+            accountRepository.markSyncCompleted(accountId, LocalDateTime.now());
             logger.info("Sincronizzazione completata per account ID: {}", accountId);
         } catch (BankReauthRequiredException e) {
-            account.setRequiresReauth(true);
+            accountRepository.markRequiresReauth(accountId);
             logger.warn("Consenso scaduto per account ID: {} — errorCode: {}, providerStatus: {}, renewable: {}. Serve un nuovo collegamento.",
                     accountId, e.getErrorCode(), e.getProviderStatus(), e.isRenewable());
         } catch (Exception e) {
             logger.error("Errore durante la sincronizzazione delle transazioni bancarie per account ID: {}, motivo: {}", accountId, e.getMessage());
         } finally {
-            account.setIsSynchronizing(false);
-            accountRepository.save(account);
+            accountRepository.releaseSyncLock(accountId);
         }
     }
 
@@ -360,9 +381,10 @@ public class AccountService {
      * dell'allineamento del saldo, così l'eventuale transazione di allineamento tiene conto dei duplicati rimossi.
      * Un errore qui non deve far fallire il sync: le transazioni sono già importate.
      */
-    private void reconcileBankDuplicates(Account account, List<NormalizedBankTransaction> bankTransactions) {
+    private void reconcileBankDuplicates(Account account, List<NormalizedBankTransaction> bankTransactions,
+                                         LocalDate requestedFrom) {
         try {
-            int removed = bankDuplicateReconciliationService.reconcile(account, bankTransactions);
+            int removed = bankDuplicateReconciliationService.reconcile(account, bankTransactions, requestedFrom);
             if (removed > 0) {
                 logger.info("Riallineamento duplicati per account ID: {} — rimosse {} transazioni duplicate", account.getId(), removed);
             }

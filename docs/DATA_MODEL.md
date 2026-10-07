@@ -11,7 +11,7 @@ NexaBudget uses **PostgreSQL** as its primary relational data store. The schema 
 * **Net category accounting:** `Category` has **no** `transactionType` column. Budget spend on a category is computed as `OUT − IN` over the period (`TransactionRepository.sumNetByUserAndCategoryAndDateRange()`). The unique constraint on `categories` is `(user_id, name)`.
 * **Auditing:** `AuditAspect` writes one `audit_logs` row per intercepted service write (user resolved from `SecurityContextHolder`, IP from `RequestContextHolder`).
 * **Multi-currency:** `transactions.exchange_rate`, `original_currency`, `original_amount` capture the FX conversion applied when source/destination accounts differ in currency.
-* **Import dedup:** `transactions.import_hash` stores SHA-256 of `(accountId|date|amount|description)`; combined with `external_id` (FITID) it prevents duplicate ingestion of CSV/OFX rows.
+* **Import dedup:** `transactions.import_hash` stores SHA-256 of `(accountId|date|amount|description)` (plus an occurrence suffix for repeated identical rows in the same file); combined with `external_id` (FITID, per account) it prevents duplicate ingestion of CSV/OFX rows.
 * **Indexes:** `transactions(user_id, transaction_date)`, `transactions(account_id, transaction_date)`, `transactions(category_id)`, `budgets(user_id, start_date, end_date)`, `api_keys(key_hash)`, `api_keys(user_id)`.
 
 ## Entity Relationship Diagram
@@ -58,6 +58,7 @@ erDiagram
         string external_account_id "provider-agnostic: GoCardless account id or Enable Banking account uid"
         timestamp last_external_sync
         boolean is_synchronizing "atomic sync lock"
+        timestamp sync_started_at "lock acquisition time, expires after 1h"
         boolean requires_reauth "consent/session expired for either provider"
         boolean deleted
         timestamp deleted_at
@@ -210,3 +211,4 @@ Because DDL mode is `validate`, the following schema changes must be applied man
 * **Phase 5** — add `transactions.exchange_rate`, `original_currency`, `original_amount`, `import_hash`; create `audit_logs`, `api_keys`.
 * **Net category accounting** — deduplicate `(user_id, name)` rows in `categories`, remap dependent `transactions.category_id` / `budgets.category_id`, then `DROP CONSTRAINT uk_category_user_name_type`, `DROP COLUMN transaction_type`, `ADD CONSTRAINT uk_category_user_name UNIQUE (user_id, name)`.
 * **Enable Banking integration** (`db/V12__add_bank_provider_to_accounts.sql`) — add `accounts.provider VARCHAR(32)` (nullable); backfill existing GoCardless-linked rows (`requisition_id`/`external_account_id` not null) to `'GOCARDLESS'`. See [ENABLE_BANKING_SETUP.md](ENABLE_BANKING_SETUP.md) for the provider setup itself.
+* **Expiring sync lock** (`db/V14__add_sync_started_at_to_accounts.sql`) — add `accounts.sync_started_at TIMESTAMP` (nullable).

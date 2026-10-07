@@ -102,8 +102,7 @@ public class ImportService {
                 }
                 try {
                     String dateStr = record.get(mapping.getDateColumn()).trim();
-                    String amountStr = record.get(mapping.getAmountColumn())
-                            .replace(",", ".").replaceAll("[^\\d.\\-]", "").trim();
+                    String amountStr = normalizeAmount(record.get(mapping.getAmountColumn()));
                     String description = record.get(mapping.getDescriptionColumn()).trim();
 
                     if (dateStr.isEmpty() || amountStr.isEmpty() || description.isEmpty()) {
@@ -117,7 +116,10 @@ public class ImportService {
 
                     if (mapping.getTypeColumn() != null) {
                         String typeStr = record.get(mapping.getTypeColumn()).trim().toUpperCase();
-                        type = typeStr.contains("IN") || typeStr.contains("CREDIT") || typeStr.contains("ENTRATA")
+                        // "IN" solo come valore esatto: contains("IN") classificava come entrate
+                        // anche "OUTGOING", "PENDING", "BONIFICO IN USCITA", ...
+                        type = typeStr.equals("IN") || typeStr.contains("CREDIT") || typeStr.contains("ENTRATA")
+                                || typeStr.contains("ACCREDITO")
                                 ? TransactionType.IN : TransactionType.OUT;
                         amount = rawAmount.abs();
                     } else {
@@ -214,6 +216,27 @@ public class ImportService {
         return result;
     }
 
+    /**
+     * Normalizza un importo CSV gestendo i separatori delle migliaia: "1.234,56" (IT) e "1,234.56" (US)
+     * diventano "1234.56". Se sono presenti entrambi i separatori, l'ultimo è quello decimale;
+     * se c'è solo la virgola è trattata come decimale.
+     */
+    static String normalizeAmount(String raw) {
+        String s = raw.replaceAll("[^\\d.,\\-]", "").trim();
+        int lastComma = s.lastIndexOf(',');
+        int lastDot = s.lastIndexOf('.');
+        if (lastComma >= 0 && lastDot >= 0) {
+            if (lastComma > lastDot) {
+                s = s.replace(".", "").replace(",", ".");
+            } else {
+                s = s.replace(",", "");
+            }
+        } else if (lastComma >= 0) {
+            s = s.replace(",", ".");
+        }
+        return s;
+    }
+
     private String extractSgmlTag(String block, String tag) {
         Pattern p = Pattern.compile("(?i)<" + tag + ">([^<\\r\\n]+)");
         Matcher m = p.matcher(block);
@@ -233,9 +256,11 @@ public class ImportService {
     private ImportDto.ImportPreviewResponse buildPreview(List<ParsedRow> rows, Account account) {
         List<ImportDto.ImportedTransactionPreview> previews = new ArrayList<>();
         int duplicateCount = 0;
-        for (ParsedRow row : rows) {
-            String hash = computeHash(account.getId(), row.date(), row.amount(), row.description());
-            boolean isDuplicate = isDuplicate(hash, row.fitId());
+        List<String> hashes = computeRowHashes(rows, account.getId());
+        for (int i = 0; i < rows.size(); i++) {
+            ParsedRow row = rows.get(i);
+            String hash = hashes.get(i);
+            boolean isDuplicate = isDuplicate(hash, row.fitId(), account.getId());
             if (isDuplicate) duplicateCount++;
             previews.add(ImportDto.ImportedTransactionPreview.builder()
                     .date(row.date())
@@ -259,13 +284,17 @@ public class ImportService {
                                              User user,
                                              ImportDto.ImportConfirmRequest confirm,
                                              Category defaultCategory) {
+        // null/vuoto = importa tutte le righe non duplicate (contratto di ImportConfirmRequest)
         Set<String> selectedHashes = confirm != null && confirm.getSelectedHashes() != null
+                && !confirm.getSelectedHashes().isEmpty()
                 ? new HashSet<>(confirm.getSelectedHashes()) : null;
 
         int imported = 0, skipped = 0, errors = 0;
 
-        for (ParsedRow row : rows) {
-            String hash = computeHash(account.getId(), row.date(), row.amount(), row.description());
+        List<String> hashes = computeRowHashes(rows, account.getId());
+        for (int i = 0; i < rows.size(); i++) {
+            ParsedRow row = rows.get(i);
+            String hash = hashes.get(i);
 
             // Skip if not in selected set (when caller explicitly chose rows)
             if (selectedHashes != null && !selectedHashes.contains(hash)) {
@@ -274,7 +303,7 @@ public class ImportService {
             }
 
             // Deduplication: skip existing
-            if (isDuplicate(hash, row.fitId())) {
+            if (isDuplicate(hash, row.fitId(), account.getId())) {
                 skipped++;
                 continue;
             }
@@ -314,16 +343,38 @@ public class ImportService {
                 .build();
     }
 
-    private boolean isDuplicate(String importHash, String fitId) {
-        if (fitId != null && !fitId.isEmpty() && transactionRepository.findByExternalId(fitId).isPresent()) {
+    private boolean isDuplicate(String importHash, String fitId, UUID accountId) {
+        // FITID scoped al conto e inclusi i soft-deleted: coerente con l'indice univoco
+        // uk_transaction_account_external_id (un re-import dopo una cancellazione lo violerebbe)
+        if (fitId != null && !fitId.isEmpty()
+                && transactionRepository.countByAccountIdAndExternalIdIncludingDeleted(accountId, fitId) > 0) {
             return true;
         }
         return transactionRepository.existsByImportHash(importHash);
     }
 
-    private static String computeHash(UUID accountId, LocalDate date, BigDecimal amount, String description) {
+    /**
+     * Hash di import per ogni riga. Righe identiche nello stesso file (es. due caffè uguali nello
+     * stesso giorno) ricevono un suffisso di occorrenza, altrimenti la seconda verrebbe scartata come
+     * duplicato della prima. La prima occorrenza mantiene l'hash storico (retro-compatibile).
+     */
+    private static List<String> computeRowHashes(List<ParsedRow> rows, UUID accountId) {
+        Map<String, Integer> occurrences = new HashMap<>();
+        List<String> hashes = new ArrayList<>(rows.size());
+        for (ParsedRow row : rows) {
+            String base = computeHash(accountId, row.date(), row.amount(), row.description(), 0);
+            int occurrence = occurrences.merge(base, 1, Integer::sum) - 1;
+            hashes.add(occurrence == 0 ? base
+                    : computeHash(accountId, row.date(), row.amount(), row.description(), occurrence));
+        }
+        return hashes;
+    }
+
+    private static String computeHash(UUID accountId, LocalDate date, BigDecimal amount, String description,
+                                      int occurrence) {
         String raw = accountId + "|" + date + "|" + amount.toPlainString() + "|"
-                + (description != null ? description.toLowerCase().trim() : "");
+                + (description != null ? description.toLowerCase().trim() : "")
+                + (occurrence > 0 ? "#" + occurrence : "");
         try {
             byte[] digest = MessageDigest.getInstance("SHA-256")
                     .digest(raw.getBytes(StandardCharsets.UTF_8));

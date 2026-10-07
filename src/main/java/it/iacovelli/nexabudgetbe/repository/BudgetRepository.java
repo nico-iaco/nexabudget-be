@@ -35,8 +35,17 @@ public interface BudgetRepository extends JpaRepository<Budget, UUID> {
     @Query("SELECT b FROM Budget b JOIN FETCH b.category WHERE b.user = :user AND b.startDate <= :date AND (b.endDate IS NULL OR b.endDate >= :date)")
     List<Budget> findActiveBudgetsByUserAndDate(@Param("user") User user, @Param("date") LocalDate date);
 
-    @Query("SELECT b FROM Budget b JOIN FETCH b.category WHERE b.user = :user AND b.category = :category AND b.startDate <= :date AND (b.endDate IS NULL OR b.endDate >= :date)")
-    Optional<Budget> findActiveBudgetByUserAndCategoryAndDate(@Param("user") User user, @Param("category") Category category, @Param("date") LocalDate date);
+    @Query("SELECT b FROM Budget b JOIN FETCH b.category WHERE b.user = :user AND b.category = :category AND b.startDate <= :date AND (b.endDate IS NULL OR b.endDate >= :date) ORDER BY b.startDate DESC")
+    List<Budget> findActiveBudgetsByUserAndCategoryAndDate(@Param("user") User user, @Param("category") Category category, @Param("date") LocalDate date);
+
+    /**
+     * Budget attivo più recente per utente+categoria alla data. Più budget sovrapposti sono possibili
+     * (es. budget manuale + template, o dopo un merge di categorie): non usare una query Optional,
+     * che in quel caso lancerebbe IncorrectResultSizeDataAccessException.
+     */
+    default Optional<Budget> findActiveBudgetByUserAndCategoryAndDate(User user, Category category, LocalDate date) {
+        return findActiveBudgetsByUserAndCategoryAndDate(user, category, date).stream().findFirst();
+    }
 
     @Query("SELECT b FROM Budget b JOIN FETCH b.category WHERE b.user = :user AND " +
             "((b.startDate BETWEEN :start AND :end) OR " +

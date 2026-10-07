@@ -22,7 +22,7 @@ Either mechanism produces an authenticated `SecurityContext` — the rest of the
   * The server issues a stateless JWT signed with HMAC SHA-256 using `JWT_SECRET` (≥ 32 chars; the application **refuses to start** if the secret equals the dev default).
   * The token carries the user's UUID as subject.
   * Default expiration: **24 hours** (`app.jwtExpirationInMs=86400000`).
-* **Validation:** `JwtAuthenticationFilter` parses the `Authorization: Bearer <token>` header, delegates verification to `JwtTokenProvider`, loads the user via `UserDetailsServiceImpl`, and populates `SecurityContextHolder`.
+* **Validation:** `JwtAuthenticationFilter` parses the `Authorization: Bearer <token>` header, delegates verification to `JwtTokenProvider`, loads the user **by id from the `sub` claim** via `UserDetailsServiceImpl.loadUserById()`, and populates `SecurityContextHolder`. The `username` claim is informational only: usernames can change, so resolving by username would let an old token authenticate as whoever later takes that name.
 
 ### 2. API Keys
 
@@ -34,6 +34,7 @@ Either mechanism produces an authenticated `SecurityContext` — the rest of the
   * The database (`api_keys` table) holds only the SHA-256 hash (`key_hash`, indexed and unique).
   * Each request: the filter hashes the inbound header, looks the row up, then validates `active = true` and `expires_at IS NULL OR expires_at > now()`. On success it updates `last_used_at`.
 * **Lifecycle:** an `ApiKey` can be deactivated (`active = false`), given an expiry, or hard-deleted by the owning user.
+* **Restrictions:** requests authenticated by API key carry an `ApiKeyAuthenticationToken` and are denied (403) the account-takeover operations: creating new API keys (`POST /api/api-keys`) and changing email or password (`PUT /api/users/` with `email`/`password`). These require a user (JWT) session. The `scopes` field is stored but not otherwise enforced.
 
 ## Authorization & Ownership
 

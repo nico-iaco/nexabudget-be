@@ -60,6 +60,7 @@ public class CacheConfig {
                 return RedisCacheManager.builder(connectionFactory)
                                 .cacheDefaults(config)
                                 .withCacheConfiguration(CRYPTO_PRICES_CACHE, config.entryTtl(CRYPTO_CACHE_TTL))
+                                .withCacheConfiguration(PORTFOLIO_CACHE, config.entryTtl(CRYPTO_CACHE_TTL))
                                 .withCacheConfiguration(AI_REPORTS_RESULTS_CACHE, config.entryTtl(AI_REPORT_RESULTS_TTL))
                                 .build();
         }

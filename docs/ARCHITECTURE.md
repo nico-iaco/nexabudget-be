@@ -86,7 +86,7 @@ Long-running tasks are offloaded from the main request thread to avoid timeouts 
 The application uses **Spring Cache backed by Spring Data Redis (Lettuce client)** against a Valkey/Redis instance:
 
 - **Caching:** Frequent but slow operations are cached — default TTL 6h for most caches and 5m for crypto prices. `CacheWarmupRunner` pre-populates the exchange-rate cache (USD → EUR/GBP) at startup. Cached methods use `unless` conditions to avoid caching empty fallback results, so retries are not blocked. Async AI-report job status is also tracked through cached entries.
-- **Concurrency control on GoCardless sync:** Race conditions are prevented by a **database-level atomic lock**, not a Redis lock: `AccountService.tryAcquireSyncLock()` calls `AccountRepository.markSynchronizing()`, a JPQL `UPDATE accounts SET is_synchronizing = true WHERE id = :id AND is_synchronizing = false`. The row count returned tells the caller whether it acquired the lock.
+- **Concurrency control on bank sync (both providers):** Race conditions are prevented by a **database-level atomic lock**, not a Redis lock: `AccountService.tryAcquireSyncLock()` calls `AccountRepository.markSynchronizing()`, a JPQL `UPDATE accounts SET is_synchronizing = true, sync_started_at = now WHERE id = :id AND (is_synchronizing = false OR sync_started_at IS NULL OR sync_started_at < now − 1h)`. The row count returned tells the caller whether it acquired the lock; a lock orphaned by a crash or redeploy mid-sync expires after one hour. The lock is released and the sync outcome recorded with targeted `UPDATE`s (never by saving the entity loaded at the start of a possibly long sync).
 
 ### 5.3.1 Bank Aggregation Strategy Pattern
 
@@ -157,7 +157,7 @@ The system leverages `spring-ai-google-genai` for deeply integrated intelligent 
 
 - **Auto-Categorization:** New unclassified transactions are sent to Gemini with a predefined prompt to determine the most probable category.
 - **Semantic Caching:** To avoid asking the AI the same questions or categorizing identical transactions repeatedly, queries are embedded (`gemini-embedding-001`) and stored in MongoDB Atlas. Before a Gemini call, the system performs a vector similarity search in Mongo to return cached responses.
-- **Conversational Chatbot:** The `ChatController` maintains conversation history, allowing the user to interactively query their financial data.
+- **Conversational Chatbot:** The `ChatController` maintains conversation history, allowing the user to interactively query their financial data. The model call (with tool calling) runs **outside any database transaction**: `ChatService` reads the history in a short read-only transaction, calls Gemini, then persists the whole exchange (user message, reply, tools used) in a second short transaction — so slow LLM round-trips never hold a connection from the pool, and a failing tool cannot roll back the conversation. If the model call itself fails, nothing is persisted: the client gets a fallback message and the conversation stays as it was.
 
 ### 6.3 Crypto Portfolio (Binance + Coinbase)
 

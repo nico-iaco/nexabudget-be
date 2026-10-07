@@ -4,10 +4,12 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.UserDto;
 import it.iacovelli.nexabudgetbe.model.User;
+import it.iacovelli.nexabudgetbe.security.ApiKeyAuthenticationToken;
 import it.iacovelli.nexabudgetbe.service.UserService;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -30,6 +32,11 @@ public class UserController {
     @Operation(summary = "Aggiorna utente", description = "Aggiorna parzialmente i dati dell'utente loggato. Vengono aggiornati solo i campi presenti nella richiesta.")
     public ResponseEntity<UserDto.UserResponse> updateUser(@AuthenticationPrincipal User currentUser,
                                                            @Valid @RequestBody UserDto.UpdateUserRequest updateRequest) {
+        if (ApiKeyAuthenticationToken.isCurrentRequestApiKeyAuthenticated()
+                && (updateRequest.getEmail() != null || updateRequest.getPassword() != null)) {
+            throw new AccessDeniedException("Email e password non possono essere modificate tramite API key");
+        }
+
         User existingUser = userService.getUserById(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
 

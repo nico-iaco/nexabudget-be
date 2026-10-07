@@ -193,7 +193,8 @@ public class AiReportService {
             AiReportStatusResponse status = cache.get(jobId, AiReportStatusResponse.class);
             if (status != null) {
                 String owner = cache.get("owner_" + jobId, String.class);
-                if (owner != null && !owner.equals(user.getId().toString())) {
+                // Owner mancante (es. chiave evicted) = accesso negato, non consentito a chiunque
+                if (owner == null || !owner.equals(user.getId().toString())) {
                     throw new org.springframework.security.access.AccessDeniedException("Accesso non autorizzato al job");
                 }
                 return status;

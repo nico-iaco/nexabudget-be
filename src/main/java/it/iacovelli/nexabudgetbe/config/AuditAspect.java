@@ -180,7 +180,10 @@ public class AuditAspect {
             HttpServletRequest request = attrs.getRequest();
             String forwarded = request.getHeader("X-Forwarded-For");
             if (forwarded != null && !forwarded.isEmpty()) {
-                return forwarded.split(",")[0].trim();
+                // Header controllato dal client: oltre la lunghezza della colonna (64) l'INSERT
+                // dell'audit, eseguito al commit del chiamante, farebbe fallire l'operazione stessa
+                String ip = forwarded.split(",")[0].trim();
+                return ip.length() > 64 ? ip.substring(0, 64) : ip;
             }
             return request.getRemoteAddr();
         } catch (Exception e) {

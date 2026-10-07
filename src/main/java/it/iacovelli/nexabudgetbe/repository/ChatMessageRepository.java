@@ -15,6 +15,7 @@ public interface ChatMessageRepository extends JpaRepository<ChatMessage, UUID> 
 
     List<ChatMessage> findBySessionOrderByCreatedAtAsc(ChatSession session);
 
-    @Query("SELECT m FROM ChatMessage m WHERE m.session.id = :sessionId ORDER BY m.createdAt DESC LIMIT :limit")
+    // Le righe TOOL non vanno al modello: escluse perché non consumino la finestra di storico
+    @Query("SELECT m FROM ChatMessage m WHERE m.session.id = :sessionId AND m.role <> 'TOOL' ORDER BY m.createdAt DESC LIMIT :limit")
     List<ChatMessage> findLastNBySessionId(@Param("sessionId") UUID sessionId, @Param("limit") int limit);
 }

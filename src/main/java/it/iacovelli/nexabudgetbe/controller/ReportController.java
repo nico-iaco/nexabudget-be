@@ -45,6 +45,11 @@ public class ReportController {
             @Valid @RequestBody AiReportRequest request) {
         String language = request.userLanguage() != null && !request.userLanguage().isBlank() ? request.userLanguage() : "it";
         UUID jobId = aiReportService.startAiReportJob(currentUser, request.startDate(), request.endDate(), language);
+        // Report già in cache: il job è già COMPLETED, rigenerarlo ripagherebbe le chiamate AI e rimanderebbe l'email
+        AiReportStatusResponse initialStatus = aiReportService.getJobStatus(jobId, currentUser);
+        if ("COMPLETED".equals(initialStatus.status())) {
+            return ResponseEntity.ok(initialStatus);
+        }
         aiReportService.generateAiReport(jobId, currentUser, request.startDate(), request.endDate(), language);
         return ResponseEntity.accepted().body(new AiReportStatusResponse(jobId, "PENDING", null, request.startDate(), request.endDate()));
     }
@@ -80,7 +85,7 @@ public class ReportController {
     }
 
     @GetMapping("/monthly-trend")
-    @Operation(summary = "Trend mensile", description = "Entrate e uscite totali per mese negli ultimi N mesi, convertiti nella valuta di default dell'utente")
+    @Operation(summary = "Trend mensile", description = "Entrate e uscite per mese negli ultimi N mesi, calcolate sul netto per categoria (OUT-IN) e convertite nella valuta di default dell'utente")
     public ResponseEntity<ReportDto.MonthlyTrendResponse> getMonthlyTrend(
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "Numero di mesi (default 12)") @RequestParam(defaultValue = "12") int months) {
@@ -97,7 +102,7 @@ public class ReportController {
     }
 
     @GetMapping("/month-comparison")
-    @Operation(summary = "Confronto mese", description = "Confronta entrate/uscite del mese specificato con il mese precedente")
+    @Operation(summary = "Confronto mese", description = "Confronta entrate/uscite (netto per categoria) del mese specificato (1-12) con il mese precedente")
     public ResponseEntity<ReportDto.MonthComparisonResponse> getMonthComparison(
             @AuthenticationPrincipal User currentUser,
             @Parameter(description = "Anno (es. 2025)") @RequestParam int year,
@@ -115,7 +120,7 @@ public class ReportController {
     }
 
     @GetMapping("/monthly-projection")
-    @Operation(summary = "Proiezione mensile", description = "Proiezione entrate/uscite a fine mese basata sul ritmo attuale")
+    @Operation(summary = "Proiezione mensile", description = "Proiezione entrate/uscite (netto per categoria) a fine mese basata sulla media degli ultimi 3 mesi o, senza storico, sul ritmo attuale")
     public ResponseEntity<ReportDto.MonthlyProjection> getMonthlyProjection(
             @AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(reportService.getMonthlyProjection(currentUser));

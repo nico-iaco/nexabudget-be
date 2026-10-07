@@ -16,6 +16,7 @@ import org.springframework.util.StringUtils;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.UUID;
 
 @Component
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
@@ -38,15 +39,17 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
             String jwt = getJwtFromRequest(request);
 
             if (StringUtils.hasText(jwt) && tokenProvider.validateToken(jwt)) {
-                String username = tokenProvider.getUsernameFromJWT(jwt);
+                // Lookup per id (subject, immutabile), non per username: dopo una rinomina un token
+                // ancora valido autenticherebbe chi ha preso quel nome in seguito
+                UUID userId = tokenProvider.getUserIdFromJWT(jwt);
 
-                UserDetails userDetails = userDetailsService.loadUserByUsername(username);
+                UserDetails userDetails = userDetailsService.loadUserById(userId);
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(userDetails, null, userDetails.getAuthorities());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
 
                 SecurityContextHolder.getContext().setAuthentication(authentication);
-                logger.debug("Autenticazione JWT riuscita per l'utente: {}", username);
+                logger.debug("Autenticazione JWT riuscita per l'utente: {}", userId);
             }
         } catch (Exception ex) {
             logger.error("Impossibile impostare l'autenticazione utente nel contesto di sicurezza: {}", ex.getMessage());

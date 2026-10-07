@@ -1,9 +1,11 @@
 package it.iacovelli.nexabudgetbe.repository;
 
 import it.iacovelli.nexabudgetbe.model.BudgetTemplate;
+import it.iacovelli.nexabudgetbe.model.Category;
 import it.iacovelli.nexabudgetbe.model.RecurrenceType;
 import it.iacovelli.nexabudgetbe.model.User;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
@@ -26,5 +28,9 @@ public interface BudgetTemplateRepository extends JpaRepository<BudgetTemplate, 
 
     @Query("SELECT bt FROM BudgetTemplate bt JOIN FETCH bt.category WHERE bt.id = :id AND bt.user = :user")
     Optional<BudgetTemplate> findByIdAndUser(@Param("id") UUID id, @Param("user") User user);
+
+    @Modifying(clearAutomatically = true, flushAutomatically = true)
+    @Query("UPDATE BudgetTemplate bt SET bt.category = :target WHERE bt.category = :source AND bt.user = :user")
+    int updateCategoryBulk(@Param("source") Category source, @Param("target") Category target, @Param("user") User user);
 }
 

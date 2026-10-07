@@ -51,10 +51,10 @@ public class CryptoPortfolioService {
         this.currencyConversionService = currencyConversionService;
     }
 
-    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
+    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, allEntries = true)
     public CryptoHoldingDto addManualHolding(User user, String symbol, BigDecimal amount) {
         Optional<CryptoHolding> existing = holdingRepository.findByUserAndSymbolAndSource(
-                user, symbol, HoldingSource.MANUAL);
+                user, symbol.toUpperCase(), HoldingSource.MANUAL);
 
         CryptoHolding holding = existing.orElseGet(CryptoHolding::new);
         holding.setUser(user);
@@ -67,7 +67,7 @@ public class CryptoPortfolioService {
         return mapEntityToDto(cryptoHolding);
     }
 
-    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
+    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, allEntries = true)
     public CryptoHoldingDto updateManualHolding(User user, UUID holdingId, BigDecimal newAmount) {
         CryptoHolding holding = holdingRepository.findById(holdingId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset non trovato"));
@@ -86,7 +86,7 @@ public class CryptoPortfolioService {
         return mapEntityToDto(updated);
     }
 
-    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
+    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, allEntries = true)
     public void deleteManualHolding(User user, UUID holdingId) {
         CryptoHolding holding = holdingRepository.findById(holdingId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Asset non trovato"));
@@ -127,7 +127,7 @@ public class CryptoPortfolioService {
     }
 
     @Async
-    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
+    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, allEntries = true)
     public void syncBinanceHoldings(User user) {
         UserBinanceKeys keys = keysRepository.findByUser(user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Chiavi Binance non configurate"));
@@ -160,7 +160,7 @@ public class CryptoPortfolioService {
     }
 
     @Async
-    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
+    @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, allEntries = true)
     public void syncCoinbaseHoldings(User user) {
         UserCoinbaseKeys keys = coinbaseKeysRepository.findByUser(user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Chiavi Coinbase non configurate"));
@@ -193,7 +193,8 @@ public class CryptoPortfolioService {
     }
 
     @Transactional(readOnly = true)
-    @Cacheable(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id")
+    // La chiave include la valuta: altrimenti un portfolio calcolato in USD veniva restituito anche a chi chiede EUR
+    @Cacheable(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id + '_' + (#currency == null ? '' : #currency.toUpperCase())")
     public CryptoDto.PortfolioValueResponse getPortfolioValue(User user, String currency) {
         List<CryptoHolding> holdings = holdingRepository.findByUser(user);
 
@@ -266,7 +267,7 @@ public class CryptoPortfolioService {
                         asset.getSource(),
                         asset.getSymbol(),
                         asset.getAmount(),
-                        currencyConversionService.convertFromUsd(asset.getPrice(), targetCurrency),
+                        currencyConversionService.convertFromUsd(asset.getPrice(), targetCurrency, 8),
                         currencyConversionService.convertFromUsd(asset.getValue(), targetCurrency)))
                 .collect(Collectors.toList());
 

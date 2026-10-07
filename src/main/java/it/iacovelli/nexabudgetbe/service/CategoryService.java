@@ -3,8 +3,10 @@ package it.iacovelli.nexabudgetbe.service;
 import it.iacovelli.nexabudgetbe.model.Category;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.repository.BudgetRepository;
+import it.iacovelli.nexabudgetbe.repository.BudgetTemplateRepository;
 import it.iacovelli.nexabudgetbe.repository.CategoryRepository;
 import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,13 +21,16 @@ public class CategoryService {
     private final CategoryRepository categoryRepository;
     private final TransactionRepository transactionRepository;
     private final BudgetRepository budgetRepository;
+    private final BudgetTemplateRepository budgetTemplateRepository;
 
     public CategoryService(CategoryRepository categoryRepository,
                            TransactionRepository transactionRepository,
-                           BudgetRepository budgetRepository) {
+                           BudgetRepository budgetRepository,
+                           BudgetTemplateRepository budgetTemplateRepository) {
         this.categoryRepository = categoryRepository;
         this.transactionRepository = transactionRepository;
         this.budgetRepository = budgetRepository;
+        this.budgetTemplateRepository = budgetTemplateRepository;
     }
 
     public Category createCategory(Category category) {
@@ -44,6 +49,11 @@ public class CategoryService {
 
     public Optional<Category> getCategoryByIdAndUser(UUID id, User user) {
         return categoryRepository.findByIdAndUser(id, user);
+    }
+
+    /** Categoria modificabile dall'utente: le predefinite (condivise da tutti) sono escluse. */
+    public Optional<Category> getOwnedCategoryByIdAndUser(UUID id, User user) {
+        return categoryRepository.findOwnedByIdAndUser(id, user);
     }
 
     public List<Category> getAllCategories() {
@@ -66,12 +76,28 @@ public class CategoryService {
         return categoryRepository.save(category);
     }
 
+    public Category renameCategory(Category category, String newName) {
+        if (!newName.equals(category.getName())
+                && categoryRepository.existsByUserAndName(category.getUser(), newName)) {
+            throw new IllegalStateException("Categoria '" + newName + "' già esistente per questo utente");
+        }
+        category.setName(newName);
+        return categoryRepository.save(category);
+    }
+
     public void deleteCategory(UUID categoryId) {
         categoryRepository.deleteById(categoryId);
     }
 
     public void deleteCategoryWithUser(UUID id, User user) {
-        categoryRepository.findByIdAndUser(id, user).ifPresent(categoryRepository::delete);
+        categoryRepository.findOwnedByIdAndUser(id, user).ifPresent(category -> {
+            try {
+                categoryRepository.delete(category);
+            } catch (DataIntegrityViolationException e) {
+                throw new IllegalStateException(
+                        "Categoria in uso da transazioni, budget o template: unirla a un'altra categoria invece di eliminarla");
+            }
+        });
     }
 
     public void createDefaultCategories() {
@@ -102,8 +128,9 @@ public class CategoryService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
                         "Categoria target non trovata"));
 
-        transactionRepository.updateCategoryBulk(source, target, user);
+        transactionRepository.updateCategoryBulkIncludingDeleted(source.getId(), target.getId(), user.getId());
         budgetRepository.updateCategoryBulk(source, target, user);
+        budgetTemplateRepository.updateCategoryBulk(source, target, user);
         categoryRepository.delete(source);
     }
 

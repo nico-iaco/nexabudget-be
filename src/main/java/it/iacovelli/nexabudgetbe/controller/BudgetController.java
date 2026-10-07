@@ -50,7 +50,7 @@ public class BudgetController {
         User user = userService.getUserById(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
 
-        Category category = categoryService.getCategoryById(budgetRequest.getCategoryId())
+        Category category = categoryService.getCategoryByIdAndUser(budgetRequest.getCategoryId(), user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Categoria non trovata"));
 
         Budget budget = Budget.builder()
@@ -86,7 +86,7 @@ public class BudgetController {
         User user = userService.getUserById(currentUser.getId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Utente non trovato"));
 
-        Category category = categoryService.getCategoryById(categoryId)
+        Category category = categoryService.getCategoryByIdAndUser(categoryId, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Categoria non trovata"));
 
         List<BudgetDto.BudgetResponse> budgets = budgetService.getBudgetsByUserAndCategory(user, category).stream()
@@ -211,7 +211,7 @@ public class BudgetController {
         Budget existingBudget = budgetService.getBudgetByIdAndUser(id, user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Budget non trovato"));
 
-        Category category = categoryService.getCategoryById(budgetRequest.getCategoryId())
+        Category category = categoryService.getCategoryByIdAndUser(budgetRequest.getCategoryId(), user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Categoria non trovata"));
 
         existingBudget.setCategory(category);

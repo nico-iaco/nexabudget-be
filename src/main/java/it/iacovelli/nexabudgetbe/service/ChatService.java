@@ -18,7 +18,9 @@ import org.springframework.ai.chat.messages.UserMessage;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
@@ -78,26 +80,55 @@ public class ChatService {
     private final FinanceTools financeTools;
     private final ChatSessionRepository chatSessionRepository;
     private final ChatMessageRepository chatMessageRepository;
+    private final PlatformTransactionManager transactionManager;
 
-    @Transactional
+    /**
+     * Volutamente NON {@code @Transactional}: la chiamata al modello (decine di secondi, con tool) non deve tenere
+     * occupata una connessione del pool né condividere la transazione con i tool — un tool che fallisce la
+     * marcherebbe rollback-only e il commit finale risponderebbe 500. Tre fasi:
+     * <ol>
+     *     <li>transazione breve read-only: verifica ownership della sessione e legge lo storico;</li>
+     *     <li>chiamata al modello fuori da ogni transazione (ogni tool apre la propria);</li>
+     *     <li>transazione breve di scrittura: crea la sessione se nuova e salva messaggio utente, risposta,
+     *         righe TOOL e titolo insieme.</li>
+     * </ol>
+     * Se il modello non risponde non viene salvato nulla (né messaggio utente, né risposta di ripiego, né una
+     * sessione nuova): il client riceve il messaggio di ripiego e la sessione richiesta (null se era nuova).
+     */
     public ChatDto.ChatResponse chat(User user, ChatDto.ChatRequest request) {
-        ChatSession session = resolveOrCreateSession(user, request.sessionId());
+        // Storico letto prima di salvare il nuovo messaggio: callWithTools lo aggiunge già come ultimo turno utente
+        List<Message> history = request.sessionId() == null ? List.of()
+                : readOnlyTransaction().execute(status -> buildHistory(requireSession(user, request.sessionId())));
+
+        String systemText = String.format(SYSTEM_PROMPT_TEMPLATE,
+                user.getDefaultCurrency(),
+                LocalDate.now());
+
+        log.debug("[ChatService] Invocazione modello {} per sessione {}", chatModelName, request.sessionId());
+
+        ChatResult result = callWithTools(systemText, history, request.message());
+
+        if (result.failed()) {
+            return new ChatDto.ChatResponse(request.sessionId(), result.replyText(), result.toolsUsed());
+        }
+
+        UUID sessionId = new TransactionTemplate(transactionManager)
+                .execute(status -> persistExchange(user, request, result));
+
+        return new ChatDto.ChatResponse(sessionId, result.replyText(), result.toolsUsed());
+    }
+
+    private UUID persistExchange(User user, ChatDto.ChatRequest request, ChatResult result) {
+        // Ricaricata qui: la sessione potrebbe essere stata eliminata durante la chiamata al modello
+        ChatSession session = request.sessionId() != null
+                ? requireSession(user, request.sessionId())
+                : chatSessionRepository.save(ChatSession.builder().user(user).build());
 
         chatMessageRepository.save(ChatMessage.builder()
                 .session(session)
                 .role("USER")
                 .content(request.message())
                 .build());
-
-        String systemText = String.format(SYSTEM_PROMPT_TEMPLATE,
-                user.getDefaultCurrency(),
-                LocalDate.now());
-
-        List<Message> history = buildHistory(session);
-
-        log.debug("[ChatService] Invocazione modello {} per sessione {}", chatModelName, session.getId());
-
-        ChatResult result = callWithTools(systemText, history, request.message());
 
         chatMessageRepository.save(ChatMessage.builder()
                 .session(session)
@@ -120,8 +151,13 @@ public class ChatService {
             session.setTitle(title);
         }
         chatSessionRepository.save(session);
+        return session.getId();
+    }
 
-        return new ChatDto.ChatResponse(session.getId(), result.replyText(), result.toolsUsed());
+    private TransactionTemplate readOnlyTransaction() {
+        TransactionTemplate template = new TransactionTemplate(transactionManager);
+        template.setReadOnly(true);
+        return template;
     }
 
     @Transactional(readOnly = true)
@@ -151,13 +187,9 @@ public class ChatService {
         chatSessionRepository.delete(session);
     }
 
-    private ChatSession resolveOrCreateSession(User user, UUID sessionId) {
-        if (sessionId != null) {
-            return chatSessionRepository.findByIdAndUser(sessionId, user)
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Sessione non trovata"));
-        }
-        ChatSession newSession = ChatSession.builder().user(user).build();
-        return chatSessionRepository.save(newSession);
+    private ChatSession requireSession(User user, UUID sessionId) {
+        return chatSessionRepository.findByIdAndUser(sessionId, user)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Sessione non trovata"));
     }
 
     private List<Message> buildHistory(ChatSession session) {
@@ -188,10 +220,11 @@ public class ChatService {
                     .chatResponse();
 
             String replyText = stripThinking(response.getResult().getOutput().getText());
-            return new ChatResult(replyText, tools.toolsUsed());
+            return new ChatResult(replyText, tools.toolsUsed(), false);
         } catch (Exception e) {
             log.error("[ChatService] Errore chiamata Gemini ({}): {}", e.getClass().getSimpleName(), e.getMessage());
-            return new ChatResult("L'assistente AI non è al momento raggiungibile. Riprova tra qualche istante.", tools.toolsUsed());
+            return new ChatResult("L'assistente AI non è al momento raggiungibile. Riprova tra qualche istante.",
+                    tools.toolsUsed(), true);
         }
     }
 
@@ -235,5 +268,5 @@ public class ChatService {
         return text.strip();
     }
 
-    private record ChatResult(String replyText, List<String> toolsUsed) {}
+    private record ChatResult(String replyText, List<String> toolsUsed, boolean failed) {}
 }

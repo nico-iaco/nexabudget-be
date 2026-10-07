@@ -73,12 +73,11 @@ public class CategoryController {
             @Parameter(description = "ID categoria") @PathVariable UUID id,
             @AuthenticationPrincipal User currentUser,
             @Valid @RequestBody CategoryDto.CategoryRequest categoryRequest) {
-        Category existingCategory = categoryService.getCategoryByIdAndUser(id, currentUser)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Categoria non trovata"));
+        Category existingCategory = categoryService.getOwnedCategoryByIdAndUser(id, currentUser)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND,
+                        "Categoria non trovata o non modificabile (le categorie predefinite non si possono modificare)"));
 
-        existingCategory.setName(categoryRequest.getName());
-
-        Category updatedCategory = categoryService.updateCategory(existingCategory);
+        Category updatedCategory = categoryService.renameCategory(existingCategory, categoryRequest.getName());
         return ResponseEntity.ok(mapCategoryToResponse(updatedCategory));
     }
 

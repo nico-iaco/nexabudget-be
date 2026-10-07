@@ -71,11 +71,22 @@ public class BankDuplicateReconciliationService {
      */
     @Transactional
     public int reconcile(Account account, List<NormalizedBankTransaction> bookedFromProvider) {
+        return reconcile(account, bookedFromProvider, null);
+    }
+
+    /**
+     * @param requestedFrom data da cui il provider ha restituito le transazioni (sync incrementale), {@code null} se
+     *                      la lista copre l'intero storico. Le righe salvate prima di questa data non sono nella lista
+     *                      ricevuta e non vanno considerate orfane (es. una riga con value date antecedente al
+     *                      date_from porterebbe il minimo della lista prima della finestra realmente richiesta).
+     */
+    @Transactional
+    public int reconcile(Account account, List<NormalizedBankTransaction> bookedFromProvider, LocalDate requestedFrom) {
         Map<UUID, Transaction> toUpdate = new LinkedHashMap<>();
         Set<UUID> toDelete = new LinkedHashSet<>();
 
         removeSameExternalIdDuplicates(account, toUpdate, toDelete);
-        removeOrphanPendingDuplicates(account, bookedFromProvider, toUpdate, toDelete);
+        removeOrphanPendingDuplicates(account, bookedFromProvider, requestedFrom, toUpdate, toDelete);
 
         toDelete.forEach(toUpdate::remove);
         if (!toUpdate.isEmpty()) {
@@ -110,6 +121,7 @@ public class BankDuplicateReconciliationService {
     }
 
     private void removeOrphanPendingDuplicates(Account account, List<NormalizedBankTransaction> booked,
+                                               LocalDate requestedFrom,
                                                Map<UUID, Transaction> toUpdate, Set<UUID> toDelete) {
         Set<String> bookedIds = booked.stream()
                 .map(NormalizedBankTransaction::getExternalId)
@@ -126,7 +138,8 @@ public class BankDuplicateReconciliationService {
 
         LocalDate minDate = bookedDates.stream().min(Comparator.naturalOrder()).orElseThrow();
         LocalDate maxDate = bookedDates.stream().max(Comparator.naturalOrder()).orElseThrow();
-        LocalDate orphanFrom = minDate.plusDays(MATCH_TOLERANCE_DAYS);
+        LocalDate coveredFrom = requestedFrom != null && requestedFrom.isAfter(minDate) ? requestedFrom : minDate;
+        LocalDate orphanFrom = coveredFrom.plusDays(MATCH_TOLERANCE_DAYS);
         LocalDate orphanTo = LocalDate.now().minusDays(PENDING_GRACE_DAYS);
 
         List<Transaction> candidates = transactionRepository.findWithExternalIdByAccountAndDateBetween(

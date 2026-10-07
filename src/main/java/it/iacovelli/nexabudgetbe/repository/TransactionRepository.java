@@ -87,8 +87,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
        List<Transaction> findByAccountAndDateRangeOrderByDateDesc(Account account, LocalDate start, LocalDate end);
 
        @Query("SELECT SUM(t.amount) FROM Transaction t WHERE t.account = :account AND t.type = :type AND t.date BETWEEN :start AND :end AND t.transferId IS NULL")
-       BigDecimal sumByAccountAndTypeAndDateRange(Account account, TransactionType type, LocalDateTime start,
-                     LocalDateTime end);
+       BigDecimal sumByAccountAndTypeAndDateRange(Account account, TransactionType type, LocalDate start,
+                     LocalDate end);
 
        void deleteAllByAccount(Account account);
 
@@ -100,10 +100,13 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
                      @Param("startDate") LocalDate startDate,
                      @Param("endDate") LocalDate endDate);
 
+       // Native: deve spostare anche le righe nel cestino (deleted = true), altrimenti la FK
+       // transactions.category_id impedisce di eliminare la categoria source dopo il merge.
        @Modifying(clearAutomatically = true, flushAutomatically = true)
-       @Query("UPDATE Transaction t SET t.category = :target WHERE t.category = :source AND t.user = :user")
-       int updateCategoryBulk(@Param("source") Category source, @Param("target") Category target,
-                     @Param("user") User user);
+       @Query(value = "UPDATE transactions SET category_id = :targetId WHERE category_id = :sourceId AND user_id = :userId",
+                     nativeQuery = true)
+       int updateCategoryBulkIncludingDeleted(@Param("sourceId") UUID sourceId, @Param("targetId") UUID targetId,
+                     @Param("userId") UUID userId);
 
        @Modifying(clearAutomatically = true, flushAutomatically = true)
        @Query(value = "UPDATE transactions SET deleted = true, deleted_at = :now WHERE id = :id AND deleted = false", nativeQuery = true)
@@ -124,6 +127,26 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
        @Modifying(clearAutomatically = true, flushAutomatically = true)
        @Query(value = "UPDATE transactions SET deleted = false, deleted_at = null WHERE account_id = :accountId", nativeQuery = true)
        void restoreAllByAccountId(@Param("accountId") UUID accountId);
+
+       /**
+        * Ripristina solo le transazioni cancellate insieme al conto (deleted_at nella finestra della
+        * cancellazione del conto), non quelle già nel cestino prima (es. duplicati rimossi dal sync).
+        */
+       @Modifying(clearAutomatically = true, flushAutomatically = true)
+       @Query(value = "UPDATE transactions SET deleted = false, deleted_at = null WHERE account_id = :accountId " +
+                     "AND deleted = true AND deleted_at BETWEEN :from AND :to", nativeQuery = true)
+       int restoreByAccountIdDeletedBetween(@Param("accountId") UUID accountId, @Param("from") LocalDateTime from,
+                     @Param("to") LocalDateTime to);
+
+       @Modifying(clearAutomatically = true, flushAutomatically = true)
+       @Query(value = "UPDATE transactions SET deleted = false, deleted_at = null " +
+                     "WHERE transfer_id = :transferId AND user_id = :userId AND deleted = true", nativeQuery = true)
+       int restoreByTransferIdAndUserId(@Param("transferId") String transferId, @Param("userId") UUID userId);
+
+       @Query(value = "SELECT account_id FROM transactions WHERE transfer_id = :transferId AND user_id = :userId AND deleted = true",
+                     nativeQuery = true)
+       List<UUID> findDeletedAccountIdsByTransferIdAndUserId(@Param("transferId") String transferId,
+                     @Param("userId") UUID userId);
 
        @Modifying(clearAutomatically = true, flushAutomatically = true)
        @Query(value = "DELETE FROM transactions", nativeQuery = true)
@@ -148,7 +171,11 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
        Optional<Transaction> findDeletedByIdAndUserId(@Param("id") UUID id, @Param("userId") UUID userId);
 
        @Modifying
-       @Query(value = "DELETE FROM transactions WHERE deleted = true AND deleted_at < :cutoff", nativeQuery = true)
+       // Include le transazioni (anche ripristinate) dei conti scaduti: altrimenti la FK
+       // transactions.account_id fa fallire la purge dei conti, e con essa l'intera transazione.
+       @Query(value = "DELETE FROM transactions WHERE (deleted = true AND deleted_at < :cutoff) " +
+                     "OR account_id IN (SELECT id FROM accounts WHERE deleted = true AND deleted_at < :cutoff)",
+                     nativeQuery = true)
        int purgeOldDeleted(@Param("cutoff") LocalDateTime cutoff);
 
        @Query("SELECT t FROM Transaction t JOIN FETCH t.account WHERE t.user = :user AND t.category IS NULL AND t.transferId IS NULL")
@@ -156,7 +183,8 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
 
        @Modifying(clearAutomatically = true, flushAutomatically = true)
        @Transactional
-       @Query(value = "UPDATE transactions SET category_id = :categoryId WHERE id = :id AND deleted = false", nativeQuery = true)
+       // category_id IS NULL: il job è lungo, non deve sovrascrivere una categoria scelta a mano nel frattempo
+       @Query(value = "UPDATE transactions SET category_id = :categoryId WHERE id = :id AND deleted = false AND category_id IS NULL", nativeQuery = true)
        void updateCategoryById(@Param("id") UUID id, @Param("categoryId") UUID categoryId);
 
        // Report queries

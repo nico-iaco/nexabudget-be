@@ -32,11 +32,23 @@ public class CurrencyConversionService {
     }
 
     /**
+     * Come {@link #convertFromUsd} ma con la scala indicata: per i prezzi unitari (es. token da $0.000012)
+     * la scala 2 li azzererebbe.
+     */
+    public BigDecimal convertFromUsd(BigDecimal amountUsd, String targetCurrency, int scale) {
+        return convert(amountUsd, USD_CURRENCY, targetCurrency, scale);
+    }
+
+    /**
      * Converte un importo da sourceCurrency a targetCurrency.
      * Se currencies uguali o amount nullo -> ritorna amount.
      * Se tasso non disponibile -> ritorna amount (fallback) e logga warning.
      */
     public BigDecimal convert(BigDecimal amount, String sourceCurrency, String targetCurrency) {
+        return convert(amount, sourceCurrency, targetCurrency, 2);
+    }
+
+    public BigDecimal convert(BigDecimal amount, String sourceCurrency, String targetCurrency, int scale) {
         if (amount == null || sourceCurrency == null || targetCurrency == null ||
                 sourceCurrency.isBlank() || targetCurrency.isBlank()) {
             return amount;
@@ -47,7 +59,7 @@ public class CurrencyConversionService {
 
         Optional<BigDecimal> rateOpt = exchangeRateService.getRate(sourceCurrency.toUpperCase(), targetCurrency.toUpperCase());
         if (rateOpt.isPresent()) {
-            return amount.multiply(rateOpt.get()).setScale(2, RoundingMode.HALF_UP);
+            return amount.multiply(rateOpt.get()).setScale(scale, RoundingMode.HALF_UP);
         }
         logger.warn("Tasso {}->{} non disponibile. Ritorno valore originale.", sourceCurrency, targetCurrency);
         return amount;

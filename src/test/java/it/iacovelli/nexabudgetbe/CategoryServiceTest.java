@@ -40,6 +40,9 @@ class CategoryServiceTest {
     @Autowired
     private AccountRepository accountRepository;
 
+    @Autowired
+    private BudgetTemplateRepository budgetTemplateRepository;
+
     private User testUser;
 
     @BeforeEach
@@ -304,5 +307,66 @@ class CategoryServiceTest {
 
         assertThrows(IllegalArgumentException.class, () ->
                 categoryService.mergeCategories(category.getId(), category.getId(), testUser));
+    }
+
+    @Test
+    void testDeleteCategoryWithUser_DefaultCategory_IsNotDeleted() {
+        Category defaultCategory = categoryRepository.save(Category.builder().name("Predefinita").build());
+
+        categoryService.deleteCategoryWithUser(defaultCategory.getId(), testUser);
+
+        assertTrue(categoryRepository.findById(defaultCategory.getId()).isPresent());
+    }
+
+    @Test
+    void testGetOwnedCategory_ExcludesDefaultCategories() {
+        Category defaultCategory = categoryRepository.save(Category.builder().name("Predefinita").build());
+
+        assertTrue(categoryService.getCategoryByIdAndUser(defaultCategory.getId(), testUser).isPresent());
+        assertFalse(categoryService.getOwnedCategoryByIdAndUser(defaultCategory.getId(), testUser).isPresent());
+    }
+
+    @Test
+    void testRenameCategory_ToExistingName_Throws() {
+        categoryService.createCategory(Category.builder().name("Svago").user(testUser).build());
+        Category other = categoryService.createCategory(Category.builder().name("Hobby").user(testUser).build());
+
+        assertThrows(IllegalStateException.class, () -> categoryService.renameCategory(other, "Svago"));
+    }
+
+    @Test
+    void testMergeCategories_MovesTemplatesAndTrashedTransactions() {
+        Category source = categoryService.createCategory(Category.builder().name("Da Unire").user(testUser).build());
+        Category target = categoryService.createCategory(Category.builder().name("Destinazione").user(testUser).build());
+
+        Account account = accountRepository.save(Account.builder()
+                .name("Conto Test")
+                .type(AccountType.CONTO_CORRENTE)
+                .currency("EUR")
+                .user(testUser)
+                .build());
+        Transaction trashed = transactionRepository.save(Transaction.builder()
+                .user(testUser)
+                .account(account)
+                .category(source)
+                .amount(new BigDecimal("10.00"))
+                .type(TransactionType.OUT)
+                .description("Nel cestino")
+                .date(LocalDate.now())
+                .build());
+        transactionRepository.softDeleteById(trashed.getId(), java.time.LocalDateTime.now());
+        BudgetTemplate template = budgetTemplateRepository.save(BudgetTemplate.builder()
+                .user(testUser)
+                .category(source)
+                .budgetLimit(new BigDecimal("100.00"))
+                .recurrenceType(RecurrenceType.MONTHLY)
+                .build());
+
+        categoryService.mergeCategories(source.getId(), target.getId(), testUser);
+        // Forza la DELETE della categoria: una FK residua (template o transazione nel cestino) fallirebbe qui
+        categoryRepository.flush();
+
+        assertFalse(categoryRepository.findById(source.getId()).isPresent());
+        assertEquals(target.getId(), budgetTemplateRepository.findById(template.getId()).orElseThrow().getCategory().getId());
     }
 }

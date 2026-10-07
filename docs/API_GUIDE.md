@@ -13,11 +13,12 @@ NexaBudget offers a robust set of features to manage personal finances, integrat
   A provider-agnostic `BankAggregationProvider` strategy (see [ARCHITECTURE.md](ARCHITECTURE.md))
   lets `AccountService` dispatch to whichever provider an `Account` is linked to (`Account.provider`).
   * Background syncing keeps transactions up-to-date for both providers.
-  * Sync uses a database-level atomic lock to prevent race conditions.
+  * Sync uses a database-level atomic lock to prevent race conditions; a lock left by an interrupted sync expires after 1 hour.
+  * Each sync re-reads the last 7 days before the previous sync to catch late-booked transactions (duplicates are filtered by external id). A provider error fails the sync (no balance alignment, retried on the next call) instead of being treated as "no new transactions".
   * `requiresReauth` on `AccountResponse` signals an expired consent/session for either provider —
     the frontend re-runs the link flow to clear it.
 * **Multi-Currency:** Automatic exchange rate retrieval for transactions moving between accounts of different currencies.
-* **Soft Deletes & Trash:** Deleting an account or transaction moves it to the Trash (soft delete). A scheduled task purges items older than 30 days.
+* **Soft Deletes & Trash:** Deleting an account or transaction moves it to the Trash (soft delete). A scheduled task purges items older than 30 days. Restoring a transfer leg restores both legs; restoring a transaction whose account is in the Trash returns 409 (restore the account first); restoring an account restores only the transactions deleted together with it.
 
 ### 2. Crypto Portfolio (Binance + Coinbase)
 
@@ -33,17 +34,19 @@ NexaBudget offers a robust set of features to manage personal finances, integrat
 
 ### 4. Reports & Dashboard
 
-* **Monthly trend:** `GET /api/reports/monthly-trend?months=12` — income/expense series.
+> **Report semantics — net per category.** All report endpoints below (trend, breakdown, comparison, projection) work on the **net per category** (`OUT − IN` within each category): a category with a positive net counts as expense, a negative net as income; uncategorized transactions count by type. A refund in the same category as the expense reduces that expense instead of inflating income. Transfers are always excluded. Totals are therefore consistent across endpoints.
+
+* **Monthly trend:** `GET /api/reports/monthly-trend?months=12` — net income/expense series per month.
 * **Category breakdown:** `GET /api/reports/category-breakdown?startDate=&endDate=` — returns `CategoryBreakdownItem { net, percentage, inferredType (IN if net>0, OUT if net<0) }`. The legacy `type` filter has been removed.
-* **Month-over-month comparison:** `GET /api/reports/month-comparison?year=&month=`.
-* **Projection:** `GET /api/reports/monthly-projection`.
+* **Month-over-month comparison:** `GET /api/reports/month-comparison?year=&month=` (`month` must be 1–12, otherwise 400).
+* **Projection:** `GET /api/reports/monthly-projection` — end-of-month net income/expense projection from the average of the last 3 months with data (fallback: current month's daily rate).
 * **Budget monthly summary (dashboard widget):** `GET /api/budgets/monthly-summary?date=` returns one row per active budget for the reference month with `limit`, `spent` (net OUT−IN, may be negative), `remaining`, `percentageUsed`, period bounds.
 
 ### 5. AI Integrations (Google Gemini via Spring AI)
 
 * **Auto-Categorization:** new and imported transactions are sent to Gemini (`gemini-2.5-flash-lite` family / configurable via `NEXABUDGET_CHAT_MODEL`) to derive a category.
 * **AI Reports (asynchronous):**
-  * `POST /api/reports/ai-analysis` — enqueues a job (time range capped at 1 year), returns a `jobId` and `PENDING` status. The transaction dataset is attached as a real multipart `.csv` (Spring AI Media Attachment), not embedded in the prompt.
+  * `POST /api/reports/ai-analysis` — enqueues a job (time range capped at 1 year), returns a `jobId` and `PENDING` status (or the cached `COMPLETED` result directly, without regenerating it). No dataset is attached: the model fetches aggregates and the period's transactions through tool calling (`FinanceTools`).
   * `GET /api/reports/ai-analysis/{jobId}` — polls the job; on completion returns the generated PDF (rendered via OpenPDF).
 * **Financial Chatbot (`/api/chat`):** persistent `ChatSession`/`ChatMessage` history on PostgreSQL, Gemini tool-calling enabled so the model can query the user's data.
 * **Semantic Caching:** queries are embedded with `gemini-embedding-001` (3072 dims) and similarity-searched in MongoDB Atlas (`semantic_cache` collection) before hitting Gemini, cutting cost and latency.
@@ -55,7 +58,7 @@ Two-step flow under `POST /api/accounts/{id}/import/…`:
 1. **Preview** — `/csv/preview` or `/ofx/preview`: parses the file, returns the rows the user would import.
 2. **Confirm** — `/csv` or `/ofx`: persists the rows and triggers AI auto-categorization.
 
-Deduplication uses SHA-256 of `(accountId|date|amount|description)` stored in `transactions.import_hash`, plus the external `FITID` (`external_id`). Parsers: Apache Commons CSV (configurable `CsvColumnMapping`); OFX 1.x SGML / 2.x XML via regex.
+Deduplication uses SHA-256 of `(accountId|date|amount|description)` stored in `transactions.import_hash` (identical rows in the same file get an occurrence suffix, so repeated legitimate payments are all imported), plus the external `FITID` (`external_id`, scoped to the account and including trashed rows). Parsers: Apache Commons CSV (configurable `CsvColumnMapping`; amounts with thousands separators such as `1.234,56` or `1,234.56` are supported); OFX 1.x SGML / 2.x XML via regex. On confirm, `selectedHashes` null or empty imports all non-duplicate rows.
 
 ## Bank Aggregation (GoCardless + Enable Banking)
 

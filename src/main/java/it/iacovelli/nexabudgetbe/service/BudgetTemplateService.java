@@ -38,7 +38,7 @@ public class BudgetTemplateService {
     public BudgetTemplate createTemplate(BudgetTemplate template) {
         BudgetTemplate saved = budgetTemplateRepository.save(template);
         if (Boolean.TRUE.equals(saved.getActive())) {
-            createBudgetForPeriod(saved, LocalDate.now().withDayOfMonth(1));
+            upsertCurrentPeriodBudget(saved, LocalDate.now().withDayOfMonth(1));
         }
         return saved;
     }
@@ -96,12 +96,20 @@ public class BudgetTemplateService {
     private void instantiateForType(RecurrenceType type, LocalDate today) {
         List<BudgetTemplate> templates = budgetTemplateRepository.findByActiveAndRecurrenceType(true, type);
 
+        int created = 0;
         for (BudgetTemplate template : templates) {
+            // Evita budget sovrapposti (es. template creato il giorno 1 prima dell'esecuzione del cron)
+            if (budgetRepository.findActiveBudgetByUserAndCategoryAndDate(
+                    template.getUser(), template.getCategory(), today).isPresent()) {
+                logger.debug("Budget già attivo per template {} alla data {}, skip", template.getId(), today);
+                continue;
+            }
             createBudgetForPeriod(template, today);
+            created++;
             logger.debug("Budget creato da template {} per utente {}", template.getId(), template.getUser().getId());
         }
 
-        logger.info("Istanziati {} budget {} per {}", templates.size(), type, today);
+        logger.info("Istanziati {} budget {} per {}", created, type, today);
     }
 
     private void upsertCurrentPeriodBudget(BudgetTemplate template, LocalDate startDate) {
@@ -134,7 +142,12 @@ public class BudgetTemplateService {
     private LocalDate computeEndDate(RecurrenceType type, LocalDate start) {
         return switch (type) {
             case MONTHLY -> start.withDayOfMonth(start.lengthOfMonth());
-            case QUARTERLY -> start.plusMonths(2).withDayOfMonth(start.plusMonths(2).lengthOfMonth());
+            // Allineato al trimestre solare: il cron crea i trimestri successivi a gen/apr/lug/ott,
+            // un periodo parziale creato a metà trimestre non deve sovrapporsi al successivo.
+            case QUARTERLY -> {
+                LocalDate quarterEnd = start.withMonth(((start.getMonthValue() - 1) / 3) * 3 + 3);
+                yield quarterEnd.withDayOfMonth(quarterEnd.lengthOfMonth());
+            }
             case YEARLY -> start.withDayOfYear(start.lengthOfYear());
         };
     }
