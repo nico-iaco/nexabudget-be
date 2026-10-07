@@ -141,6 +141,8 @@ public class AiReportService {
         var authToken = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
         SecurityContextHolder.getContext().setAuthentication(authToken);
         try {
+            log.info("[AiReportService] Job {} avviato: periodo {} - {}, lingua {}, self-review {}",
+                    jobId, startDate, endDate, language, selfReviewEnabled);
             String instruction = String.format(SYSTEM_PROMPT, startDate, endDate, startDate, endDate, language);
 
             String draftReport = callWithTools(instruction);
@@ -200,6 +202,8 @@ public class AiReportService {
     }
 
     private String callWithTools(String instruction, String modelName) {
+        log.info("[AiReportService] Chiamata al modello {}", modelName);
+        long startedAt = System.currentTimeMillis();
         TrackedToolCallbacks tools = TrackedToolCallbacks.of(financeTools, MAX_TOOL_CALLS);
         String content = chatClient.prompt()
                 .user(instruction)
@@ -207,7 +211,8 @@ public class AiReportService {
                 .options(GenAiChatOptionsFactory.build(modelName, 0.4, thinkingBudget, thinkingLevel))
                 .call()
                 .content();
-        log.debug("[AiReportService] Modello {}, tool usati: {}", modelName, tools.toolsUsed());
+        log.info("[AiReportService] Modello {} ha risposto in {} ms, tool usati: {}",
+                modelName, System.currentTimeMillis() - startedAt, tools.toolsUsed());
         // Una risposta vuota finirebbe in cache e nell'email come report COMPLETED
         if (content == null || content.isBlank()) {
             throw new IllegalStateException("Risposta vuota dal modello " + modelName);
