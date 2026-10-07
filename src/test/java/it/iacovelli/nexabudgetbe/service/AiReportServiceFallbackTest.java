@@ -9,15 +9,19 @@ import org.junit.jupiter.api.Test;
 import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.ai.google.genai.GoogleGenAiChatOptions;
 import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.time.Duration;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.ScheduledFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 
 /**
@@ -34,6 +38,8 @@ class AiReportServiceFallbackTest {
     private final ChatClient.CallResponseSpec call = mock(ChatClient.CallResponseSpec.class);
     private final ConcurrentMapCacheManager cacheManager = new ConcurrentMapCacheManager();
     private final List<String> modelsCalled = new ArrayList<>();
+    private final TaskScheduler taskScheduler = mock(TaskScheduler.class);
+    private final ScheduledFuture<?> heartbeat = mock(ScheduledFuture.class);
 
     private AiReportService service;
     private User user;
@@ -46,7 +52,8 @@ class AiReportServiceFallbackTest {
                 mock(CurrencyConversionService.class), mock(ExchangeRateService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper());
         service = new AiReportService(mock(TransactionService.class), chatClient, financeTools, cacheManager,
-                mock(EmailService.class), mock(AiReportPdfService.class));
+                mock(EmailService.class), mock(AiReportPdfService.class), taskScheduler);
+        doReturn(heartbeat).when(taskScheduler).scheduleAtFixedRate(any(Runnable.class), any(Duration.class));
         ReflectionTestUtils.setField(service, "reportModelName", "gemini-3-flash-preview");
         ReflectionTestUtils.setField(service, "fallbackModelName", "gemini-2.5-flash");
         ReflectionTestUtils.setField(service, "thinkingBudget", -1);
@@ -79,6 +86,8 @@ class AiReportServiceFallbackTest {
         assertEquals("COMPLETED", status.status());
         assertEquals("# Report", status.content());
         assertEquals(List.of("gemini-3-flash-preview"), modelsCalled);
+        verify(taskScheduler).scheduleAtFixedRate(any(Runnable.class), eq(AiReportService.HEARTBEAT_INTERVAL));
+        verify(heartbeat).cancel(false);
     }
 
     @Test
@@ -111,6 +120,7 @@ class AiReportServiceFallbackTest {
 
         assertEquals("FAILED", status.status());
         assertEquals(List.of("gemini-3-flash-preview", "gemini-2.5-flash"), modelsCalled);
+        verify(heartbeat).cancel(false);
     }
 
     @Test

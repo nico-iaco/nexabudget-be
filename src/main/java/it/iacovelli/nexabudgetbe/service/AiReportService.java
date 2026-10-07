@@ -12,14 +12,18 @@ import org.springframework.ai.chat.client.ChatClient;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.cache.Cache;
 import org.springframework.cache.CacheManager;
+import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.UUID;
+import java.util.concurrent.ScheduledFuture;
 
 @Slf4j
 @Service
@@ -28,6 +32,14 @@ public class AiReportService {
 
     /** Per singola chiamata al modello (bozza e self-review hanno ciascuna il proprio tetto). */
     private static final int MAX_TOOL_CALLS = 25;
+
+    /**
+     * Heartbeat del job in esecuzione: se il pod muore (deploy, OOM, eviction) il job asincrono sparisce senza
+     * scrivere FAILED e resterebbe PENDING per sempre. Un PENDING con heartbeat fermo da oltre {@link #HEARTBEAT_STALE_AFTER}
+     * viene quindi dichiarato FAILED da {@link #getJobStatus}. La soglia tollera qualche battito perso.
+     */
+    static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
+    static final Duration HEARTBEAT_STALE_AFTER = Duration.ofMinutes(3);
 
     @Value("${nexabudget.ai.report.model}")
     private String reportModelName;
@@ -51,6 +63,7 @@ public class AiReportService {
     private final CacheManager cacheManager;
     private final EmailService emailService;
     private final AiReportPdfService aiReportPdfService;
+    private final TaskScheduler taskScheduler;
 
     private static final String SYSTEM_PROMPT = """
             Sei un consulente finanziario esperto. Il tuo compito è generare un report finanziario dettagliato e professionale per il periodo dal %s al %s.
@@ -131,6 +144,8 @@ public class AiReportService {
 
         UUID jobId = UUID.randomUUID();
         AiReportStatusResponse pending = new AiReportStatusResponse(jobId, "PENDING", null, startDate, endDate);
+        // Prima dello stato: un PENDING senza heartbeat è considerato orfano
+        touchHeartbeat(jobId);
         saveJobStatus(jobId, user.getId(), pending);
 
         return pending;
@@ -140,6 +155,7 @@ public class AiReportService {
     public void generateAiReport(UUID jobId, User user, LocalDate startDate, LocalDate endDate, String language) {
         var authToken = new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
         SecurityContextHolder.getContext().setAuthentication(authToken);
+        ScheduledFuture<?> heartbeat = taskScheduler.scheduleAtFixedRate(() -> touchHeartbeat(jobId), HEARTBEAT_INTERVAL);
         try {
             log.info("[AiReportService] Job {} avviato: periodo {} - {}, lingua {}, self-review {}",
                     jobId, startDate, endDate, language, selfReviewEnabled);
@@ -174,6 +190,7 @@ public class AiReportService {
             log.error("Error generating AI report for job {}", jobId, e);
             saveJobStatus(jobId, user.getId(), new AiReportStatusResponse(jobId, "FAILED", null, startDate, endDate));
         } finally {
+            heartbeat.cancel(false);
             SecurityContextHolder.clearContext();
         }
     }
@@ -230,6 +247,13 @@ public class AiReportService {
                 if (owner == null || !owner.equals(user.getId().toString())) {
                     throw new org.springframework.security.access.AccessDeniedException("Accesso non autorizzato al job");
                 }
+                if ("PENDING".equals(status.status()) && isHeartbeatStale(cache, jobId)) {
+                    log.warn("[AiReportService] Job {} PENDING senza heartbeat da oltre {}: esecuzione interrotta (es. restart del pod), segnato FAILED",
+                            jobId, HEARTBEAT_STALE_AFTER);
+                    AiReportStatusResponse failed = new AiReportStatusResponse(jobId, "FAILED", null, status.startDate(), status.endDate());
+                    saveJobStatus(jobId, user.getId(), failed);
+                    return failed;
+                }
                 return status;
             }
         }
@@ -242,6 +266,28 @@ public class AiReportService {
             cache.put(jobId, status);
             cache.put("owner_" + jobId, userId.toString());
         }
+    }
+
+    /** Non deve mai lanciare: un'eccezione in un task a frequenza fissa ne sopprime le esecuzioni successive. */
+    private void touchHeartbeat(UUID jobId) {
+        try {
+            Cache cache = cacheManager.getCache(CacheConfig.AI_REPORTS_CACHE);
+            if (cache != null) {
+                cache.put(heartbeatKey(jobId), Instant.now().toString());
+            }
+        } catch (Exception e) {
+            log.warn("[AiReportService] Aggiornamento heartbeat fallito per job {}: {}", jobId, e.getMessage());
+        }
+    }
+
+    private boolean isHeartbeatStale(Cache cache, UUID jobId) {
+        String lastBeat = cache.get(heartbeatKey(jobId), String.class);
+        // Heartbeat assente = job creato prima di questo meccanismo o chiave persa: nessuno lo sta eseguendo
+        return lastBeat == null || Instant.parse(lastBeat).isBefore(Instant.now().minus(HEARTBEAT_STALE_AFTER));
+    }
+
+    private static String heartbeatKey(UUID jobId) {
+        return "heartbeat_" + jobId;
     }
 
     private void validateDateRange(LocalDate startDate, LocalDate endDate) {
