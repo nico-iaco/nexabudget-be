@@ -137,6 +137,15 @@ class AccountServiceBankDispatchTest {
     }
 
     /**
+     * Timestamp da usare come {@code syncedAfter}: troncato ai microsecondi come la colonna TIMESTAMP(6).
+     * Su Linux {@code now()} ha i nanosecondi e H2 li arrotonda per eccesso: il valore riletto risulterebbe
+     * già "successivo" e {@link #waitForSyncOutcome} tornerebbe prima che il sync asincrono sia partito.
+     */
+    private static java.time.LocalDateTime syncTimestampHoursAgo(long hours) {
+        return java.time.LocalDateTime.now().minusHours(hours).truncatedTo(java.time.temporal.ChronoUnit.MICROS);
+    }
+
+    /**
      * Come {@link #waitForSyncOutcome(java.util.UUID)}, ma considera concluso il sync solo se
      * {@code lastExternalSync} è successivo a {@code syncedAfter}: serve quando l'account ha già un
      * lastExternalSync da un giro precedente, altrimenti il test proseguirebbe (e il tearDown
@@ -191,7 +200,7 @@ class AccountServiceBankDispatchTest {
         waitForSyncOutcome(account.getId());
 
         // Forza un secondo giro di sync resettando la guardia delle 6h e il lock.
-        java.time.LocalDateTime forcedLastSync = java.time.LocalDateTime.now().minusHours(7);
+        java.time.LocalDateTime forcedLastSync = syncTimestampHoursAgo(7);
         Account afterFirst = accountRepository.findById(account.getId()).orElseThrow();
         afterFirst.setLastExternalSync(forcedLastSync);
         accountRepository.save(afterFirst);
@@ -252,7 +261,7 @@ class AccountServiceBankDispatchTest {
     @Test
     void syncAccountTransactions_incrementalSync_overlapsPreviousSyncWindow() throws InterruptedException {
         Account account = createEnableBankingLinkedAccount();
-        java.time.LocalDateTime lastSync = java.time.LocalDateTime.now().minusHours(7);
+        java.time.LocalDateTime lastSync = syncTimestampHoursAgo(7);
         account.setLastExternalSync(lastSync);
         accountRepository.save(account);
 
