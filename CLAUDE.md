@@ -138,7 +138,7 @@ ENABLEBANKING_CONSENT_VALID_DAYS  # optional, default: 90
 ## Notable Configuration
 
 - **Virtual threads** enabled by default (`spring.threads.virtual.enabled=true`), using `SimpleAsyncTaskExecutor`
-- **GraalVM native** support via `native-maven-plugin`; reflection hints in `GoogleGenAiRuntimeHints` and `NativeRuntimeHints`
+- **GraalVM native** support via `native-maven-plugin`; reflection hints in `GoogleGenAiRuntimeHints` and `NativeRuntimeHints`. The native profile builds with `-H:+AddAllCharsets`: by default the image only ships standard charsets, and `AiReportPdfService.clean()` needs `windows-1252` (without it PDF generation fails with `UnsupportedCharsetException`)
 - **Production profile** (`application-prod.properties`): INFO logging, restricted actuator health details
 - Swagger UI available at `/swagger-ui/` when running locally
 - Prometheus metrics at `/actuator/prometheus`

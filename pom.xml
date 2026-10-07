@@ -321,6 +321,9 @@
                                 <buildArg>-H:+UnlockExperimentalVMOptions</buildArg>
                                 <buildArg>--enable-all-security-services</buildArg>
                                 <buildArg>--initialize-at-run-time=org.bouncycastle.jce.provider.BouncyCastleProvider</buildArg>
+                                <!-- Di default l'immagine nativa include solo i charset standard (UTF-8, ISO-8859-1, ...):
+                                     AiReportPdfService usa windows-1252 (WinAnsi dei font PDF standard) -->
+                                <buildArg>-H:+AddAllCharsets</buildArg>
                             </buildArgs>
                         </configuration>
                         <executions>
