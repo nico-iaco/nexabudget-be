@@ -104,7 +104,12 @@ public class AiReportService {
             %s
             """;
 
-    public UUID startAiReportJob(User user, LocalDate startDate, LocalDate endDate, String language) {
+    /**
+     * Crea il job e ne restituisce lo stato iniziale: {@code COMPLETED} se il report del periodo è già nella cache
+     * risultati, altrimenti {@code PENDING} (il chiamante deve allora avviare {@link #generateAiReport}).
+     * Lo stato è restituito direttamente invece di essere riletto dalla cache subito dopo averlo scritto.
+     */
+    public AiReportStatusResponse startAiReportJob(User user, LocalDate startDate, LocalDate endDate, String language) {
         validateDateRange(startDate, endDate);
 
         String cacheKey = user.getId() + "_" + startDate + "_" + endDate + "_" + language;
@@ -113,8 +118,9 @@ public class AiReportService {
             String cachedReport = cache.get(cacheKey, String.class);
             if (cachedReport != null) {
                 UUID instantJobId = UUID.randomUUID();
-                saveJobStatus(instantJobId, user.getId(), new AiReportStatusResponse(instantJobId, "COMPLETED", cachedReport, startDate, endDate));
-                return instantJobId;
+                AiReportStatusResponse completed = new AiReportStatusResponse(instantJobId, "COMPLETED", cachedReport, startDate, endDate);
+                saveJobStatus(instantJobId, user.getId(), completed);
+                return completed;
             }
         }
 
@@ -124,9 +130,10 @@ public class AiReportService {
         }
 
         UUID jobId = UUID.randomUUID();
-        saveJobStatus(jobId, user.getId(), new AiReportStatusResponse(jobId, "PENDING", null, startDate, endDate));
+        AiReportStatusResponse pending = new AiReportStatusResponse(jobId, "PENDING", null, startDate, endDate);
+        saveJobStatus(jobId, user.getId(), pending);
 
-        return jobId;
+        return pending;
     }
 
     @Async

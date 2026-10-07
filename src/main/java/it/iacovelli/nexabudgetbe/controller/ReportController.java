@@ -44,14 +44,13 @@ public class ReportController {
             @AuthenticationPrincipal User currentUser,
             @Valid @RequestBody AiReportRequest request) {
         String language = request.userLanguage() != null && !request.userLanguage().isBlank() ? request.userLanguage() : "it";
-        UUID jobId = aiReportService.startAiReportJob(currentUser, request.startDate(), request.endDate(), language);
+        AiReportStatusResponse initialStatus = aiReportService.startAiReportJob(currentUser, request.startDate(), request.endDate(), language);
         // Report già in cache: il job è già COMPLETED, rigenerarlo ripagherebbe le chiamate AI e rimanderebbe l'email
-        AiReportStatusResponse initialStatus = aiReportService.getJobStatus(jobId, currentUser);
         if ("COMPLETED".equals(initialStatus.status())) {
             return ResponseEntity.ok(initialStatus);
         }
-        aiReportService.generateAiReport(jobId, currentUser, request.startDate(), request.endDate(), language);
-        return ResponseEntity.accepted().body(new AiReportStatusResponse(jobId, "PENDING", null, request.startDate(), request.endDate()));
+        aiReportService.generateAiReport(initialStatus.jobId(), currentUser, request.startDate(), request.endDate(), language);
+        return ResponseEntity.accepted().body(initialStatus);
     }
 
     @GetMapping("/ai-analysis/{jobId}")
