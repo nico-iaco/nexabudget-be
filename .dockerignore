@@ -1,0 +1,4 @@
+# Il Dockerfile copia solo pom.xml e src/: il resto è solo peso nel build context
+*
+!pom.xml
+!src/

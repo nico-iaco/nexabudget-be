@@ -3,10 +3,10 @@ FROM maven:3.9-eclipse-temurin-25 AS builder-jvm
 WORKDIR /app
 # Copia solo il pom.xml per cachare le dipendenze
 COPY pom.xml .
-RUN mvn dependency:go-offline
+RUN mvn -B dependency:go-offline
 # Copia il resto e compila
 COPY src ./src
-RUN mvn clean package -DskipTests
+RUN mvn -B package -DskipTests
 
 # Stage 2: Immagine JVM ottimizzata
 FROM eclipse-temurin:25-jre-alpine AS jvm
@@ -20,17 +20,21 @@ ENTRYPOINT ["java", "-XX:+UseContainerSupport", "-XX:MaxRAMPercentage=75.0", "-j
 # Stage 3: Builder Native
 FROM ghcr.io/graalvm/native-image-community:25 AS builder-native
 WORKDIR /app
-# Install Maven
-# Install Maven by copying from builder-jvm (avoids microdnf segfault on QEMU)
-COPY --from=builder-jvm /usr/share/maven /usr/share/maven
+# Maven copiato direttamente dall'immagine ufficiale (evita il segfault di microdnf su QEMU).
+# NON usare --from=builder-jvm: costringerebbe BuildKit a eseguire tutta la build JVM prima di quella nativa.
+COPY --from=maven:3.9-eclipse-temurin-25 /usr/share/maven /usr/share/maven
 ENV MAVEN_HOME=/usr/share/maven
 ENV PATH=${MAVEN_HOME}/bin:${PATH}
-# Check if find exists, otherwise we might have issues, but let's try without installing it first
 
 COPY pom.xml .
-RUN mvn dependency:go-offline -Pnative
+RUN mvn -B dependency:go-offline -Pnative
 COPY src ./src
-RUN mvn -Pnative clean package -DskipTests
+# Opzioni extra per native-image (es. "-Ob" per build rapide non ottimizzate nelle beta delle PR)
+ARG NATIVE_IMAGE_OPTIONS=""
+# Solo il binario resta nel layer: target/ (jar, classi, sorgenti AOT) appesantirebbe l'export della cache
+RUN NATIVE_IMAGE_OPTIONS="${NATIVE_IMAGE_OPTIONS}" mvn -B -Pnative package -DskipTests \
+    && mv target/nexaBudget-be /app/nexaBudget-be \
+    && rm -rf target
 
 # Stage 4: Immagine nativa minimale
 FROM alpine:latest AS native
@@ -38,7 +42,6 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 RUN addgroup -S spring && adduser -S spring -G spring
 USER spring:spring
-COPY --from=builder-native /app/target/nexaBudget-be .
+COPY --from=builder-native /app/nexaBudget-be .
 EXPOSE 8080
 ENTRYPOINT ["./nexaBudget-be"]
-
