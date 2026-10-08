@@ -48,6 +48,7 @@ NexaBudget offers a robust set of features to manage personal finances, integrat
 * **AI Reports (asynchronous):**
   * `POST /api/reports/ai-analysis` — enqueues a job (time range capped at 1 year), returns a `jobId` and `PENDING` status (or the cached `COMPLETED` result directly, without regenerating it). No dataset is attached: the model fetches aggregates and the period's transactions through tool calling (`FinanceTools`).
   * `GET /api/reports/ai-analysis/{jobId}` — polls the job; on completion returns the generated PDF (rendered via OpenPDF).
+  * Sample output: [`docs/examples/report_finanziario_esempio.pdf`](examples/report_finanziario_esempio.pdf) — fictional data, rendered by the real `AiReportPdfService`. Regenerate it after layout changes with `./mvnw test -Dtest=AiReportSamplePdfGenerator -Dsample.pdf.out=docs/examples/report_finanziario_esempio.pdf`.
 * **Financial Chatbot (`/api/chat`):** persistent `ChatSession`/`ChatMessage` history on PostgreSQL, Gemini tool-calling enabled so the model can query the user's data.
 * **Semantic Caching:** queries are embedded with `gemini-embedding-001` (3072 dims) and similarity-searched in MongoDB Atlas (`semantic_cache` collection) before hitting Gemini, cutting cost and latency.
 

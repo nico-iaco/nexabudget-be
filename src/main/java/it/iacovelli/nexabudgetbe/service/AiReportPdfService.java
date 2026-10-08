@@ -158,7 +158,8 @@ public class AiReportPdfService {
             }
 
             addSectionHeading(ctx, section++, "Spese ed entrate per categoria", "Valori netti per categoria (uscite meno rimborsi)",
-                    hasItems(categoryBreakdown != null ? categoryBreakdown.getCategories() : null) ? 90f : PLACEHOLDER_HEIGHT);
+                    hasItems(categoryBreakdown != null ? categoryBreakdown.getCategories() : null)
+                            ? firstCategoryTableHeight(categoryBreakdown) : PLACEHOLDER_HEIGHT);
             if (!addCategoryBreakdown(ctx, categoryBreakdown)) {
                 addPlaceholder(ctx, "Nessuna transazione categorizzata nel periodo.");
             }
@@ -687,7 +688,14 @@ public class AiReportPdfService {
         return true;
     }
 
-    private void addCategoryTable(Ctx ctx, List<ReportDto.CategoryBreakdownItem> items, Color color,
+    /** Same space {@link #addCategoryBreakdown} reserves for its first table, so the section heading is not orphaned. */
+    private float firstCategoryTableHeight(ReportDto.CategoryBreakdownResponse breakdown) {
+        long expenses = breakdown.getCategories().stream().filter(c -> c.getInferredType() != TransactionType.IN).count();
+        long rows = expenses > 0 ? expenses : breakdown.getCategories().size();
+        return Math.min(70f + rows * ROW_HEIGHT, 400f);
+    }
+
+    private void addCategoryTable(Ctx ctx,List<ReportDto.CategoryBreakdownItem> items, Color color,
                                   String totalLabel, double total) throws DocumentException {
         double max = items.stream().mapToDouble(i -> Math.abs(toDouble(i.getNet()))).max().orElse(0);
 
@@ -1349,6 +1357,7 @@ public class AiReportPdfService {
         String mapped = text
                 .replace("→", "->").replace("←", "<-").replace("⇒", "=>")
                 .replace("≥", ">=").replace("≤", "<=").replace("≈", "~").replace("≠", "!=")
+                .replace("−", "-").replace("‑", "-")
                 .replace("✓", "").replace("✔", "").replace("✅", "");
         CharsetEncoder winAnsi = Charset.forName("windows-1252").newEncoder();
         StringBuilder sb = new StringBuilder(mapped.length());

@@ -39,6 +39,7 @@ class AiReportPdfServiceTest {
             ## 1. Riassunto Generale
             Nel periodo hai registrato **entrate per 16.800,00 €** e uscite per *12.430,50 €*, con un tasso di risparmio del 26% 🚀.
             Rispetto al mese precedente le uscite sono salite del 4% → attenzione alle spese variabili.
+            Ad agosto il netto è stato di −118,40 €.
 
             ## 2. Analisi per Categoria
             | Categoria | Importo | Quota |
@@ -97,6 +98,7 @@ class AiReportPdfServiceTest {
         assertTrue(text.contains("Riassunto Generale"), "markdown headings must be rendered");
         assertTrue(text.contains("Suggerimenti di Miglioramento"), "bold-only lines must be rendered as headings");
         assertTrue(text.contains("16.800,00 €"), "Italian currency formatting expected");
+        assertTrue(text.contains("-118,40 €"), "typographic minus must be rendered as a hyphen, not dropped");
         assertTrue(text.contains("Pagina 1 di"), "page footer expected");
         assertFalse(text.contains("**"), "markdown bold markers must be rendered, not printed");
         assertFalse(text.contains("|---"), "markdown table separator must not be printed");
