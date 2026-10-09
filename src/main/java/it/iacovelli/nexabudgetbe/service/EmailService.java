@@ -9,12 +9,14 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.web.util.HtmlUtils;
 
 import java.math.RoundingMode;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.CompletableFuture;
 
 @Service
 @RequiredArgsConstructor
@@ -25,6 +27,15 @@ public class EmailService {
 
     @Value("${app.mail.from:noreply@nexabudget.it}")
     private String fromEmail;
+
+    /**
+     * Invio asincrono (executor a virtual thread di {@code AsyncConfig}): il job degli alert non resta bloccato
+     * sull'SMTP. Il future si completa con l'esito di {@link #sendBudgetAlertEmail}, mai eccezionalmente.
+     */
+    @Async
+    public CompletableFuture<Boolean> sendBudgetAlertEmailAsync(BudgetAlertEmailContext context) {
+        return CompletableFuture.completedFuture(sendBudgetAlertEmail(context));
+    }
 
     public boolean sendBudgetAlertEmail(BudgetAlertEmailContext context) {
         log.info("[EmailService] Tentativo invio email budget alert a {} per categoria '{}'",

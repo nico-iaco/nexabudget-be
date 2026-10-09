@@ -19,11 +19,18 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
 @Service
@@ -35,20 +42,39 @@ public class CryptoPortfolioService {
     private final BinanceService binanceService;
     private final CoinbaseService coinbaseService;
     private final CurrencyConversionService currencyConversionService;
+    private final TransactionTemplate transactionTemplate;
     private static final Logger log = LoggerFactory.getLogger(CryptoPortfolioService.class);
+
+    // Scadenza del lock di sync: una chiamata all'exchange appesa non deve bloccare l'utente per sempre
+    static final Duration SYNC_LOCK_TIMEOUT = Duration.ofMinutes(10);
+
+    // Sync in corso per utente+sorgente. Lock in memoria, quindi per-pod: due pod diversi possono ancora
+    // sincronizzare in parallelo lo stesso utente (delete+insert restano atomici, ma con possibili duplicati)
+    private final ConcurrentHashMap<String, SyncLock> syncLocks = new ConcurrentHashMap<>();
+
+    // Classe e non record: il rilascio confronta per identità (due lock presi nello stesso istante sarebbero equals)
+    private static final class SyncLock {
+        private final Instant startedAt;
+
+        private SyncLock(Instant startedAt) {
+            this.startedAt = startedAt;
+        }
+    }
 
     public CryptoPortfolioService(CryptoHoldingRepository holdingRepository,
             UserBinanceKeysRepository keysRepository,
             UserCoinbaseKeysRepository coinbaseKeysRepository,
             BinanceService binanceService,
             CoinbaseService coinbaseService,
-            CurrencyConversionService currencyConversionService) {
+            CurrencyConversionService currencyConversionService,
+            PlatformTransactionManager transactionManager) {
         this.holdingRepository = holdingRepository;
         this.keysRepository = keysRepository;
         this.coinbaseKeysRepository = coinbaseKeysRepository;
         this.binanceService = binanceService;
         this.coinbaseService = coinbaseService;
         this.currencyConversionService = currencyConversionService;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, allEntries = true)
@@ -126,37 +152,33 @@ public class CryptoPortfolioService {
         coinbaseKeysRepository.save(keys);
     }
 
+    /**
+     * Verifica sincrona delle chiavi Binance, da chiamare prima di {@link #syncBinanceHoldings}: l'eccezione
+     * lanciata dentro il metodo @Async resterebbe nel thread asincrono e il client riceverebbe comunque 202.
+     */
+    public void requireBinanceKeys(User user) {
+        if (keysRepository.findByUser(user).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Chiavi Binance non configurate");
+        }
+    }
+
+    /**
+     * Come {@link #requireBinanceKeys}, per Coinbase.
+     */
+    public void requireCoinbaseKeys(User user) {
+        if (coinbaseKeysRepository.findByUser(user).isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Chiavi Coinbase non configurate");
+        }
+    }
+
     @Async
     @CacheEvict(value = CacheConfig.PORTFOLIO_CACHE, allEntries = true)
     public void syncBinanceHoldings(User user) {
         UserBinanceKeys keys = keysRepository.findByUser(user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Chiavi Binance non configurate"));
 
-        List<CryptoBalance> binanceBalances = binanceService.getAllWalletsIncludingEarn(keys.getApiKey(),
-                keys.getApiSecret());
-
-        // Recupera i vecchi holdings da eliminare
-        List<CryptoHolding> oldHoldings = holdingRepository.findByUser(user).stream()
-                .filter(h -> h.getSource() == HoldingSource.BINANCE)
-                .toList();
-
-        // Elimina i vecchi holdings Binance in batch e forza il flush
-        if (!oldHoldings.isEmpty()) {
-            holdingRepository.deleteAllInBatch(oldHoldings);
-            holdingRepository.flush();
-        }
-
-        // Crea i nuovi holdings
-        List<CryptoHolding> holdingsToSave = binanceBalances.stream()
-                .map(balance -> CryptoHolding.builder()
-                        .user(user)
-                        .symbol(balance.getSymbol().toUpperCase())
-                        .amount(balance.getAmount())
-                        .source(HoldingSource.BINANCE)
-                        .build())
-                .toList();
-
-        holdingRepository.saveAll(holdingsToSave);
+        runExclusiveSync(user, HoldingSource.BINANCE,
+                () -> binanceService.getAllWalletsIncludingEarn(keys.getApiKey(), keys.getApiSecret()));
     }
 
     @Async
@@ -165,36 +187,68 @@ public class CryptoPortfolioService {
         UserCoinbaseKeys keys = coinbaseKeysRepository.findByUser(user)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Chiavi Coinbase non configurate"));
 
-        List<CryptoBalance> coinbaseBalances = coinbaseService.getWallets(keys.getApiKeyName(),
-                keys.getPrivateKey());
+        runExclusiveSync(user, HoldingSource.COINBASE,
+                () -> coinbaseService.getWallets(keys.getApiKeyName(), keys.getPrivateKey()));
+    }
 
-        // Recupera i vecchi holdings da eliminare
-        List<CryptoHolding> oldHoldings = holdingRepository.findByUser(user).stream()
-                .filter(h -> h.getSource() == HoldingSource.COINBASE)
-                .toList();
-
-        // Elimina i vecchi holdings Coinbase in batch e forza il flush
-        if (!oldHoldings.isEmpty()) {
-            holdingRepository.deleteAllInBatch(oldHoldings);
-            holdingRepository.flush();
+    /**
+     * Sync di una sorgente: prima il recupero dall'exchange (fuori da qualsiasi transazione, può durare secondi),
+     * poi delete + insert degli holdings nella stessa transazione. Se il recupero fallisce non si cancella nulla;
+     * se l'insert fallisce il rollback ripristina i vecchi holdings.
+     * Una sync già in corso per lo stesso utente+sorgente fa ignorare quella nuova (es. doppio click).
+     */
+    private void runExclusiveSync(User user, HoldingSource source, Supplier<List<CryptoBalance>> fetcher) {
+        String lockKey = user.getId() + ":" + source;
+        SyncLock token = new SyncLock(Instant.now());
+        SyncLock current = syncLocks.compute(lockKey, (k, existing) ->
+                existing == null || existing.startedAt.isBefore(token.startedAt.minus(SYNC_LOCK_TIMEOUT)) ? token : existing);
+        if (current != token) {
+            log.info("Sync {} già in corso per l'utente {}: richiesta ignorata", source, user.getId());
+            return;
         }
 
-        // Crea i nuovi holdings
-        List<CryptoHolding> holdingsToSave = coinbaseBalances.stream()
-                .map(balance -> CryptoHolding.builder()
+        try {
+            List<CryptoBalance> balances = fetcher.get();
+            int saved = replaceHoldings(user, source, balances);
+            log.info("Sync {} completata per l'utente {}: {} holdings", source, user.getId(), saved);
+        } finally {
+            // remove(key, value): non rilascia un lock scaduto e già ripreso da un'altra sync
+            syncLocks.remove(lockKey, token);
+        }
+    }
+
+    private int replaceHoldings(User user, HoldingSource source, List<CryptoBalance> balances) {
+        // Accorpa per simbolo maiuscolo: "btc" e "BTC" diventerebbero due holdings
+        Map<String, BigDecimal> amountsBySymbol = new LinkedHashMap<>();
+        for (CryptoBalance balance : balances) {
+            if (balance.getSymbol() == null || balance.getAmount() == null) {
+                continue;
+            }
+            amountsBySymbol.merge(balance.getSymbol().toUpperCase(), balance.getAmount(), BigDecimal::add);
+        }
+
+        List<CryptoHolding> holdingsToSave = amountsBySymbol.entrySet().stream()
+                .map(e -> CryptoHolding.builder()
                         .user(user)
-                        .symbol(balance.getSymbol().toUpperCase())
-                        .amount(balance.getAmount())
-                        .source(HoldingSource.COINBASE)
+                        .symbol(e.getKey())
+                        .amount(e.getValue())
+                        .source(source)
                         .build())
                 .toList();
 
-        holdingRepository.saveAll(holdingsToSave);
+        // TransactionTemplate e non un metodo @Transactional: chiamato da questo stesso bean bypasserebbe il proxy
+        transactionTemplate.executeWithoutResult(status -> {
+            holdingRepository.bulkDeleteByUserAndSource(user, source);
+            holdingRepository.saveAll(holdingsToSave);
+        });
+        return holdingsToSave.size();
     }
 
     @Transactional(readOnly = true)
-    // La chiave include la valuta: altrimenti un portfolio calcolato in USD veniva restituito anche a chi chiede EUR
-    @Cacheable(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id + '_' + (#currency == null ? '' : #currency.toUpperCase())")
+    // La chiave include la valuta: altrimenti un portfolio calcolato in USD veniva restituito anche a chi chiede EUR.
+    // unless: se manca il tasso la risposta degrada a USD e non va cachata (si riprova alla richiesta successiva)
+    @Cacheable(value = CacheConfig.PORTFOLIO_CACHE, key = "#user.id + '_' + (#currency == null ? '' : #currency.toUpperCase())",
+            unless = "#currency != null && !#currency.equalsIgnoreCase(#result.currency)")
     public CryptoDto.PortfolioValueResponse getPortfolioValue(User user, String currency) {
         List<CryptoHolding> holdings = holdingRepository.findByUser(user);
 
@@ -207,7 +261,7 @@ public class CryptoPortfolioService {
         // Recupera tutti i prezzi in batch (1 chiamata API invece di N)
         Map<String, BigDecimal> batchPrices = binanceService.getAllTickerPricesUsdt();
 
-        // Mappa Simbolo -> Prezzo USD, con fallback per simboli non in batch
+        // Mappa Simbolo -> Prezzo USD (ZERO = prezzo non disponibile), con fallback per simboli non in batch
         Map<String, BigDecimal> pricesMap = uniqueSymbols.stream()
                 .collect(Collectors.toMap(
                         symbol -> symbol,
@@ -241,6 +295,17 @@ public class CryptoPortfolioService {
                         holding.getAmount(),
                         priceUsd,
                         assetValueUsd));
+            } else {
+                // Senza prezzo (es. simbolo manuale digitato male) l'asset resta in elenco con prezzo/valore null,
+                // così può ancora essere modificato o eliminato; non entra nel totale
+                log.debug("Prezzo non disponibile per {}: asset incluso senza valore", holding.getSymbol());
+                assetValues.add(new CryptoDto.AssetValue(
+                        holding.getId(),
+                        holding.getSource(),
+                        holding.getSymbol(),
+                        holding.getAmount(),
+                        null,
+                        null));
             }
         }
 
@@ -257,21 +322,33 @@ public class CryptoPortfolioService {
             List<CryptoDto.AssetValue> assetValuesUsd,
             String targetCurrency) {
 
-        // Converti il totale
-        BigDecimal totalValueConverted = currencyConversionService.convertFromUsd(totalValueUsd, targetCurrency);
+        // Senza tasso convertFromUsd restituirebbe gli importi in USD: etichettarli come targetCurrency sarebbe sbagliato
+        Optional<BigDecimal> rateOpt = currencyConversionService.getRate("USD", targetCurrency);
+        if (rateOpt.isEmpty()) {
+            log.warn("Tasso USD->{} non disponibile: portafoglio crypto restituito in USD", targetCurrency);
+            return new CryptoDto.PortfolioValueResponse(totalValueUsd, "USD", assetValuesUsd);
+        }
+        BigDecimal rate = rateOpt.get();
 
-        // Converti ogni asset
+        // Converti il totale
+        BigDecimal totalValueConverted = convertAmount(totalValueUsd, rate, 2);
+
+        // Converti ogni asset (scala 8 per i prezzi unitari: la scala 2 azzererebbe i token sotto il centesimo)
         List<CryptoDto.AssetValue> convertedAssets = assetValuesUsd.stream()
                 .map(asset -> new CryptoDto.AssetValue(
                         asset.getId(),
                         asset.getSource(),
                         asset.getSymbol(),
                         asset.getAmount(),
-                        currencyConversionService.convertFromUsd(asset.getPrice(), targetCurrency, 8),
-                        currencyConversionService.convertFromUsd(asset.getValue(), targetCurrency)))
+                        convertAmount(asset.getPrice(), rate, 8),
+                        convertAmount(asset.getValue(), rate, 2)))
                 .collect(Collectors.toList());
 
         return new CryptoDto.PortfolioValueResponse(totalValueConverted, targetCurrency.toUpperCase(), convertedAssets);
+    }
+
+    private static BigDecimal convertAmount(BigDecimal amountUsd, BigDecimal rate, int scale) {
+        return amountUsd == null ? null : amountUsd.multiply(rate).setScale(scale, RoundingMode.HALF_UP);
     }
 
     private CryptoHoldingDto mapEntityToDto(CryptoHolding cryptoHolding) {

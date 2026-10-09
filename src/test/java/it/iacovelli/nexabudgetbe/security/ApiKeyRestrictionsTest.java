@@ -21,7 +21,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
-/** Una API key non deve poter creare nuove chiavi né cambiare email/password dell'account. */
+/** Una API key non deve poter creare o modificare chiavi né cambiare username/email/password dell'account. */
 class ApiKeyRestrictionsTest {
 
     private final ApiKeyService apiKeyService = mock(ApiKeyService.class);
@@ -36,7 +36,7 @@ class ApiKeyRestrictionsTest {
         user = User.builder().username("apikeyuser").email("apikey@example.com").passwordHash("hash").build();
         user.setId(UUID.randomUUID());
         when(userService.getUserById(user.getId())).thenReturn(Optional.of(user));
-        when(userService.updateUserProfile(any(), any(), any(), any(), any())).thenReturn(user);
+        when(userService.updateUserProfile(any(), any(), any(), any(), any(), any())).thenReturn(user);
     }
 
     @AfterEach
@@ -81,7 +81,39 @@ class ApiKeyRestrictionsTest {
 
         assertThrows(AccessDeniedException.class, () -> userController.updateUser(user, emailChange));
         assertThrows(AccessDeniedException.class, () -> userController.updateUser(user, passwordChange));
-        verify(userService, never()).updateUserProfile(any(), any(), any(), any(), any());
+        verify(userService, never()).updateUserProfile(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void apiKey_cannotChangeUsername() {
+        authenticateWithApiKey();
+        UserDto.UpdateUserRequest usernameChange = UserDto.UpdateUserRequest.builder().username("attaccante").build();
+
+        assertThrows(AccessDeniedException.class, () -> userController.updateUser(user, usernameChange));
+        verify(userService, never()).updateUserProfile(any(), any(), any(), any(), any(), any());
+    }
+
+    @Test
+    void apiKey_cannotUpdateApiKeys() {
+        authenticateWithApiKey();
+        ApiKeyDto.UpdateApiKeyRequest reactivate = new ApiKeyDto.UpdateApiKeyRequest();
+        reactivate.setActive(true);
+
+        assertThrows(AccessDeniedException.class,
+                () -> apiKeyController.updateApiKey(UUID.randomUUID(), reactivate, user));
+        verifyNoInteractions(apiKeyService);
+    }
+
+    @Test
+    void jwtSession_canUpdateApiKeys() {
+        authenticateWithJwt();
+        UUID keyId = UUID.randomUUID();
+        ApiKeyDto.UpdateApiKeyRequest reactivate = new ApiKeyDto.UpdateApiKeyRequest();
+        reactivate.setActive(true);
+
+        apiKeyController.updateApiKey(keyId, reactivate, user);
+
+        verify(apiKeyService).updateApiKey(keyId, reactivate, user);
     }
 
     @Test
@@ -91,6 +123,6 @@ class ApiKeyRestrictionsTest {
 
         userController.updateUser(user, currencyChange);
 
-        verify(userService).updateUserProfile(user, null, null, null, "USD");
+        verify(userService).updateUserProfile(user, null, null, null, null, "USD");
     }
 }

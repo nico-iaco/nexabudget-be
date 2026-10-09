@@ -233,7 +233,7 @@ class UserServiceTest {
 
         User created = userService.createUser(user);
 
-        User updated = userService.updateUserProfile(created, "updated", "updated@example.com", null, "USD");
+        User updated = userService.updateUserProfile(created, "updated", "updated@example.com", null, null, "USD");
 
         assertEquals("updated", updated.getUsername());
         assertEquals("updated@example.com", updated.getEmail());
@@ -250,13 +250,30 @@ class UserServiceTest {
         User created = userService.createUser(user);
         String oldHash = created.getPasswordHash();
 
-        User updated = userService.updateUserProfile(created, null, null, "newpassword", null);
+        User updated = userService.updateUserProfile(created, null, null, "newpassword", "oldpassword", null);
 
         // La nuova hash deve essere diversa dalla vecchia e non uguale alla password in chiaro
         assertNotEquals(oldHash, updated.getPasswordHash());
         assertNotEquals("newpassword", updated.getPasswordHash());
         // Deve essere verificabile con BCrypt
         assertTrue(userService.verifyPassword(updated, "newpassword"));
+    }
+
+    @Test
+    void testUpdateUserProfile_PasswordChangeRequiresCurrentPassword() {
+        User created = userService.createUser(User.builder()
+                .username("pwdguard")
+                .email("pwdguard@example.com")
+                .passwordHash("oldpassword")
+                .build());
+
+        assertThrows(IllegalArgumentException.class,
+                () -> userService.updateUserProfile(created, null, null, "newpassword", null, null));
+        assertThrows(IllegalArgumentException.class,
+                () -> userService.updateUserProfile(created, null, null, "newpassword", "wrongpassword", null));
+
+        User reloaded = userService.getUserById(created.getId()).orElseThrow();
+        assertTrue(userService.verifyPassword(reloaded, "oldpassword"));
     }
 
     @Test
@@ -269,7 +286,7 @@ class UserServiceTest {
 
         User created = userService.createUser(user);
 
-        User updated = userService.updateUserProfile(created, null, null, null, null);
+        User updated = userService.updateUserProfile(created, null, null, null, null, null);
 
         assertEquals("keepme", updated.getUsername());
         assertEquals("keepme@example.com", updated.getEmail());

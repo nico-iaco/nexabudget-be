@@ -67,7 +67,8 @@ public class UserService {
         return userRepository.save(user);
     }
 
-    public User updateUserProfile(User existingUser, String newUsername, String newEmail, String rawPassword, String defaultCurrency) {
+    public User updateUserProfile(User existingUser, String newUsername, String newEmail, String rawPassword,
+                                  String currentPassword, String defaultCurrency) {
         logger.info("Aggiornamento profilo utente: {} (ID: {})", existingUser.getUsername(), existingUser.getId());
         if (newUsername != null) {
             if (!newUsername.equals(existingUser.getUsername()) && userRepository.existsByUsername(newUsername)) {
@@ -82,6 +83,13 @@ public class UserService {
             existingUser.setEmail(newEmail);
         }
         if (rawPassword != null) {
+            if (currentPassword == null || currentPassword.isBlank()) {
+                throw new IllegalArgumentException("Per cambiare la password è necessaria la password attuale");
+            }
+            if (!passwordEncoder.matches(currentPassword, existingUser.getPasswordHash())) {
+                logger.warn("Cambio password rifiutato per utente ID {}: password attuale errata", existingUser.getId());
+                throw new IllegalArgumentException("Password attuale non corretta");
+            }
             existingUser.setPasswordHash(passwordEncoder.encode(rawPassword));
         }
         if (defaultCurrency != null) {

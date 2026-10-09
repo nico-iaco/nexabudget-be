@@ -92,10 +92,14 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
 
        void deleteAllByAccount(Account account);
 
-       @Query("SELECT COALESCE(SUM(CASE WHEN t.type = 'OUT' THEN t.amount ELSE -t.amount END), 0) FROM Transaction t " +
+       // Netto (OUT − IN) per valuta del conto: il chiamante converte ogni riga nella valuta dell'utente
+       // prima di sommare, altrimenti importi in valute diverse verrebbero sommati come se fossero uguali.
+       @Query("SELECT t.account.currency, COALESCE(SUM(CASE WHEN t.type = 'OUT' THEN t.amount ELSE -t.amount END), 0) " +
+                     "FROM Transaction t " +
                      "WHERE t.user = :user AND t.category = :category " +
-                     "AND t.date BETWEEN :startDate AND :endDate")
-       BigDecimal sumNetByUserAndCategoryAndDateRange(@Param("user") User user,
+                     "AND t.date BETWEEN :startDate AND :endDate " +
+                     "GROUP BY t.account.currency")
+       List<Object[]> sumNetByUserAndCategoryAndDateRangePerCurrency(@Param("user") User user,
                      @Param("category") Category category,
                      @Param("startDate") LocalDate startDate,
                      @Param("endDate") LocalDate endDate);

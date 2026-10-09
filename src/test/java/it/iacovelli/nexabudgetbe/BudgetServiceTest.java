@@ -4,6 +4,7 @@ import it.iacovelli.nexabudgetbe.config.TestConfig;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.*;
 import it.iacovelli.nexabudgetbe.service.BudgetService;
+import it.iacovelli.nexabudgetbe.service.ExchangeRateService;
 import it.iacovelli.nexabudgetbe.service.TransactionService;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +13,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -48,6 +50,9 @@ class BudgetServiceTest {
 
     @Autowired
     private TransactionRepository transactionRepository;
+
+    @MockitoBean
+    private ExchangeRateService exchangeRateService;
 
     private User testUser;
     private User otherUser;
@@ -436,5 +441,121 @@ class BudgetServiceTest {
                 .orElse(null);
         assertNotNull(rem);
         assertEquals(0, new BigDecimal("125.00").compareTo(rem));
+    }
+
+    // ─── PERIODO DEL BUDGET (non mese di calendario) ───────────────────────────
+
+    private void saveExpense(String amount, LocalDate date) {
+        transactionRepository.save(Transaction.builder()
+                .user(testUser).account(testAccount)
+                .amount(new BigDecimal(amount)).type(TransactionType.OUT)
+                .description("Spesa").category(expenseCategory).date(date).build());
+    }
+
+    private BigDecimal valueFor(Map<Budget, BigDecimal> map, Budget budget) {
+        return map.entrySet().stream()
+                .filter(e -> e.getKey().getId().equals(budget.getId()))
+                .map(Map.Entry::getValue).findFirst().orElse(null);
+    }
+
+    @Test
+    void testGetBudgetUsage_QuarterlyBudget_CountsWholePeriodNotOnlyCurrentMonth() {
+        LocalDate ref = LocalDate.of(2026, 3, 15);
+        Budget budget = budgetRepository.save(Budget.builder()
+                .user(testUser).category(expenseCategory)
+                .budgetLimit(new BigDecimal("1200.00"))
+                .startDate(LocalDate.of(2026, 1, 1))
+                .endDate(LocalDate.of(2026, 3, 31))
+                .build());
+
+        saveExpense("400.00", LocalDate.of(2026, 1, 10));
+        saveExpense("500.00", LocalDate.of(2026, 2, 10));
+        saveExpense("100.00", LocalDate.of(2026, 3, 10));
+        saveExpense("999.00", LocalDate.of(2025, 12, 31)); // fuori periodo
+
+        assertEquals(0, new BigDecimal("1000.00").compareTo(valueFor(budgetService.getBudgetUsage(testUser, ref), budget)));
+        assertEquals(0, new BigDecimal("200.00").compareTo(valueFor(budgetService.getRemainingBudgets(testUser, ref), budget)));
+    }
+
+    @Test
+    void testGetBudgetUsage_BudgetAcrossMonths_UsesBudgetBoundaries() {
+        LocalDate ref = LocalDate.of(2026, 10, 20);
+        Budget budget = budgetRepository.save(Budget.builder()
+                .user(testUser).category(expenseCategory)
+                .budgetLimit(new BigDecimal("300.00"))
+                .startDate(LocalDate.of(2026, 10, 15))
+                .endDate(LocalDate.of(2026, 11, 14))
+                .build());
+
+        saveExpense("70.00", LocalDate.of(2026, 10, 5));   // stesso mese ma prima dell'inizio del budget
+        saveExpense("40.00", LocalDate.of(2026, 10, 16));
+        saveExpense("60.00", LocalDate.of(2026, 11, 10));  // mese successivo ma dentro il budget
+
+        assertEquals(0, new BigDecimal("100.00").compareTo(valueFor(budgetService.getBudgetUsage(testUser, ref), budget)));
+    }
+
+    @Test
+    void testGetBudgetUsage_OpenEndedBudget_ClosesAtReferenceDate() {
+        LocalDate ref = LocalDate.of(2026, 5, 20);
+        Budget budget = budgetRepository.save(Budget.builder()
+                .user(testUser).category(expenseCategory)
+                .budgetLimit(new BigDecimal("500.00"))
+                .startDate(LocalDate.of(2026, 4, 1))
+                .endDate(null)
+                .build());
+
+        saveExpense("30.00", LocalDate.of(2026, 4, 10));
+        saveExpense("20.00", LocalDate.of(2026, 5, 20));
+        saveExpense("90.00", LocalDate.of(2026, 5, 21)); // dopo la data di riferimento
+
+        assertEquals(0, new BigDecimal("50.00").compareTo(valueFor(budgetService.getBudgetUsage(testUser, ref), budget)));
+    }
+
+    @Test
+    void testGetBudgetMonthlySummary_QuarterlyBudget_ReportsBudgetPeriod() {
+        LocalDate ref = LocalDate.of(2026, 3, 15);
+        Budget budget = budgetRepository.save(Budget.builder()
+                .user(testUser).category(expenseCategory)
+                .budgetLimit(new BigDecimal("1000.00"))
+                .startDate(LocalDate.of(2026, 1, 1))
+                .endDate(LocalDate.of(2026, 3, 31))
+                .build());
+
+        saveExpense("300.00", LocalDate.of(2026, 1, 10));
+        saveExpense("200.00", LocalDate.of(2026, 3, 10));
+
+        var row = budgetService.getBudgetMonthlySummary(testUser, ref).stream()
+                .filter(r -> r.getBudgetId().equals(budget.getId()))
+                .findFirst().orElseThrow();
+
+        assertEquals(0, new BigDecimal("500.00").compareTo(row.getSpent()));
+        assertEquals(0, new BigDecimal("500.00").compareTo(row.getRemaining()));
+        assertEquals(50.0, row.getPercentageUsed());
+        assertEquals(LocalDate.of(2026, 1, 1), row.getPeriodStart());
+        assertEquals(LocalDate.of(2026, 3, 31), row.getPeriodEnd());
+    }
+
+    @Test
+    void testGetBudgetUsage_AccountsInDifferentCurrencies_ConvertedToUserCurrency() {
+        LocalDate ref = LocalDate.of(2026, 6, 15);
+        Account usdAccount = accountRepository.save(Account.builder()
+                .name("Conto USD").type(AccountType.CONTO_CORRENTE).currency("USD").user(testUser).build());
+        org.mockito.Mockito.when(exchangeRateService.getRate("USD", "EUR"))
+                .thenReturn(Optional.of(new BigDecimal("0.90")));
+        Budget budget = budgetRepository.save(Budget.builder()
+                .user(testUser).category(expenseCategory)
+                .budgetLimit(new BigDecimal("500.00"))
+                .startDate(LocalDate.of(2026, 6, 1))
+                .endDate(LocalDate.of(2026, 6, 30))
+                .build());
+
+        saveExpense("100.00", LocalDate.of(2026, 6, 5));              // EUR
+        transactionRepository.save(Transaction.builder()
+                .user(testUser).account(usdAccount)
+                .amount(new BigDecimal("200.00")).type(TransactionType.OUT)
+                .description("Spesa in USD").category(expenseCategory).date(LocalDate.of(2026, 6, 6)).build());
+
+        // 100 EUR + 200 USD × 0.90 = 280 EUR (utente con valuta preferita EUR)
+        assertEquals(0, new BigDecimal("280.00").compareTo(valueFor(budgetService.getBudgetUsage(testUser, ref), budget)));
     }
 }

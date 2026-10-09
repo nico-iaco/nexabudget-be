@@ -1,15 +1,22 @@
 package it.iacovelli.nexabudgetbe.service;
 
+import it.iacovelli.nexabudgetbe.config.CacheConfig;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.repository.BudgetAlertRepository;
 import it.iacovelli.nexabudgetbe.repository.BudgetRepository;
 import it.iacovelli.nexabudgetbe.repository.BudgetTemplateRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.cache.Cache;
+import org.springframework.cache.CacheManager;
+import org.springframework.context.event.EventListener;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
@@ -25,13 +32,19 @@ public class BudgetTemplateService {
     private final BudgetTemplateRepository budgetTemplateRepository;
     private final BudgetRepository budgetRepository;
     private final BudgetAlertRepository budgetAlertRepository;
+    private final CacheManager cacheManager;
+    private final TransactionTemplate transactionTemplate;
 
     public BudgetTemplateService(BudgetTemplateRepository budgetTemplateRepository,
                                   BudgetRepository budgetRepository,
-                                  BudgetAlertRepository budgetAlertRepository) {
+                                  BudgetAlertRepository budgetAlertRepository,
+                                  CacheManager cacheManager,
+                                  PlatformTransactionManager transactionManager) {
         this.budgetTemplateRepository = budgetTemplateRepository;
         this.budgetRepository = budgetRepository;
         this.budgetAlertRepository = budgetAlertRepository;
+        this.cacheManager = cacheManager;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @Transactional
@@ -72,44 +85,81 @@ public class BudgetTemplateService {
     }
 
     /**
-     * Runs at 01:00 on the 1st of every month.
-     * Creates Budget instances for active templates whose recurrence matches.
+     * Istanzia i budget dei template attivi per il periodo corrente di ogni ricorrenza (mese, trimestre solare,
+     * anno). Gira ogni giorno alle 01:00 e all'avvio dell'applicazione: se il run del primo giorno del periodo è
+     * saltato (pod giù, deploy, crash) viene recuperato al primo run utile invece di lasciare l'utente senza
+     * budget (e senza alert) per tutto il periodo.
+     * <p>
+     * Un periodo già istanziato viene marcato in {@link CacheConfig#BUDGET_TEMPLATE_RUNS_CACHE}: i run successivi
+     * dello stesso periodo non fanno nulla, così un budget che l'utente cancella a metà periodo non viene ricreato
+     * ogni notte. Il claim in {@link CacheConfig#BUDGET_TEMPLATE_RUN_LOCK_CACHE} evita che due pod istanzino lo
+     * stesso periodo in parallelo (budget duplicati: non c'è un vincolo univoco su budgets).
      */
-    @Scheduled(cron = "0 0 1 1 * ?")
-    @Transactional
+    @Scheduled(cron = "0 0 1 * * ?")
+    @EventListener(ApplicationReadyEvent.class)
     public void instantiateTemplates() {
-        LocalDate today = LocalDate.now();
-        logger.info("Avvio istanziazione template budget per {}", today);
+        instantiateTemplates(LocalDate.now());
+    }
 
-        instantiateForType(RecurrenceType.MONTHLY, today);
-
-        int month = today.getMonthValue();
-        if (month == 1 || month == 4 || month == 7 || month == 10) {
-            instantiateForType(RecurrenceType.QUARTERLY, today);
-        }
-
-        if (month == 1) {
-            instantiateForType(RecurrenceType.YEARLY, today);
+    void instantiateTemplates(LocalDate today) {
+        for (RecurrenceType type : RecurrenceType.values()) {
+            LocalDate periodStart = periodStart(type, today);
+            String key = type + ":" + periodStart;
+            Cache runs = cacheManager.getCache(CacheConfig.BUDGET_TEMPLATE_RUNS_CACHE);
+            Cache locks = cacheManager.getCache(CacheConfig.BUDGET_TEMPLATE_RUN_LOCK_CACHE);
+            try {
+                if (runs != null && runs.get(key) != null) {
+                    logger.debug("Template budget {} già istanziati per il periodo {}, skip", type, periodStart);
+                    continue;
+                }
+                if (locks != null && locks.putIfAbsent(key, "running") != null) {
+                    logger.info("Istanziazione template budget {} per {} già in corso su un'altra istanza, skip", type, periodStart);
+                    continue;
+                }
+                try {
+                    transactionTemplate.executeWithoutResult(status -> instantiateForType(type, periodStart, today));
+                    if (runs != null) {
+                        runs.put(key, "done");
+                    }
+                } finally {
+                    if (locks != null) {
+                        locks.evict(key);
+                    }
+                }
+            } catch (Exception e) {
+                // Nessun marker: il periodo verrà ritentato al prossimo run (giornaliero o all'avvio)
+                logger.error("Istanziazione template budget {} per {} fallita, verrà ritentata: {}",
+                        type, periodStart, e.getMessage(), e);
+            }
         }
     }
 
-    private void instantiateForType(RecurrenceType type, LocalDate today) {
+    private void instantiateForType(RecurrenceType type, LocalDate periodStart, LocalDate today) {
         List<BudgetTemplate> templates = budgetTemplateRepository.findByActiveAndRecurrenceType(true, type);
 
         int created = 0;
         for (BudgetTemplate template : templates) {
-            // Evita budget sovrapposti (es. template creato il giorno 1 prima dell'esecuzione del cron)
+            // Evita budget sovrapposti (es. template creato/aggiornato nel periodo, che ha già il suo budget)
             if (budgetRepository.findActiveBudgetByUserAndCategoryAndDate(
                     template.getUser(), template.getCategory(), today).isPresent()) {
                 logger.debug("Budget già attivo per template {} alla data {}, skip", template.getId(), today);
                 continue;
             }
-            createBudgetForPeriod(template, today);
+            createBudgetForPeriod(template, periodStart);
             created++;
             logger.debug("Budget creato da template {} per utente {}", template.getId(), template.getUser().getId());
         }
 
-        logger.info("Istanziati {} budget {} per {}", created, type, today);
+        logger.info("Istanziati {} budget {} per il periodo che inizia il {}", created, type, periodStart);
+    }
+
+    /** Primo giorno del periodo di ricorrenza che contiene {@code date} (trimestri e anni solari). */
+    static LocalDate periodStart(RecurrenceType type, LocalDate date) {
+        return switch (type) {
+            case MONTHLY -> date.withDayOfMonth(1);
+            case QUARTERLY -> date.withMonth(((date.getMonthValue() - 1) / 3) * 3 + 1).withDayOfMonth(1);
+            case YEARLY -> date.withDayOfYear(1);
+        };
     }
 
     private void upsertCurrentPeriodBudget(BudgetTemplate template, LocalDate startDate) {

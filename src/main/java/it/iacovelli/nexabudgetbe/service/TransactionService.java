@@ -466,32 +466,80 @@ public class TransactionService {
 
 
     /**
-     * Allinea l'importo della gamba opposta di un trasferimento. Se i conti hanno valute diverse
-     * l'importo va convertito con il cambio salvato sulla gamba IN (IN = OUT * exchangeRate),
-     * altrimenti modificare una gamba sovrascriverebbe l'altra con un importo nella valuta sbagliata.
+     * Allinea la gamba opposta di un trasferimento dopo la modifica di {@code edited} (non ancora applicata:
+     * {@code edited} ha ancora conto/tipo/importo vecchi). Ricalcola quale gamba è OUT e quale IN e le loro
+     * valute, così l'invariante IN.amount = OUT.amount × exchangeRate regge anche quando l'utente cambia
+     * tipo o conto della gamba modificata:
+     * <ul>
+     *   <li>stessa valuta: l'altra gamba prende lo stesso importo e i campi di cambio vengono azzerati su entrambe;</li>
+     *   <li>valute diverse: riusa il tasso salvato se la coppia OUT→IN è la stessa, il suo inverso se la coppia
+     *       si è invertita (cambio di tipo), altrimenti chiede un tasso aggiornato; i campi di cambio stanno
+     *       sempre e solo sulla gamba IN.</li>
+     * </ul>
      */
     private void syncTransferLegAmounts(Transaction edited, Account editedAccount, BigDecimal newAmount,
                                         TransactionType newType, Transaction other) {
-        String editedCurrency = editedAccount != null ? editedAccount.getCurrency() : null;
-        String otherCurrency = other.getAccount() != null ? other.getAccount().getCurrency() : null;
-        boolean multiCurrency = editedCurrency != null && otherCurrency != null
-                && !editedCurrency.equalsIgnoreCase(otherCurrency);
+        boolean editedIsOut = newType == TransactionType.OUT;
+        Account otherAccount = other.getAccount();
+        String outCurrency = currencyOf(editedIsOut ? editedAccount : otherAccount);
+        String inCurrency = currencyOf(editedIsOut ? otherAccount : editedAccount);
+        Transaction outLeg = editedIsOut ? edited : other;
+        Transaction inLeg = editedIsOut ? other : edited;
+
+        boolean multiCurrency = outCurrency != null && inCurrency != null && !outCurrency.equalsIgnoreCase(inCurrency);
         if (!multiCurrency) {
             other.setAmount(newAmount);
+            clearExchangeFields(edited);
+            clearExchangeFields(other);
             return;
         }
-        if (newType == TransactionType.OUT && other.getExchangeRate() != null) {
-            other.setAmount(newAmount.multiply(other.getExchangeRate()).setScale(4, java.math.RoundingMode.HALF_UP));
-            other.setOriginalAmount(newAmount);
-        } else if (newType == TransactionType.IN && edited.getExchangeRate() != null
-                && edited.getExchangeRate().signum() != 0) {
-            BigDecimal outAmount = newAmount.divide(edited.getExchangeRate(), 4, java.math.RoundingMode.HALF_UP);
-            other.setAmount(outAmount);
-            edited.setOriginalAmount(outAmount);
+
+        BigDecimal rate = resolveTransferRate(edited, other, outCurrency, inCurrency);
+        BigDecimal outAmount;
+        if (editedIsOut) {
+            outAmount = newAmount;
+            other.setAmount(newAmount.multiply(rate).setScale(4, java.math.RoundingMode.HALF_UP));
         } else {
-            logger.warn("Trasferimento multi-valuta {} senza tasso di cambio: importo della gamba {} non modificato",
-                    edited.getTransferId(), other.getId());
+            outAmount = newAmount.divide(rate, 4, java.math.RoundingMode.HALF_UP);
+            other.setAmount(outAmount);
         }
+        clearExchangeFields(outLeg);
+        inLeg.setExchangeRate(rate);
+        inLeg.setOriginalCurrency(outCurrency.toUpperCase());
+        inLeg.setOriginalAmount(outAmount);
+    }
+
+    /**
+     * Tasso OUT→IN per un trasferimento multi-valuta modificato. Il tasso salvato vale per la coppia
+     * (originalCurrency → valuta del conto della gamba che lo porta), letta prima della modifica.
+     */
+    private BigDecimal resolveTransferRate(Transaction edited, Transaction other, String outCurrency, String inCurrency) {
+        Transaction holder = edited.getExchangeRate() != null ? edited : other.getExchangeRate() != null ? other : null;
+        if (holder != null && holder.getExchangeRate().signum() != 0 && holder.getOriginalCurrency() != null) {
+            String storedFrom = holder.getOriginalCurrency();
+            String storedTo = currencyOf(holder.getAccount());
+            if (storedFrom.equalsIgnoreCase(outCurrency) && inCurrency.equalsIgnoreCase(storedTo)) {
+                return holder.getExchangeRate();
+            }
+            if (storedFrom.equalsIgnoreCase(inCurrency) && outCurrency.equalsIgnoreCase(storedTo)) {
+                return BigDecimal.ONE.divide(holder.getExchangeRate(), 8, java.math.RoundingMode.HALF_UP);
+            }
+        }
+        logger.info("Trasferimento {}: nuova coppia di valute {} -> {}, recupero tasso aggiornato",
+                edited.getTransferId(), outCurrency, inCurrency);
+        return exchangeRateService.getRate(outCurrency, inCurrency)
+                .orElseThrow(() -> new IllegalStateException(
+                        "Tasso di cambio non disponibile: " + outCurrency + " -> " + inCurrency));
+    }
+
+    private static String currencyOf(Account account) {
+        return account != null ? account.getCurrency() : null;
+    }
+
+    private static void clearExchangeFields(Transaction t) {
+        t.setExchangeRate(null);
+        t.setOriginalCurrency(null);
+        t.setOriginalAmount(null);
     }
 
     @Transactional

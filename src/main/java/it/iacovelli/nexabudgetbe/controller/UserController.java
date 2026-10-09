@@ -32,9 +32,11 @@ public class UserController {
     @Operation(summary = "Aggiorna utente", description = "Aggiorna parzialmente i dati dell'utente loggato. Vengono aggiornati solo i campi presenti nella richiesta.")
     public ResponseEntity<UserDto.UserResponse> updateUser(@AuthenticationPrincipal User currentUser,
                                                            @Valid @RequestBody UserDto.UpdateUserRequest updateRequest) {
+        // Lo username è l'identificativo di login: cambiarlo con una key rubata chiuderebbe fuori il proprietario
         if (ApiKeyAuthenticationToken.isCurrentRequestApiKeyAuthenticated()
-                && (updateRequest.getEmail() != null || updateRequest.getPassword() != null)) {
-            throw new AccessDeniedException("Email e password non possono essere modificate tramite API key");
+                && (updateRequest.getUsername() != null || updateRequest.getEmail() != null
+                    || updateRequest.getPassword() != null)) {
+            throw new AccessDeniedException("Username, email e password non possono essere modificati tramite API key");
         }
 
         User existingUser = userService.getUserById(currentUser.getId())
@@ -45,6 +47,7 @@ public class UserController {
                 updateRequest.getUsername(),
                 updateRequest.getEmail(),
                 updateRequest.getPassword(),
+                updateRequest.getCurrentPassword(),
                 updateRequest.getDefaultCurrency());
         return ResponseEntity.ok(mapUserToResponse(updatedUser));
     }

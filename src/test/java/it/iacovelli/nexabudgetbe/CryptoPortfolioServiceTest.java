@@ -255,9 +255,78 @@ public class CryptoPortfolioServiceTest {
 
         // Assert
         assertNotNull(response);
-        // Only BTC should be included (UNKNOWN has no price)
-        assertEquals(1, response.getAssets().size());
-        assertEquals("BTC", response.getAssets().get(0).getSymbol());
+        // UNKNOWN resta in elenco (deve poter essere modificato/eliminato) ma senza prezzo/valore e fuori dal totale
+        assertEquals(2, response.getAssets().size());
+        CryptoDto.AssetValue unknown = response.getAssets().stream()
+                .filter(a -> "UNKNOWN".equals(a.getSymbol()))
+                .findFirst()
+                .orElseThrow();
+        assertNotNull(unknown.getId());
+        assertEquals(0, new BigDecimal("100").compareTo(unknown.getAmount()));
+        assertNull(unknown.getPrice());
+        assertNull(unknown.getValue());
+        assertEquals(0, new BigDecimal("15000").compareTo(response.getTotalValue())); // solo BTC: 0.5 * 30000
+    }
+
+    @Test
+    public void testGetPortfolioValueWithUnknownPriceConverted() {
+        when(binanceService.getTickerPrice("UNKNOWN"))
+                .thenReturn(Optional.empty());
+
+        cryptoPortfolioService.addManualHolding(testUser, "BTC", new BigDecimal("1.0"));
+        cryptoPortfolioService.addManualHolding(testUser, "UNKNOWN", new BigDecimal("100"));
+
+        CryptoDto.PortfolioValueResponse response = cryptoPortfolioService.getPortfolioValue(testUser, "EUR");
+
+        assertEquals("EUR", response.getCurrency());
+        assertEquals(2, response.getAssets().size());
+        CryptoDto.AssetValue unknown = response.getAssets().stream()
+                .filter(a -> "UNKNOWN".equals(a.getSymbol()))
+                .findFirst()
+                .orElseThrow();
+        assertNull(unknown.getPrice());
+        assertNull(unknown.getValue());
+        assertEquals(0, new BigDecimal("27600.00").compareTo(response.getTotalValue()));
+    }
+
+    @Test
+    public void testGetPortfolioValueWithoutExchangeRateFallsBackToUsd() {
+        // Nessun tasso USD->JPY (il mock restituisce empty): i valori restano in USD e vanno etichettati USD
+        cryptoPortfolioService.addManualHolding(testUser, "BTC", new BigDecimal("1.0"));
+
+        CryptoDto.PortfolioValueResponse response = cryptoPortfolioService.getPortfolioValue(testUser, "JPY");
+
+        assertEquals("USD", response.getCurrency());
+        assertEquals(0, new BigDecimal("30000").compareTo(response.getTotalValue()));
+        CryptoDto.AssetValue btcAsset = response.getAssets().getFirst();
+        assertEquals(0, new BigDecimal("30000").compareTo(btcAsset.getPrice()));
+        assertEquals(0, new BigDecimal("30000").compareTo(btcAsset.getValue()));
+    }
+
+    @Test
+    public void testGetPortfolioValueDegradedResultIsNotCached() throws NoSuchMethodException {
+        // La risposta degradata a USD non deve restare in cache per tutto il TTL
+        org.springframework.cache.annotation.Cacheable cacheable = CryptoPortfolioService.class
+                .getMethod("getPortfolioValue", User.class, String.class)
+                .getAnnotation(org.springframework.cache.annotation.Cacheable.class);
+        assertNotNull(cacheable);
+
+        org.springframework.expression.spel.support.StandardEvaluationContext ctx =
+                new org.springframework.expression.spel.support.StandardEvaluationContext();
+        org.springframework.expression.Expression unless =
+                new org.springframework.expression.spel.standard.SpelExpressionParser().parseExpression(cacheable.unless());
+
+        ctx.setVariable("currency", "JPY");
+        ctx.setVariable("result", new CryptoDto.PortfolioValueResponse(BigDecimal.ONE, "USD", java.util.List.of()));
+        assertEquals(Boolean.TRUE, unless.getValue(ctx, Boolean.class));
+
+        ctx.setVariable("currency", "eur");
+        ctx.setVariable("result", new CryptoDto.PortfolioValueResponse(BigDecimal.ONE, "EUR", java.util.List.of()));
+        assertEquals(Boolean.FALSE, unless.getValue(ctx, Boolean.class));
+
+        ctx.setVariable("currency", null);
+        ctx.setVariable("result", new CryptoDto.PortfolioValueResponse(BigDecimal.ONE, "USD", java.util.List.of()));
+        assertEquals(Boolean.FALSE, unless.getValue(ctx, Boolean.class));
     }
 
     @Test

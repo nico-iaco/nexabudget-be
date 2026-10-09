@@ -215,8 +215,9 @@ public class FinanceTools {
             for (var asset : portfolio.getAssets()) {
                 sb.append("- ").append(asset.getSymbol())
                   .append(": ").append(asset.getAmount()).append(" unità")
-                  .append(" | valore: ").append(asset.getValue())
-                  .append(" | prezzo: ").append(asset.getPrice()).append("\n");
+                  // Prezzo/valore null = prezzo non disponibile (es. simbolo manuale errato), escluso dal totale
+                  .append(" | valore: ").append(asset.getValue() != null ? asset.getValue() : "n/d")
+                  .append(" | prezzo: ").append(asset.getPrice() != null ? asset.getPrice() : "n/d").append("\n");
             }
             return sb.toString();
         } catch (Exception e) {

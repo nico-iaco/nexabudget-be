@@ -8,9 +8,9 @@ import it.iacovelli.nexabudgetbe.repository.TransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -18,9 +18,14 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.concurrent.CompletableFuture;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.ArgumentMatchers.notNull;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -38,7 +43,9 @@ class BudgetAlertServiceTest {
     @Mock
     private EmailService emailService;
 
-    @InjectMocks
+    @Mock
+    private ExchangeRateService exchangeRateService;
+
     private BudgetAlertService budgetAlertService;
 
     private User user;
@@ -49,6 +56,11 @@ class BudgetAlertServiceTest {
 
     @BeforeEach
     void setUp() {
+        // BudgetService reale sopra il repository mockato: l'alert usa lo stesso calcolo dello speso degli endpoint
+        budgetAlertService = new BudgetAlertService(budgetAlertRepository, budgetRepository,
+                new BudgetService(budgetRepository, transactionRepository, new CurrencyConversionService(exchangeRateService)),
+                emailService, mock(PlatformTransactionManager.class));
+
         user = User.builder()
                 .id(UUID.randomUUID())
                 .username("testuser")
@@ -90,36 +102,49 @@ class BudgetAlertServiceTest {
     }
 
     private void stubActiveAlertAndBudget() {
-        when(budgetAlertRepository.findByActive(true)).thenReturn(List.of(alert));
+        when(budgetAlertRepository.findActiveIds()).thenReturn(List.of(alert.getId()));
+        when(budgetAlertRepository.findById(alert.getId())).thenReturn(Optional.of(alert));
         when(budgetRepository.findActiveBudgetByUserAndCategoryAndDate(user, category, LocalDate.now()))
                 .thenReturn(Optional.of(budget));
+    }
+
+    private void stubSpent(Object[]... rowsPerCurrency) {
+        when(transactionRepository.sumNetByUserAndCategoryAndDateRangePerCurrency(any(), any(), any(), any()))
+                .thenReturn(List.of(rowsPerCurrency));
+    }
+
+    private static Object[] net(String currency, long amount) {
+        return new Object[]{currency, BigDecimal.valueOf(amount)};
+    }
+
+    private void stubEmailResult(boolean sent) {
+        when(emailService.sendBudgetAlertEmailAsync(any(BudgetAlertEmailContext.class)))
+                .thenReturn(CompletableFuture.completedFuture(sent));
     }
 
     @Test
     void checkAlerts_WhenUsageAboveThresholdAndNeverNotified_SendsEmailAndSetsLastNotifiedAt() {
         stubActiveAlertAndBudget();
-        when(transactionRepository.sumNetByUserAndCategoryAndDateRange(any(), any(), any(), any()))
-                .thenReturn(BigDecimal.valueOf(450)); // 90% of 500
-        when(emailService.sendBudgetAlertEmail(any(BudgetAlertEmailContext.class))).thenReturn(true);
+        stubSpent(net("EUR", 450)); // 90% of 500
+        stubEmailResult(true);
 
         budgetAlertService.checkAlerts();
 
-        assertNotNull(alert.getLastNotifiedAt());
-        verify(emailService, times(1)).sendBudgetAlertEmail(any(BudgetAlertEmailContext.class));
-        verify(budgetAlertRepository, times(1)).save(alert);
+        verify(emailService, times(1)).sendBudgetAlertEmailAsync(any(BudgetAlertEmailContext.class));
+        verify(budgetAlertRepository, times(1)).updateLastNotifiedAt(eq(alert.getId()), notNull());
+        verify(budgetAlertRepository, never()).save(any());
     }
 
     @Test
     void checkAlerts_WhenAlreadyNotifiedThisPeriodAndStillAboveThreshold_DoesNotSendAgain() {
         alert.setLastNotifiedAt(LocalDateTime.now().minusHours(1));
         stubActiveAlertAndBudget();
-        when(transactionRepository.sumNetByUserAndCategoryAndDateRange(any(), any(), any(), any()))
-                .thenReturn(BigDecimal.valueOf(480)); // 96% of 500, still above threshold
+        stubSpent(net("EUR", 480)); // 96% of 500, still above threshold
 
         budgetAlertService.checkAlerts();
 
-        verify(emailService, never()).sendBudgetAlertEmail(any());
-        verify(budgetAlertRepository, never()).save(any());
+        verify(emailService, never()).sendBudgetAlertEmailAsync(any());
+        verify(budgetAlertRepository, never()).updateLastNotifiedAt(any(), any());
     }
 
     @Test
@@ -127,14 +152,12 @@ class BudgetAlertServiceTest {
         alert.setLastNotifiedAt(LocalDateTime.now().minusHours(1));
         stubActiveAlertAndBudget();
         // spend dropped below threshold, e.g. after re-categorizing a transaction out of this category
-        when(transactionRepository.sumNetByUserAndCategoryAndDateRange(any(), any(), any(), any()))
-                .thenReturn(BigDecimal.valueOf(200)); // 40% of 500, below threshold
+        stubSpent(net("EUR", 200)); // 40% of 500, below threshold
 
         budgetAlertService.checkAlerts();
 
-        assertNull(alert.getLastNotifiedAt());
-        verify(emailService, never()).sendBudgetAlertEmail(any());
-        verify(budgetAlertRepository, times(1)).save(alert);
+        verify(emailService, never()).sendBudgetAlertEmailAsync(any());
+        verify(budgetAlertRepository, times(1)).updateLastNotifiedAt(eq(alert.getId()), isNull());
     }
 
     @Test
@@ -143,64 +166,104 @@ class BudgetAlertServiceTest {
         // transaction moved back in / new spend (crosses threshold again) -> second notification sent
         alert.setLastNotifiedAt(null); // already re-armed by a prior run
         stubActiveAlertAndBudget();
-        when(transactionRepository.sumNetByUserAndCategoryAndDateRange(any(), any(), any(), any()))
-                .thenReturn(BigDecimal.valueOf(450)); // 90% of 500, crosses threshold again
-        when(emailService.sendBudgetAlertEmail(any(BudgetAlertEmailContext.class))).thenReturn(true);
+        stubSpent(net("EUR", 450)); // 90% of 500, crosses threshold again
+        stubEmailResult(true);
 
         budgetAlertService.checkAlerts();
 
-        assertNotNull(alert.getLastNotifiedAt());
-        verify(emailService, times(1)).sendBudgetAlertEmail(any(BudgetAlertEmailContext.class));
+        verify(emailService, times(1)).sendBudgetAlertEmailAsync(any(BudgetAlertEmailContext.class));
+        verify(budgetAlertRepository, times(1)).updateLastNotifiedAt(eq(alert.getId()), notNull());
     }
 
     @Test
     void checkAlerts_WhenUsageBelowThresholdAndNeverNotified_DoesNothing() {
         stubActiveAlertAndBudget();
-        when(transactionRepository.sumNetByUserAndCategoryAndDateRange(any(), any(), any(), any()))
-                .thenReturn(BigDecimal.valueOf(100)); // 20% of 500
+        stubSpent(net("EUR", 100)); // 20% of 500
 
         budgetAlertService.checkAlerts();
 
-        assertNull(alert.getLastNotifiedAt());
-        verify(emailService, never()).sendBudgetAlertEmail(any());
-        verify(budgetAlertRepository, never()).save(any());
+        verify(emailService, never()).sendBudgetAlertEmailAsync(any());
+        verify(budgetAlertRepository, never()).updateLastNotifiedAt(any(), any());
     }
 
     @Test
     void checkAlerts_WhenNoActiveBudgetFound_SkipsAlert() {
-        when(budgetAlertRepository.findByActive(true)).thenReturn(List.of(alert));
+        when(budgetAlertRepository.findActiveIds()).thenReturn(List.of(alert.getId()));
+        when(budgetAlertRepository.findById(alert.getId())).thenReturn(Optional.of(alert));
         when(budgetRepository.findActiveBudgetByUserAndCategoryAndDate(user, category, LocalDate.now()))
                 .thenReturn(Optional.empty());
 
         budgetAlertService.checkAlerts();
 
-        verify(transactionRepository, never()).sumNetByUserAndCategoryAndDateRange(any(), any(), any(), any());
-        verify(emailService, never()).sendBudgetAlertEmail(any());
+        verify(transactionRepository, never()).sumNetByUserAndCategoryAndDateRangePerCurrency(any(), any(), any(), any());
+        verify(emailService, never()).sendBudgetAlertEmailAsync(any());
     }
 
     @Test
     void checkAlerts_WhenBudgetLimitIsZero_SkipsAlert() {
         budget.setBudgetLimit(BigDecimal.ZERO);
         stubActiveAlertAndBudget();
-        when(transactionRepository.sumNetByUserAndCategoryAndDateRange(any(), any(), any(), any()))
-                .thenReturn(BigDecimal.valueOf(100));
 
         budgetAlertService.checkAlerts();
 
-        verify(emailService, never()).sendBudgetAlertEmail(any());
-        verify(budgetAlertRepository, never()).save(any());
+        verify(emailService, never()).sendBudgetAlertEmailAsync(any());
+        verify(budgetAlertRepository, never()).updateLastNotifiedAt(any(), any());
     }
 
     @Test
     void checkAlerts_WhenEmailSendFails_DoesNotSetLastNotifiedAt() {
         stubActiveAlertAndBudget();
-        when(transactionRepository.sumNetByUserAndCategoryAndDateRange(any(), any(), any(), any()))
-                .thenReturn(BigDecimal.valueOf(450));
-        when(emailService.sendBudgetAlertEmail(any(BudgetAlertEmailContext.class))).thenReturn(false);
+        stubSpent(net("EUR", 450));
+        stubEmailResult(false);
 
         budgetAlertService.checkAlerts();
 
-        assertNull(alert.getLastNotifiedAt());
-        verify(budgetAlertRepository, never()).save(any());
+        verify(budgetAlertRepository, never()).updateLastNotifiedAt(any(), any());
+    }
+
+    @Test
+    void checkAlerts_SpentInOtherCurrency_IsConvertedToUserCurrency() {
+        stubActiveAlertAndBudget();
+        // 100 EUR + 400 USD (= 360 EUR) = 460 EUR -> 92% of 500: soglia superata solo grazie alla conversione
+        stubSpent(net("EUR", 100), net("USD", 400));
+        when(exchangeRateService.getRate("USD", "EUR")).thenReturn(Optional.of(new BigDecimal("0.90")));
+        stubEmailResult(true);
+
+        budgetAlertService.checkAlerts();
+
+        verify(emailService).sendBudgetAlertEmailAsync(argThat(ctx -> ctx.getUsagePercent().compareTo(new BigDecimal("92.0")) == 0));
+    }
+
+    @Test
+    void checkAlerts_WhenOneAlertFails_OtherAlertsAreStillChecked() {
+        UUID brokenId = UUID.randomUUID();
+        when(budgetAlertRepository.findActiveIds()).thenReturn(List.of(brokenId, alert.getId()));
+        when(budgetAlertRepository.findById(brokenId)).thenThrow(new RuntimeException("DB error"));
+        when(budgetAlertRepository.findById(alert.getId())).thenReturn(Optional.of(alert));
+        when(budgetRepository.findActiveBudgetByUserAndCategoryAndDate(user, category, LocalDate.now()))
+                .thenReturn(Optional.of(budget));
+        stubSpent(net("EUR", 450));
+        stubEmailResult(true);
+
+        budgetAlertService.checkAlerts();
+
+        verify(emailService, times(1)).sendBudgetAlertEmailAsync(any());
+        verify(budgetAlertRepository).updateLastNotifiedAt(eq(alert.getId()), notNull());
+    }
+
+    @Test
+    void checkAlerts_WhileEmailStillInFlight_DoesNotSendTwice() {
+        stubActiveAlertAndBudget();
+        stubSpent(net("EUR", 450));
+        CompletableFuture<Boolean> pending = new CompletableFuture<>();
+        when(emailService.sendBudgetAlertEmailAsync(any(BudgetAlertEmailContext.class))).thenReturn(pending);
+
+        budgetAlertService.checkAlerts();
+        budgetAlertService.checkAlerts(); // SMTP ancora lento: l'alert non va rivalutato
+
+        verify(emailService, times(1)).sendBudgetAlertEmailAsync(any());
+
+        pending.complete(true);
+        verify(budgetAlertRepository).updateLastNotifiedAt(eq(alert.getId()), notNull());
     }
 }

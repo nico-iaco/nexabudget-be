@@ -67,5 +67,8 @@ public class UserDto {
         @Pattern(regexp = "^(?=.*[a-z])(?=.*[A-Z])(?=.*\\d)(?=.*[@$!%*?&])[a-zA-Z\\d@$!%*?&]*$",
                 message = "Password deve contenere almeno una maiuscola, una minuscola, un numero e un simbolo speciale (@$!%*?&)")
         private String password;
+
+        /** Obbligatoria quando {@code password} è valorizzata: un JWT rubato da solo non basta a cambiare la password. */
+        private String currentPassword;
     }
 }

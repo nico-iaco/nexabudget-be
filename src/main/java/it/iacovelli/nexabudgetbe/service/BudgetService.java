@@ -18,10 +18,13 @@ import java.util.*;
 public class BudgetService {
     private final BudgetRepository budgetRepository;
     private final TransactionRepository transactionRepository;
+    private final CurrencyConversionService currencyConversionService;
 
-    public BudgetService(BudgetRepository budgetRepository, TransactionRepository transactionRepository) {
+    public BudgetService(BudgetRepository budgetRepository, TransactionRepository transactionRepository,
+                         CurrencyConversionService currencyConversionService) {
         this.budgetRepository = budgetRepository;
         this.transactionRepository = transactionRepository;
+        this.currencyConversionService = currencyConversionService;
     }
 
     public Budget createBudget(Budget budget) {
@@ -81,21 +84,41 @@ public class BudgetService {
         budgetRepository.deleteById(budgetId);
     }
 
+    /**
+     * Speso netto (OUT − IN) della categoria del budget sull'intero periodo del budget: il limite si
+     * riferisce a quel periodo (mese, trimestre, anno o intervallo manuale), non al mese di calendario.
+     * Per un budget senza data di fine il periodo si chiude a {@code referenceDate}.
+     * Il limite è espresso nella valuta preferita dell'utente: il netto di ogni valuta dei conti viene
+     * convertito in quella valuta (tasso corrente) prima di sommare.
+     * Usato sia dagli endpoint/tool sia dal job degli alert, così i numeri coincidono.
+     */
+    public BigDecimal getSpentInBudgetPeriod(Budget budget, LocalDate referenceDate) {
+        String userCurrency = budget.getUser().getDefaultCurrency() != null
+                ? budget.getUser().getDefaultCurrency() : "EUR";
+        List<Object[]> netPerCurrency = transactionRepository.sumNetByUserAndCategoryAndDateRangePerCurrency(
+                budget.getUser(), budget.getCategory(), budget.getStartDate(),
+                usagePeriodEnd(budget, referenceDate));
+
+        BigDecimal spent = BigDecimal.ZERO;
+        for (Object[] row : netPerCurrency) {
+            String currency = (String) row[0];
+            BigDecimal net = (BigDecimal) row[1];
+            if (net == null) continue;
+            spent = spent.add(currencyConversionService.convert(net, currency, userCurrency));
+        }
+        return spent;
+    }
+
+    private static LocalDate usagePeriodEnd(Budget budget, LocalDate referenceDate) {
+        return budget.getEndDate() != null ? budget.getEndDate() : referenceDate;
+    }
+
     @Transactional(readOnly = true)
     public Map<Budget, BigDecimal> getBudgetUsage(User user, LocalDate date) {
-        List<Budget> activeBudgets = getActiveBudgets(user, date);
         Map<Budget, BigDecimal> budgetUsage = new HashMap<>();
-
-        LocalDate startOfMonth = date.withDayOfMonth(1);
-        LocalDate endOfMonth = date.withDayOfMonth(date.lengthOfMonth());
-
-        for (Budget budget : activeBudgets) {
-            Category category = budget.getCategory();
-            BigDecimal spent = transactionRepository.sumNetByUserAndCategoryAndDateRange(
-                    user, category, startOfMonth, endOfMonth);
-            budgetUsage.put(budget, spent != null ? spent : BigDecimal.ZERO);
+        for (Budget budget : getActiveBudgets(user, date)) {
+            budgetUsage.put(budget, getSpentInBudgetPeriod(budget, date));
         }
-
         return budgetUsage;
     }
 
@@ -115,8 +138,6 @@ public class BudgetService {
     @Transactional(readOnly = true)
     public List<BudgetDto.MonthlySummaryResponse> getBudgetMonthlySummary(User user, LocalDate date) {
         LocalDate targetDate = date != null ? date : LocalDate.now();
-        LocalDate periodStart = targetDate.withDayOfMonth(1);
-        LocalDate periodEnd = targetDate.withDayOfMonth(targetDate.lengthOfMonth());
 
         Map<Budget, BigDecimal> budgetUsage = getBudgetUsage(user, targetDate);
 
@@ -141,8 +162,8 @@ public class BudgetService {
                             .percentageUsed(percentageUsed)
                             .budgetStartDate(budget.getStartDate())
                             .budgetEndDate(budget.getEndDate())
-                            .periodStart(periodStart)
-                            .periodEnd(periodEnd)
+                            .periodStart(budget.getStartDate())
+                            .periodEnd(usagePeriodEnd(budget, targetDate))
                             .build();
                 })
                 .toList();

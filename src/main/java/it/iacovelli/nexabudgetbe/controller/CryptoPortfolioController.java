@@ -77,6 +77,8 @@ public class CryptoPortfolioController {
     @Operation(summary = "Sincronizza da Binance", description = "Avvia l'importazione/aggiornamento degli asset da Binance")
     public ResponseEntity<Void> syncFromBinance(
             @AuthenticationPrincipal User currentUser) {
+        // Verifica sincrona: un errore lanciato nel metodo @Async non arriverebbe al client (sempre 202)
+        cryptoService.requireBinanceKeys(currentUser);
         cryptoService.syncBinanceHoldings(currentUser);
         return ResponseEntity.accepted().build(); // È un'operazione che può richiedere tempo
     }
@@ -94,6 +96,8 @@ public class CryptoPortfolioController {
     @Operation(summary = "Sincronizza da Coinbase", description = "Avvia l'importazione/aggiornamento degli asset da Coinbase")
     public ResponseEntity<Void> syncFromCoinbase(
             @AuthenticationPrincipal User currentUser) {
+        // Verifica sincrona: un errore lanciato nel metodo @Async non arriverebbe al client (sempre 202)
+        cryptoService.requireCoinbaseKeys(currentUser);
         cryptoService.syncCoinbaseHoldings(currentUser);
         return ResponseEntity.accepted().build(); // È un'operazione che può richiedere tempo
     }

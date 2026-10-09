@@ -32,9 +32,15 @@ public class CacheConfig {
         public static final String PORTFOLIO_CACHE = "portfolio";
         public static final String AI_REPORTS_CACHE = "aiReports";
         public static final String AI_REPORTS_RESULTS_CACHE = "aiReportResults";
+        // Periodi (tipo ricorrenza + inizio periodo) già istanziati dal job dei template budget
+        public static final String BUDGET_TEMPLATE_RUNS_CACHE = "budgetTemplateRuns";
+        // Claim breve tra pod sullo stesso periodo; scade da solo se il pod muore a metà run
+        public static final String BUDGET_TEMPLATE_RUN_LOCK_CACHE = "budgetTemplateRunLock";
         public static final Duration CRYPTO_CACHE_TTL = Duration.ofMinutes(5);
         public static final Duration CACHE_TTL = Duration.ofHours(6);
         public static final Duration AI_REPORT_RESULTS_TTL = Duration.ofDays(7);
+        public static final Duration BUDGET_TEMPLATE_RUNS_TTL = Duration.ofDays(400);
+        public static final Duration BUDGET_TEMPLATE_RUN_LOCK_TTL = Duration.ofMinutes(10);
 
         @Bean
         public CacheManager cacheManager(RedisConnectionFactory connectionFactory, ObjectMapper objectMapper) {
@@ -62,6 +68,8 @@ public class CacheConfig {
                                 .withCacheConfiguration(CRYPTO_PRICES_CACHE, config.entryTtl(CRYPTO_CACHE_TTL))
                                 .withCacheConfiguration(PORTFOLIO_CACHE, config.entryTtl(CRYPTO_CACHE_TTL))
                                 .withCacheConfiguration(AI_REPORTS_RESULTS_CACHE, config.entryTtl(AI_REPORT_RESULTS_TTL))
+                                .withCacheConfiguration(BUDGET_TEMPLATE_RUNS_CACHE, config.entryTtl(BUDGET_TEMPLATE_RUNS_TTL))
+                                .withCacheConfiguration(BUDGET_TEMPLATE_RUN_LOCK_CACHE, config.entryTtl(BUDGET_TEMPLATE_RUN_LOCK_TTL))
                                 .build();
         }
 }

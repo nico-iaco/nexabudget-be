@@ -30,11 +30,20 @@ public class BinanceService {
     private static final String BINANCE_API_BASE = "https://api.binance.com";
 
     public BinanceService() {
+        this(buildRestClient());
+    }
+
+    // Per i test: permette di iniettare un RestClient legato a MockRestServiceServer
+    BinanceService(RestClient restClient) {
+        this.restClient = restClient;
+    }
+
+    private static RestClient buildRestClient() {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(5));
         factory.setReadTimeout(Duration.ofSeconds(5));
 
-        this.restClient = RestClient.builder()
+        return RestClient.builder()
                 .baseUrl(BINANCE_API_BASE)
                 .requestFactory(factory)
                 .build();
@@ -68,7 +77,8 @@ public class BinanceService {
      * Restituisce una mappa base_symbol -> prezzo in USDT.
      * Riduce le chiamate API da N (una per simbolo) a 1.
      */
-    @Cacheable(value = CacheConfig.CRYPTO_PRICES_CACHE, key = "'ALL_USDT'")
+    // unless: in caso di errore torna una mappa vuota, che non va cachata (bloccherebbe i prezzi per tutto il TTL)
+    @Cacheable(value = CacheConfig.CRYPTO_PRICES_CACHE, key = "'ALL_USDT'", unless = "#result.isEmpty()")
     public Map<String, BigDecimal> getAllTickerPricesUsdt() {
         logger.info("Recupero batch prezzi USDT da Binance");
         try {
@@ -247,8 +257,9 @@ public class BinanceService {
             logger.info("Recuperati {} asset da Simple Earn Flexible", balances.size());
             return balances;
         } catch (Exception e) {
+            // Niente lista vuota: la sync sostituisce tutti gli holdings Binance e cancellerebbe quelli in Earn
             logger.error("Errore recupero Simple Earn Flexible: {}", e.getMessage());
-            return List.of();
+            throw new RuntimeException("Impossibile recuperare Simple Earn Flexible Binance: " + e.getMessage(), e);
         }
     }
 
@@ -288,8 +299,9 @@ public class BinanceService {
             logger.info("Recuperati {} asset da Simple Earn Locked", balances.size());
             return balances;
         } catch (Exception e) {
+            // Niente lista vuota: la sync sostituisce tutti gli holdings Binance e cancellerebbe quelli in Earn
             logger.error("Errore recupero Simple Earn Locked: {}", e.getMessage());
-            return List.of();
+            throw new RuntimeException("Impossibile recuperare Simple Earn Locked Binance: " + e.getMessage(), e);
         }
     }
 
@@ -321,18 +333,17 @@ public class BinanceService {
         return Optional.of(price);
     }
 
+    /**
+     * Spot + Simple Earn (Flexible e Locked). Lancia se una qualsiasi delle tre fonti fallisce: un risultato
+     * parziale (es. solo Spot) farebbe cancellare alla sync gli holdings delle fonti mancanti.
+     */
     public List<CryptoBalance> getAllWalletsIncludingEarn(String apiKey, String apiSecret) {
         logger.info("Recupero COMPLETO: Spot + Earn Flexible + Earn Locked...");
-        try {
-            List<CryptoBalance> spotBalances = getAccountBalances(apiKey, apiSecret);
-            List<CryptoBalance> flexibleBalances = getSimpleEarnFlexibleBalances(apiKey, apiSecret);
-            List<CryptoBalance> lockedBalances = getSimpleEarnLockedBalances(apiKey, apiSecret);
-            List<CryptoBalance> combined = combineBalances(spotBalances, flexibleBalances, lockedBalances);
-            logger.info("TOTALE COMBINATO: {} asset unici", combined.size());
-            return combined;
-        } catch (Exception e) {
-            logger.error("Errore nel recupero completo: {}", e.getMessage(), e);
-            return getAccountBalances(apiKey, apiSecret);
-        }
+        List<CryptoBalance> spotBalances = getAccountBalances(apiKey, apiSecret);
+        List<CryptoBalance> flexibleBalances = getSimpleEarnFlexibleBalances(apiKey, apiSecret);
+        List<CryptoBalance> lockedBalances = getSimpleEarnLockedBalances(apiKey, apiSecret);
+        List<CryptoBalance> combined = combineBalances(spotBalances, flexibleBalances, lockedBalances);
+        logger.info("TOTALE COMBINATO: {} asset unici", combined.size());
+        return combined;
     }
 }

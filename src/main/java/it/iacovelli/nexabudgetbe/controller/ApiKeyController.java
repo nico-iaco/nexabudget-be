@@ -51,6 +51,10 @@ public class ApiKeyController {
             @PathVariable UUID id,
             @RequestBody ApiKeyDto.UpdateApiKeyRequest request,
             @AuthenticationPrincipal User currentUser) {
+        // Riattivare una chiave o spostarne la scadenza estenderebbe l'accesso di una key compromessa
+        if (ApiKeyAuthenticationToken.isCurrentRequestApiKeyAuthenticated()) {
+            throw new AccessDeniedException("Una API key non può modificare le API key: usare una sessione utente");
+        }
         return ResponseEntity.ok(apiKeyService.updateApiKey(id, request, currentUser));
     }
 

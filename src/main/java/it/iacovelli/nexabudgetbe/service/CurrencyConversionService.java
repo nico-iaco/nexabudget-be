@@ -40,6 +40,21 @@ public class CurrencyConversionService {
     }
 
     /**
+     * Tasso sourceCurrency -> targetCurrency, vuoto se non disponibile (1 se le valute coincidono).
+     * A differenza di {@link #convert}, permette al chiamante di sapere se la conversione è avvenuta davvero
+     * invece di ricevere l'importo originale.
+     */
+    public Optional<BigDecimal> getRate(String sourceCurrency, String targetCurrency) {
+        if (sourceCurrency == null || targetCurrency == null || sourceCurrency.isBlank() || targetCurrency.isBlank()) {
+            return Optional.empty();
+        }
+        if (sourceCurrency.equalsIgnoreCase(targetCurrency)) {
+            return Optional.of(BigDecimal.ONE);
+        }
+        return exchangeRateService.getRate(sourceCurrency.toUpperCase(), targetCurrency.toUpperCase());
+    }
+
+    /**
      * Converte un importo da sourceCurrency a targetCurrency.
      * Se currencies uguali o amount nullo -> ritorna amount.
      * Se tasso non disponibile -> ritorna amount (fallback) e logga warning.
