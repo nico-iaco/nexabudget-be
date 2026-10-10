@@ -45,6 +45,7 @@ class AiReportServiceStartJobTest {
         FinanceTools financeTools = new FinanceTools(
                 mock(AccountService.class), mock(TransactionService.class), mock(BudgetService.class),
                 mock(CategoryService.class), mock(ReportService.class), mock(CryptoPortfolioService.class),
+                mock(InvestmentPortfolioService.class), mock(NetWorthService.class),
                 mock(CurrencyConversionService.class), mock(ExchangeRateService.class),
                 new com.fasterxml.jackson.databind.ObjectMapper());
         service = new AiReportService(transactionService, mock(ChatClient.class), financeTools, cacheManager,

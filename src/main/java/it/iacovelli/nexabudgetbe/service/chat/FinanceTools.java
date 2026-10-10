@@ -36,6 +36,8 @@ public class FinanceTools {
     private final CategoryService categoryService;
     private final ReportService reportService;
     private final CryptoPortfolioService cryptoPortfolioService;
+    private final InvestmentPortfolioService investmentPortfolioService;
+    private final NetWorthService netWorthService;
     private final CurrencyConversionService currencyConversionService;
     private final ExchangeRateService exchangeRateService;
     private final ObjectMapper objectMapper;
@@ -209,7 +211,7 @@ public class FinanceTools {
     public String getCryptoPortfolio() {
         User user = currentUser();
         try {
-            var portfolio = cryptoPortfolioService.getPortfolioValue(user, user.getDefaultCurrency());
+            var portfolio = cryptoPortfolioService.getPortfolioValue(user, defaultCurrency(user));
             StringBuilder sb = new StringBuilder("Portafoglio crypto (" + portfolio.getCurrency() + "):\n");
             sb.append("Valore totale: ").append(portfolio.getTotalValue()).append("\n");
             for (var asset : portfolio.getAssets()) {
@@ -224,6 +226,139 @@ public class FinanceTools {
             log.warn("[FinanceTools] Impossibile recuperare portfolio crypto: {}", e.getMessage());
             return "Portfolio crypto non disponibile o non configurato.";
         }
+    }
+
+    @Tool(name = "getInvestmentPortfolio", description = "Restituisce il portafoglio investimenti dell'utente (ETF, azioni, obbligazioni, fondi) nella valuta di default: posizioni con quantità, prezzo medio di carico, valore, utile/perdita non realizzato e realizzato, dividendi e cedole incassati, più l'allocazione per tipo e per valuta.")
+    public String getInvestmentPortfolio() {
+        User user = currentUser();
+        try {
+            var portfolio = investmentPortfolioService.getPortfolio(user, defaultCurrency(user));
+            if (portfolio.getPositions().isEmpty()) {
+                return "L'utente non ha investimenti registrati.";
+            }
+            StringBuilder sb = new StringBuilder("Portafoglio investimenti (" + portfolio.getCurrency() + "):\n");
+            sb.append("Valore totale: ").append(portfolio.getTotalValue())
+              .append(" | costo di carico: ").append(portfolio.getTotalCostBasis())
+              .append(" | P/L non realizzato: ").append(portfolio.getUnrealizedPl())
+              .append(portfolio.getUnrealizedPlPercent() != null ? " (" + portfolio.getUnrealizedPlPercent() + "%)" : "")
+              .append("\nP/L realizzato (vendite): ").append(portfolio.getRealizedPl())
+              .append(" | dividendi e cedole incassati: ").append(portfolio.getIncome()).append("\n");
+            for (var p : portfolio.getPositions()) {
+                sb.append("- ").append(p.getName()).append(" [").append(p.getAssetType()).append("]");
+                if (p.getQuantity().signum() == 0) {
+                    sb.append(": posizione chiusa | realizzato: ").append(p.getRealizedPl() != null ? p.getRealizedPl() : "n/d");
+                } else {
+                    sb.append(": ").append(p.getQuantity().stripTrailingZeros().toPlainString())
+                      .append(p.getAssetType() == it.iacovelli.nexabudgetbe.model.InvestmentAssetType.BOND ? " di nominale" : " quote")
+                      // Importi null = prezzo o tasso di cambio non disponibile, esclusi dai totali
+                      .append(" | valore: ").append(p.getMarketValue() != null ? p.getMarketValue() : "n/d")
+                      .append(" | prezzo: ").append(p.getPrice() != null ? p.getPrice() + " " + p.getPriceCurrency() : "n/d")
+                      .append(" | P/L: ").append(p.getUnrealizedPl() != null ? p.getUnrealizedPl() : "n/d")
+                      .append(p.getUnrealizedPlPercent() != null ? " (" + p.getUnrealizedPlPercent() + "%)" : "");
+                    if (p.isStale()) {
+                        sb.append(" | ATTENZIONE: prezzo non aggiornato");
+                    }
+                }
+                sb.append("\n");
+            }
+            if (!portfolio.getAllocationByType().isEmpty()) {
+                sb.append("Allocazione per tipo: ");
+                sb.append(portfolio.getAllocationByType().stream()
+                        .map(a -> a.getKey() + " " + a.getPercent() + "%").collect(Collectors.joining(", "))).append("\n");
+            }
+            if (!portfolio.isComplete()) {
+                sb.append("ATTENZIONE: alcune posizioni non hanno prezzo o tasso di cambio e sono escluse dai totali.\n");
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("[FinanceTools] Impossibile recuperare il portafoglio investimenti: {}", e.getMessage());
+            return "Portafoglio investimenti non disponibile.";
+        }
+    }
+
+    @Tool(name = "getInvestmentOperations", description = "Restituisce le operazioni sugli investimenti (acquisti, vendite, dividendi, cedole) in un intervallo di date.")
+    public String getInvestmentOperations(
+            @ToolParam(required = true, description = "Data inizio in formato yyyy-MM-dd") String startDate,
+            @ToolParam(required = true, description = "Data fine in formato yyyy-MM-dd") String endDate) {
+        User user = currentUser();
+        LocalDate start = LocalDate.parse(startDate);
+        LocalDate end = LocalDate.parse(endDate);
+        if (ChronoUnit.YEARS.between(start, end) > 5) {
+            return "Errore: il range non può superare 5 anni.";
+        }
+        var operations = investmentPortfolioService.getOperationsInPeriod(user, start, end);
+        if (operations.isEmpty()) {
+            return "Nessuna operazione sugli investimenti nel periodo " + start + " - " + end + ".";
+        }
+        StringBuilder sb = new StringBuilder("Operazioni sugli investimenti dal " + start + " al " + end
+                + " (" + operations.size() + ", importi nella valuta dell'asset):\n");
+        for (var op : operations) {
+            sb.append("- [").append(op.getOperationDate()).append("] ").append(op.getType()).append(" ").append(op.getAssetName());
+            if (op.getQuantity() != null) {
+                sb.append(" | quantità: ").append(op.getQuantity().stripTrailingZeros().toPlainString())
+                  .append(" | prezzo: ").append(op.getPrice());
+            }
+            if (op.getAmount() != null) {
+                sb.append(" | importo: ").append(op.getAmount());
+            }
+            if (op.getFees() != null && op.getFees().signum() > 0) {
+                sb.append(" | commissioni: ").append(op.getFees());
+            }
+            sb.append("\n");
+        }
+        return sb.toString();
+    }
+
+    @Tool(name = "getInvestmentPerformance", description = "Restituisce la performance degli investimenti in un periodo: importo investito e disinvestito, utile/perdita realizzato, dividendi e cedole, valore a inizio e fine periodo e guadagno complessivo.")
+    public String getInvestmentPerformance(
+            @ToolParam(required = true, description = "Data inizio in formato yyyy-MM-dd") String startDate,
+            @ToolParam(required = true, description = "Data fine in formato yyyy-MM-dd") String endDate) {
+        User user = currentUser();
+        LocalDate start = LocalDate.parse(startDate);
+        LocalDate end = LocalDate.parse(endDate);
+        if (ChronoUnit.YEARS.between(start, end) > 5) {
+            return "Errore: il range non può superare 5 anni.";
+        }
+        try {
+            var perf = investmentPortfolioService.getPerformance(user, start, end);
+            return "Performance investimenti " + perf.getStartDate() + " - " + perf.getEndDate() + " (" + perf.getCurrency() + "):\n" +
+                   "Investito: " + perf.getInvested() + "\n" +
+                   "Disinvestito: " + perf.getDivested() + "\n" +
+                   "Utile/perdita realizzato: " + perf.getRealizedPl() + "\n" +
+                   "Dividendi e cedole: " + perf.getIncome() + "\n" +
+                   "Valore a inizio periodo: " + (perf.getStartValue() != null ? perf.getStartValue() : "n/d") + "\n" +
+                   "Valore a fine periodo: " + (perf.getEndValue() != null ? perf.getEndValue() : "n/d") + "\n" +
+                   "Guadagno complessivo: " + (perf.getTotalGain() != null ? perf.getTotalGain() : "n/d (storico non disponibile)");
+        } catch (Exception e) {
+            log.warn("[FinanceTools] Impossibile calcolare la performance investimenti: {}", e.getMessage());
+            return "Performance investimenti non disponibile.";
+        }
+    }
+
+    @Tool(name = "getNetWorth", description = "Restituisce il patrimonio netto dell'utente nella valuta di default: liquidità dei conti, crypto e investimenti, con il totale e le percentuali.")
+    public String getNetWorth() {
+        User user = currentUser();
+        try {
+            var nw = netWorthService.getNetWorth(user, defaultCurrency(user));
+            StringBuilder sb = new StringBuilder("Patrimonio netto (" + nw.getCurrency() + "): " + nw.getTotal() + "\n");
+            sb.append("- Liquidità (conti): ").append(nw.getLiquidity() != null ? nw.getLiquidity() : "n/d")
+              .append(nw.getLiquidityPercent() != null ? " (" + nw.getLiquidityPercent() + "%)" : "").append("\n");
+            sb.append("- Crypto: ").append(nw.getCrypto() != null ? nw.getCrypto() : "n/d")
+              .append(nw.getCryptoPercent() != null ? " (" + nw.getCryptoPercent() + "%)" : "").append("\n");
+            sb.append("- Investimenti: ").append(nw.getInvestments() != null ? nw.getInvestments() : "n/d")
+              .append(nw.getInvestmentsPercent() != null ? " (" + nw.getInvestmentsPercent() + "%)" : "").append("\n");
+            for (String warning : nw.getWarnings()) {
+                sb.append("ATTENZIONE: ").append(warning).append("\n");
+            }
+            return sb.toString();
+        } catch (Exception e) {
+            log.warn("[FinanceTools] Impossibile calcolare il patrimonio netto: {}", e.getMessage());
+            return "Patrimonio netto non disponibile.";
+        }
+    }
+
+    private String defaultCurrency(User user) {
+        return user.getDefaultCurrency() != null ? user.getDefaultCurrency() : "EUR";
     }
 
     @Tool(name = "listCategories", description = "Restituisce la lista delle categorie disponibili per l'utente (personali + predefinite).")
@@ -396,15 +531,15 @@ public class FinanceTools {
         return sb.toString();
     }
 
-    @Tool(name = "getAccountsByType", description = "Restituisce i conti bancari dell'utente filtrati per tipo (es. CHECKING, SAVINGS, CREDIT_CARD, INVESTMENT, CASH, OTHER).")
+    @Tool(name = "getAccountsByType", description = "Restituisce i conti bancari dell'utente filtrati per tipo (CONTO_CORRENTE, RISPARMIO, INVESTIMENTO, CONTANTI).")
     public String getAccountsByType(
-            @ToolParam(required = true, description = "Tipo di conto: CHECKING, SAVINGS, CREDIT_CARD, INVESTMENT, CASH, OTHER") String type) {
+            @ToolParam(required = true, description = "Tipo di conto: CONTO_CORRENTE, RISPARMIO, INVESTIMENTO, CONTANTI") String type) {
         User user = currentUser();
         AccountType accountType;
         try {
             accountType = AccountType.valueOf(type.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
-            return "Tipo non valido: '" + type + "'. Valori ammessi: CHECKING, SAVINGS, CREDIT_CARD, INVESTMENT, CASH, OTHER.";
+            return "Tipo non valido: '" + type + "'. Valori ammessi: CONTO_CORRENTE, RISPARMIO, INVESTIMENTO, CONTANTI.";
         }
         var accounts = accountService.getAccountsByUserAndType(user, accountType);
         if (accounts.isEmpty()) {

@@ -3,6 +3,8 @@ package it.iacovelli.nexabudgetbe.config;
 import it.iacovelli.nexabudgetbe.dto.*;
 import it.iacovelli.nexabudgetbe.model.*;
 import it.iacovelli.nexabudgetbe.service.AiCategorizationService;
+import it.iacovelli.nexabudgetbe.service.market.InstrumentSearchResult;
+import it.iacovelli.nexabudgetbe.service.market.MarketQuote;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.vectorstore.mongodb.atlas.MongoDBAtlasVectorStore;
@@ -47,7 +49,11 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
                 AuditLog.class,
                 ApiKey.class,
                 BudgetTemplate.class,
-                BudgetAlert.class
+                BudgetAlert.class,
+                InvestmentAsset.class,
+                InvestmentOperation.class,
+                InvestmentPortfolioSnapshot.class,
+                CryptoPortfolioSnapshot.class
         );
         for (Class<?> entity : entities) {
             hints.reflection().registerType(entity, MemberCategory.values());
@@ -55,6 +61,10 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
 
         // ─── New enums ───────────────────────────────────────────────────────────
         hints.reflection().registerType(RecurrenceType.class, MemberCategory.values());
+        for (Class<?> enumType : List.of(InvestmentAssetType.class, InvestmentOperationType.class,
+                PriceSource.class, CouponFrequency.class)) {
+            hints.reflection().registerType(enumType, MemberCategory.values());
+        }
 
         // ─── New DTOs ────────────────────────────────────────────────────────────
         // Spring MVC AOT registers DTO types seen in @RestController signatures,
@@ -88,7 +98,28 @@ public class NativeRuntimeHints implements RuntimeHintsRegistrar {
                 ReportDto.MonthComparisonResponse.class,
                 ReportDto.MonthlyProjection.class,
                 // Trash
-                AccountDto.TrashAccountResponse.class
+                AccountDto.TrashAccountResponse.class,
+                // Investments (le risposte del portafoglio finiscono anche nella cache Redis)
+                InvestmentDto.AssetRequest.class,
+                InvestmentDto.AssetUpdateRequest.class,
+                InvestmentDto.AssetResponse.class,
+                InvestmentDto.ManualPriceRequest.class,
+                InvestmentDto.OperationRequest.class,
+                InvestmentDto.OperationResponse.class,
+                InvestmentDto.PositionResponse.class,
+                InvestmentDto.AllocationItem.class,
+                InvestmentDto.PortfolioResponse.class,
+                InvestmentDto.PerformanceResponse.class,
+                InvestmentDto.HistoryPoint.class,
+                InvestmentDto.HistoryResponse.class,
+                InvestmentDto.SearchResult.class,
+                // Net worth
+                NetWorthDto.NetWorthResponse.class,
+                NetWorthDto.NetWorthPoint.class,
+                NetWorthDto.NetWorthHistoryResponse.class,
+                // Quotazioni di mercato cachate in Redis
+                MarketQuote.class,
+                InstrumentSearchResult.class
         );
         for (Class<?> dto : dtos) {
             hints.reflection().registerType(dto, MemberCategory.values());

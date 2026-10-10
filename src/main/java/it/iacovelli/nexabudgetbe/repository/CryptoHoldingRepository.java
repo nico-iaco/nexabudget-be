@@ -17,6 +17,9 @@ import java.util.UUID;
 public interface CryptoHoldingRepository extends JpaRepository<CryptoHolding, UUID> {
     List<CryptoHolding> findByUser(User user);
 
+    @Query("SELECT DISTINCT h.user FROM CryptoHolding h")
+    List<User> findUsersWithHoldings();
+
     Optional<CryptoHolding> findByUserAndSymbolAndSource(User user, String symbol, HoldingSource source);
 
     void deleteByUserAndSource(User user, HoldingSource source);

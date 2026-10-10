@@ -80,6 +80,10 @@ public class AiReportService {
             - getMonthComparison: confronto mese corrente vs precedente
             - getMonthlyProjection: proiezione fine mese basata sul ritmo attuale
             - getCryptoPortfolio: valore portafoglio crypto
+            - getNetWorth: patrimonio netto (liquidità + crypto + investimenti)
+            - getInvestmentPortfolio: posizioni in ETF/azioni/obbligazioni con valore, P/L e allocazione
+            - getInvestmentOperations: acquisti, vendite, dividendi e cedole del periodo
+            - getInvestmentPerformance: performance degli investimenti nel periodo
             - getTransactionsInPeriod: elenco grezzo delle transazioni in un intervallo di date
             - searchTransactions: ricerca transazioni con filtri (tipo, categoria, testo)
             - getTransactionsByCategory: tutte le transazioni di una categoria specifica
@@ -88,6 +92,7 @@ public class AiReportService {
             1. Usa i tool per raccogliere TUTTI i dati necessari del periodo %s - %s PRIMA di scrivere il report. Non inventare dati: usa esclusivamente ciò che i tool restituiscono.
             2. Recupera sia gli aggregati (totali, breakdown per categoria, trend) sia il dettaglio delle singole transazioni (getTransactionsInPeriod o searchTransactions) per identificare pattern ricorrenti, abbonamenti e anomalie.
             3. Combina i dati aggregati con i dettagli delle transazioni per produrre un'analisi profonda.
+            4. Se getNetWorth o getInvestmentPortfolio mostrano che l'utente ha crypto o investimenti, includi nel "Riassunto Generale" un breve paragrafo su patrimonio netto, composizione e performance degli investimenti nel periodo. Segnala eventuali valori "n/d" o avvisi restituiti dai tool invece di stimarli. Se l'utente non ha investimenti, non nominarli.
 
             IL REPORT DEVE INCLUDERE OBBLIGATORIAMENTE QUESTE 4 SEZIONI:
             1. **Riassunto Generale**: saldo totale del periodo, andamento entrate vs uscite, tasso di risparmio, confronto col mese precedente.
@@ -107,7 +112,7 @@ public class AiReportService {
             Verifica quanto segue, usando nuovamente i tool a disposizione se necessario per ricontrollare i numeri:
             1. Coerenza numerica: i totali, le percentuali e i confronti citati sono plausibili e coerenti tra loro.
             2. Completezza: sono presenti tutte e 4 le sezioni obbligatorie (Riassunto Generale, Analisi per Categoria, Pattern e Anomalie, Suggerimenti di Miglioramento).
-            3. Nessun dato inventato: ogni cifra deve provenire dai tool.
+            3. Nessun dato inventato: ogni cifra deve provenire dai tool. Se la bozza contiene un paragrafo su patrimonio netto o investimenti, verificalo con getNetWorth/getInvestmentPortfolio e non rimuoverlo se è corretto.
 
             Se trovi errori o sezioni mancanti, CORREGGI il report e restituisci la versione finale completa.
             Se il report è già corretto e completo, restituiscilo INVARIATO.

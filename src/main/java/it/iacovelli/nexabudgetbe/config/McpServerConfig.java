@@ -7,7 +7,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 /**
- * Espone i 19 tool finanziari read-only di {@link FinanceTools} come tool MCP.
+ * Espone i 23 tool finanziari read-only di {@link FinanceTools} come tool MCP.
  * <p>
  * L'autoconfiguration di {@code spring-ai-starter-mcp-server-webmvc} raccoglie
  * automaticamente tutti i bean {@link ToolCallbackProvider} presenti nel contesto

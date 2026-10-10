@@ -1,7 +1,10 @@
 package it.iacovelli.nexabudgetbe.service;
 
 import it.iacovelli.nexabudgetbe.dto.BudgetDto;
+import it.iacovelli.nexabudgetbe.dto.InvestmentDto;
+import it.iacovelli.nexabudgetbe.dto.NetWorthDto;
 import it.iacovelli.nexabudgetbe.dto.ReportDto;
+import it.iacovelli.nexabudgetbe.model.InvestmentAssetType;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,6 +73,12 @@ class AiReportPdfServiceTest {
     @Mock
     private BudgetService budgetService;
 
+    @Mock
+    private InvestmentPortfolioService investmentPortfolioService;
+
+    @Mock
+    private NetWorthService netWorthService;
+
     @InjectMocks
     private AiReportPdfService service;
 
@@ -120,6 +129,65 @@ class AiReportPdfServiceTest {
         String text = extractText(pdf);
         assertTrue(text.contains("Nessun contenuto disponibile."));
         assertTrue(text.contains("Nessun budget attivo nel mese selezionato."));
+    }
+
+    @Test
+    void buildReportPdf_withInvestments_rendersNetWorthPositionsAndPerformance() throws IOException {
+        stubFullData();
+        when(netWorthService.getNetWorth(any(), any())).thenReturn(NetWorthDto.NetWorthResponse.builder()
+                .currency("EUR").total(new BigDecimal("30500.00"))
+                .liquidity(new BigDecimal("12000.00")).crypto(new BigDecimal("3000.00")).investments(new BigDecimal("15500.00"))
+                .liquidityPercent(new BigDecimal("39.3")).cryptoPercent(new BigDecimal("9.8")).investmentsPercent(new BigDecimal("50.8"))
+                .complete(true).warnings(List.of()).build());
+        when(investmentPortfolioService.getPortfolio(any(), any())).thenReturn(InvestmentDto.PortfolioResponse.builder()
+                .currency("EUR").totalValue(new BigDecimal("15500.00")).complete(true)
+                .positions(List.of(
+                        InvestmentDto.PositionResponse.builder().name("Vanguard FTSE All-World").assetType(InvestmentAssetType.ETF)
+                                .quantity(new BigDecimal("90")).marketValue(new BigDecimal("15500.00"))
+                                .unrealizedPl(new BigDecimal("1500")).unrealizedPlPercent(new BigDecimal("10.7")).build(),
+                        InvestmentDto.PositionResponse.builder().name("Vecchio ETF venduto").assetType(InvestmentAssetType.ETF)
+                                .quantity(BigDecimal.ZERO).marketValue(BigDecimal.ZERO).build()))
+                .build());
+        when(investmentPortfolioService.getPerformance(any(), any(), any())).thenReturn(InvestmentDto.PerformanceResponse.builder()
+                .currency("EUR").invested(new BigDecimal("2000.00")).divested(BigDecimal.ZERO)
+                .realizedPl(BigDecimal.ZERO).income(new BigDecimal("45.00")).totalGain(new BigDecimal("612.50")).build());
+
+        byte[] pdf = service.buildReportPdf(user, START, END, MARKDOWN);
+        dumpIfRequested(pdf, "ai-report-investments.pdf");
+
+        String text = extractText(pdf);
+        assertTrue(text.contains("Patrimonio e investimenti"));
+        assertTrue(text.contains("Patrimonio netto"));
+        assertTrue(text.contains("30.500,00 €"));
+        assertTrue(text.contains("Vanguard FTSE All-World"));
+        assertFalse(text.contains("Vecchio ETF venduto"), "le posizioni chiuse non compaiono nella tabella");
+        assertTrue(text.contains("Guadagno complessivo"));
+        assertTrue(text.contains("+612,50 €"));
+        assertFalse(text.contains("Patrimonio e investimenti non disponibili."));
+    }
+
+    @Test
+    void buildReportPdf_incompleteNetWorth_isFlagged() throws IOException {
+        stubFullData();
+        when(netWorthService.getNetWorth(any(), any())).thenReturn(NetWorthDto.NetWorthResponse.builder()
+                .currency("EUR").total(new BigDecimal("12000.00")).liquidity(new BigDecimal("12000.00"))
+                .complete(false).warnings(List.of("Valore crypto non disponibile")).build());
+
+        String text = extractText(service.buildReportPdf(user, START, END, MARKDOWN));
+
+        assertTrue(text.contains("n/d"), "la voce non calcolabile è esplicita");
+        assertTrue(text.contains("parziale"), "il totale parziale è dichiarato");
+    }
+
+    @Test
+    void buildReportPdf_investmentServicesFail_stillProducesReport() throws IOException {
+        stubFullData();
+        when(netWorthService.getNetWorth(any(), any())).thenThrow(new IllegalStateException("provider giù"));
+
+        String text = extractText(service.buildReportPdf(user, START, END, MARKDOWN));
+
+        assertTrue(text.contains("Budget del mese"), "il resto del report non dipende dagli investimenti");
+        assertTrue(text.contains("Patrimonio e investimenti non disponibili."));
     }
 
     @Test

@@ -30,6 +30,9 @@ public class CacheConfig {
         public static final String CRYPTO_PRICES_CACHE = "cryptoPrices";
         public static final String EXCHANGE_RATES_CACHE = "exchangeRates";
         public static final String PORTFOLIO_CACHE = "portfolio";
+        public static final String MARKET_PRICES_CACHE = "marketPrices";
+        public static final String MARKET_SEARCH_CACHE = "marketSearch";
+        public static final String INVESTMENT_PORTFOLIO_CACHE = "investmentPortfolio";
         public static final String AI_REPORTS_CACHE = "aiReports";
         public static final String AI_REPORTS_RESULTS_CACHE = "aiReportResults";
         // Periodi (tipo ricorrenza + inizio periodo) già istanziati dal job dei template budget
@@ -37,6 +40,8 @@ public class CacheConfig {
         // Claim breve tra pod sullo stesso periodo; scade da solo se il pod muore a metà run
         public static final String BUDGET_TEMPLATE_RUN_LOCK_CACHE = "budgetTemplateRunLock";
         public static final Duration CRYPTO_CACHE_TTL = Duration.ofMinutes(5);
+        // Prezzi di mercato: abbastanza freschi per un portafoglio, abbastanza rari da non far scattare il rate limit di Yahoo
+        public static final Duration MARKET_CACHE_TTL = Duration.ofMinutes(15);
         public static final Duration CACHE_TTL = Duration.ofHours(6);
         public static final Duration AI_REPORT_RESULTS_TTL = Duration.ofDays(7);
         public static final Duration BUDGET_TEMPLATE_RUNS_TTL = Duration.ofDays(400);
@@ -67,6 +72,8 @@ public class CacheConfig {
                                 .cacheDefaults(config)
                                 .withCacheConfiguration(CRYPTO_PRICES_CACHE, config.entryTtl(CRYPTO_CACHE_TTL))
                                 .withCacheConfiguration(PORTFOLIO_CACHE, config.entryTtl(CRYPTO_CACHE_TTL))
+                                .withCacheConfiguration(MARKET_PRICES_CACHE, config.entryTtl(MARKET_CACHE_TTL))
+                                .withCacheConfiguration(INVESTMENT_PORTFOLIO_CACHE, config.entryTtl(MARKET_CACHE_TTL))
                                 .withCacheConfiguration(AI_REPORTS_RESULTS_CACHE, config.entryTtl(AI_REPORT_RESULTS_TTL))
                                 .withCacheConfiguration(BUDGET_TEMPLATE_RUNS_CACHE, config.entryTtl(BUDGET_TEMPLATE_RUNS_TTL))
                                 .withCacheConfiguration(BUDGET_TEMPLATE_RUN_LOCK_CACHE, config.entryTtl(BUDGET_TEMPLATE_RUN_LOCK_TTL))

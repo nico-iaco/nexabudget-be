@@ -5,10 +5,14 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.AiReportRequest;
 import it.iacovelli.nexabudgetbe.dto.AiReportStatusResponse;
+import it.iacovelli.nexabudgetbe.dto.InvestmentDto;
+import it.iacovelli.nexabudgetbe.dto.NetWorthDto;
 import it.iacovelli.nexabudgetbe.dto.ReportDto;
 import it.iacovelli.nexabudgetbe.model.User;
 import it.iacovelli.nexabudgetbe.service.AiReportPdfService;
 import it.iacovelli.nexabudgetbe.service.AiReportService;
+import it.iacovelli.nexabudgetbe.service.InvestmentPortfolioService;
+import it.iacovelli.nexabudgetbe.service.NetWorthService;
 import it.iacovelli.nexabudgetbe.service.ReportService;
 import jakarta.validation.Valid;
 import org.springframework.format.annotation.DateTimeFormat;
@@ -31,11 +35,17 @@ public class ReportController {
     private final ReportService reportService;
     private final AiReportService aiReportService;
     private final AiReportPdfService aiReportPdfService;
+    private final InvestmentPortfolioService investmentPortfolioService;
+    private final NetWorthService netWorthService;
 
-    public ReportController(ReportService reportService, AiReportService aiReportService, AiReportPdfService aiReportPdfService) {
+    public ReportController(ReportService reportService, AiReportService aiReportService,
+                            AiReportPdfService aiReportPdfService,
+                            InvestmentPortfolioService investmentPortfolioService, NetWorthService netWorthService) {
         this.reportService = reportService;
         this.aiReportService = aiReportService;
         this.aiReportPdfService = aiReportPdfService;
+        this.investmentPortfolioService = investmentPortfolioService;
+        this.netWorthService = netWorthService;
     }
 
     @PostMapping("/ai-analysis")
@@ -123,5 +133,26 @@ public class ReportController {
     public ResponseEntity<ReportDto.MonthlyProjection> getMonthlyProjection(
             @AuthenticationPrincipal User currentUser) {
         return ResponseEntity.ok(reportService.getMonthlyProjection(currentUser));
+    }
+
+    @GetMapping("/investment-performance")
+    @Operation(summary = "Performance degli investimenti",
+            description = "Investito, disinvestito, utile/perdita realizzato, dividendi/cedole e guadagno complessivo del periodo. "
+                    + "Gli investimenti non generano transazioni: restano esclusi dai report di entrate e uscite")
+    public ResponseEntity<InvestmentDto.PerformanceResponse> getInvestmentPerformance(
+            @AuthenticationPrincipal User currentUser,
+            @Parameter(description = "Data inizio") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @Parameter(description = "Data fine") @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate) {
+        return ResponseEntity.ok(investmentPortfolioService.getPerformance(currentUser, startDate, endDate));
+    }
+
+    @GetMapping("/net-worth-trend")
+    @Operation(summary = "Andamento del patrimonio netto",
+            description = "Serie mensile (fine mese) di liquidità + crypto + investimenti nella valuta indicata; crypto e investimenti hanno storico solo dal primo snapshot")
+    public ResponseEntity<NetWorthDto.NetWorthHistoryResponse> getNetWorthTrend(
+            @AuthenticationPrincipal User currentUser,
+            @RequestParam(defaultValue = "12") int months,
+            @RequestParam(required = false) String currency) {
+        return ResponseEntity.ok(netWorthService.getHistory(currentUser, months, currency));
     }
 }

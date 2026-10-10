@@ -1,6 +1,8 @@
 package it.iacovelli.nexabudgetbe.service;
 
 import it.iacovelli.nexabudgetbe.dto.BudgetDto;
+import it.iacovelli.nexabudgetbe.dto.InvestmentDto;
+import it.iacovelli.nexabudgetbe.dto.NetWorthDto;
 import it.iacovelli.nexabudgetbe.dto.ReportDto;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
@@ -101,6 +103,8 @@ public class AiReportPdfService {
 
     private final ReportService reportService;
     private final BudgetService budgetService;
+    private final InvestmentPortfolioService investmentPortfolioService;
+    private final NetWorthService netWorthService;
 
     @PostConstruct
     void initFonts() {
@@ -131,6 +135,19 @@ public class AiReportPdfService {
         String currencyCode = monthlyTrend != null && monthlyTrend.getCurrency() != null
                 ? monthlyTrend.getCurrency()
                 : user != null && user.getDefaultCurrency() != null ? user.getDefaultCurrency() : "EUR";
+
+        // Patrimonio e investimenti sono accessori al report: se non si riescono a calcolare la sezione si
+        // degrada a un segnaposto invece di far fallire tutto il PDF
+        NetWorthDto.NetWorthResponse netWorth = null;
+        InvestmentDto.PortfolioResponse portfolio = null;
+        InvestmentDto.PerformanceResponse performance = null;
+        try {
+            netWorth = netWorthService.getNetWorth(user, currencyCode);
+            portfolio = investmentPortfolioService.getPortfolio(user, currencyCode);
+            performance = investmentPortfolioService.getPerformance(user, startDate, endDate);
+        } catch (Exception e) {
+            log.warn("Sezione patrimonio/investimenti del PDF non disponibile: {}", e.getMessage());
+        }
 
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
             Document document = new Document(PageSize.A4, MARGIN_X, MARGIN_X, MARGIN_TOP, MARGIN_BOTTOM);
@@ -181,10 +198,15 @@ public class AiReportPdfService {
                 addPlaceholder(ctx, "Proiezione non disponibile.");
             }
 
-            addSectionHeading(ctx, section, "Budget del mese", null,
+            addSectionHeading(ctx, section++, "Budget del mese", null,
                     hasItems(budgetSummary) ? Math.min(60f + budgetSummary.size() * 30f, 300f) : PLACEHOLDER_HEIGHT);
             if (!addBudgetSummary(ctx, budgetSummary)) {
                 addPlaceholder(ctx, "Nessun budget attivo nel mese selezionato.");
+            }
+
+            addSectionHeading(ctx, section, "Patrimonio e investimenti", "Liquidità, crypto e investimenti alla data odierna", 110f);
+            if (!addInvestmentsSection(ctx, netWorth, portfolio, performance)) {
+                addPlaceholder(ctx, "Patrimonio e investimenti non disponibili.");
             }
 
             addDisclaimer(ctx);
@@ -847,6 +869,106 @@ public class AiReportPdfService {
         }
         ctx.document().add(table);
         return true;
+    }
+
+    private boolean addInvestmentsSection(Ctx ctx, NetWorthDto.NetWorthResponse netWorth,
+                                          InvestmentDto.PortfolioResponse portfolio,
+                                          InvestmentDto.PerformanceResponse performance) throws DocumentException {
+        boolean rendered = false;
+
+        if (netWorth != null && netWorth.getTotal() != null) {
+            PdfPTable table = dataTable(3.0f, 2.2f, 1.0f);
+            table.addCell(headerCell("Voce", Element.ALIGN_LEFT));
+            table.addCell(headerCell("Valore", Element.ALIGN_RIGHT));
+            table.addCell(headerCell("%", Element.ALIGN_RIGHT));
+            addNetWorthRow(ctx, table, "Liquidità (conti)", netWorth.getLiquidity(), netWorth.getLiquidityPercent(), false);
+            addNetWorthRow(ctx, table, "Crypto", netWorth.getCrypto(), netWorth.getCryptoPercent(), true);
+            addNetWorthRow(ctx, table, "Investimenti", netWorth.getInvestments(), netWorth.getInvestmentsPercent(), false);
+            table.addCell(totalCell("Patrimonio netto", Element.ALIGN_LEFT, INK));
+            table.addCell(totalCell(money(ctx, toDouble(netWorth.getTotal())), Element.ALIGN_RIGHT, INK));
+            table.addCell(totalCell("", Element.ALIGN_RIGHT, INK));
+            ctx.document().add(table);
+            if (!netWorth.isComplete()) {
+                addNote(ctx, "Alcune voci non sono disponibili: il patrimonio netto è parziale.");
+            }
+            if (netWorth.isPossibleDoubleCounting()) {
+                addNote(ctx, "Hai conti di tipo Investimento e asset di investimento: se sono lo stesso broker il valore è contato due volte.");
+            }
+            rendered = true;
+        }
+
+        if (portfolio != null && hasItems(portfolio.getPositions())) {
+            List<InvestmentDto.PositionResponse> open = portfolio.getPositions().stream()
+                    .filter(p -> p.getQuantity() != null && p.getQuantity().signum() > 0)
+                    .limit(10)
+                    .toList();
+            if (!open.isEmpty()) {
+                PdfPTable table = dataTable(3.2f, 1.0f, 1.8f, 1.5f);
+                table.addCell(headerCell("Strumento", Element.ALIGN_LEFT));
+                table.addCell(headerCell("Tipo", Element.ALIGN_LEFT));
+                table.addCell(headerCell("Valore", Element.ALIGN_RIGHT));
+                table.addCell(headerCell("P/L", Element.ALIGN_RIGHT));
+                int row = 0;
+                for (InvestmentDto.PositionResponse p : open) {
+                    boolean zebra = row++ % 2 == 1;
+                    table.addCell(bodyCell(shortLabel(p.getName(), 38), font(regular, 9f, TEXT), Element.ALIGN_LEFT, zebra));
+                    table.addCell(bodyCell(p.getAssetType().name(), font(regular, 8f, MUTED), Element.ALIGN_LEFT, zebra));
+                    table.addCell(bodyCell(p.getMarketValue() != null ? money(ctx, toDouble(p.getMarketValue())) : "n/d",
+                            font(regular, 9f, TEXT), Element.ALIGN_RIGHT, zebra));
+                    double pl = toDouble(p.getUnrealizedPlPercent());
+                    table.addCell(bodyCell(p.getUnrealizedPlPercent() != null ? signedPercent(pl) : "n/d",
+                            font(bold, 9f, p.getUnrealizedPlPercent() == null ? MUTED : pl >= 0 ? INCOME : EXPENSE),
+                            Element.ALIGN_RIGHT, zebra));
+                }
+                ctx.document().add(table);
+                if (portfolio.getPositions().stream().anyMatch(InvestmentDto.PositionResponse::isStale)) {
+                    addNote(ctx, "Alcuni prezzi sono l'ultimo valore noto, non una quotazione aggiornata.");
+                }
+                rendered = true;
+            }
+        }
+
+        if (performance != null && (hasMovement(performance) || performance.getTotalGain() != null)) {
+            PdfPTable table = dataTable(3.0f, 2.2f);
+            table.addCell(headerCell("Investimenti nel periodo", Element.ALIGN_LEFT));
+            table.addCell(headerCell("Importo", Element.ALIGN_RIGHT));
+            String[] labels = {"Investito", "Disinvestito", "Dividendi e cedole", "Utile/perdita realizzato"};
+            BigDecimal[] values = {performance.getInvested(), performance.getDivested(), performance.getIncome(),
+                    performance.getRealizedPl()};
+            for (int i = 0; i < labels.length; i++) {
+                boolean zebra = i % 2 == 1;
+                table.addCell(bodyCell(labels[i], font(regular, 9f, TEXT), Element.ALIGN_LEFT, zebra));
+                table.addCell(bodyCell(i == 3 ? signedMoney(ctx, toDouble(values[i])) : money(ctx, toDouble(values[i])),
+                        font(regular, 9f, TEXT), Element.ALIGN_RIGHT, zebra));
+            }
+            if (performance.getTotalGain() != null) {
+                double gain = toDouble(performance.getTotalGain());
+                table.addCell(totalCell("Guadagno complessivo", Element.ALIGN_LEFT, INK));
+                table.addCell(totalCell(signedMoney(ctx, gain), Element.ALIGN_RIGHT, gain >= 0 ? INCOME : EXPENSE));
+            }
+            ctx.document().add(table);
+            rendered = true;
+        }
+        return rendered;
+    }
+
+    private void addNetWorthRow(Ctx ctx, PdfPTable table, String label, BigDecimal value, BigDecimal pct, boolean zebra) {
+        table.addCell(bodyCell(label, font(bold, 9f, INK), Element.ALIGN_LEFT, zebra));
+        table.addCell(bodyCell(value != null ? money(ctx, toDouble(value)) : "n/d", font(regular, 9f, TEXT), Element.ALIGN_RIGHT, zebra));
+        table.addCell(bodyCell(pct != null ? percent(pct.doubleValue()) : "", font(regular, 9f, MUTED), Element.ALIGN_RIGHT, zebra));
+    }
+
+    private void addNote(Ctx ctx, String text) throws DocumentException {
+        Paragraph note = new Paragraph(clean(text), font(italic, 8f, MUTED));
+        note.setSpacingAfter(4f);
+        ctx.document().add(note);
+    }
+
+    private boolean hasMovement(InvestmentDto.PerformanceResponse p) {
+        return (p.getInvested() != null && p.getInvested().signum() != 0)
+                || (p.getDivested() != null && p.getDivested().signum() != 0)
+                || (p.getIncome() != null && p.getIncome().signum() != 0)
+                || (p.getRealizedPl() != null && p.getRealizedPl().signum() != 0);
     }
 
     // ─── Charts ──────────────────────────────────────────────────────────────
