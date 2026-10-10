@@ -74,6 +74,7 @@ Kubernetes manifests are managed using **Kustomize**, structured in the `k8s/` d
 | `ENABLEBANKING_BASE_URL`, `ENABLEBANKING_CONSENT_VALID_DAYS` | Enable Banking optional overrides | default `https://api.enablebanking.com`, `90` days |
 | `VIRTUAL_THREADS_ENABLED` | Toggle Loom virtual threads | default `true` |
 | `NEXABUDGET_MARKET_YAHOO_ENABLED` | Yahoo Finance as primary price source of the investment portfolio | default `true`. Yahoo is unofficial and answers 429 under load: the app pauses calls for 2 minutes and falls back to the last known/manual price |
+| `NEXABUDGET_MARKET_PRICE_CACHE_TTL` | How long an investment quote stays in the Valkey cache (shared by pods and users) | default `1d`; accepts `1d`, `12h`, `PT30M`. Longer = fewer Yahoo requests (it blocks IPs after a few dozen), but older prices: rely on `priceAsOf`. The computed portfolio is cached 15 min regardless |
 | `TWELVEDATA_API_KEY` | Optional price fallback for investments | The free tier covers US listings only; if unset the provider is simply off |
 | `OPENFIGI_API_KEY` | Optional: raises the OpenFIGI rate limit (ISIN → ticker search) | 25 req/min without a key |
 | `GEMINI_MODEL`, `NEXABUDGET_CHAT_MODEL`, `NEXABUDGET_REPORT_MODEL` | AI model overrides | — |

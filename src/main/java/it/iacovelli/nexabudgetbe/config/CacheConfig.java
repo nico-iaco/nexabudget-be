@@ -3,6 +3,7 @@ package it.iacovelli.nexabudgetbe.config;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
@@ -40,15 +41,19 @@ public class CacheConfig {
         // Claim breve tra pod sullo stesso periodo; scade da solo se il pod muore a metà run
         public static final String BUDGET_TEMPLATE_RUN_LOCK_CACHE = "budgetTemplateRunLock";
         public static final Duration CRYPTO_CACHE_TTL = Duration.ofMinutes(5);
-        // Prezzi di mercato: abbastanza freschi per un portafoglio, abbastanza rari da non far scattare il rate limit di Yahoo
-        public static final Duration MARKET_CACHE_TTL = Duration.ofMinutes(15);
+        // Il portafoglio calcolato è economico da rifare (le quotazioni sono già in cache): TTL breve
+        public static final Duration INVESTMENT_PORTFOLIO_CACHE_TTL = Duration.ofMinutes(15);
         public static final Duration CACHE_TTL = Duration.ofHours(6);
         public static final Duration AI_REPORT_RESULTS_TTL = Duration.ofDays(7);
         public static final Duration BUDGET_TEMPLATE_RUNS_TTL = Duration.ofDays(400);
         public static final Duration BUDGET_TEMPLATE_RUN_LOCK_TTL = Duration.ofMinutes(10);
 
         @Bean
-        public CacheManager cacheManager(RedisConnectionFactory connectionFactory, ObjectMapper objectMapper) {
+        public CacheManager cacheManager(RedisConnectionFactory connectionFactory, ObjectMapper objectMapper,
+                        // Quotazioni di mercato (Yahoo/Twelve Data): Yahoo blocca l'IP dopo poche decine di richieste, quindi
+                        // ogni simbolo si interroga al massimo una volta per TTL (cache condivisa tra i pod, simboli condivisi
+                        // tra utenti). Default 1 giorno; accetta "1d", "12h", "PT30M"
+                        @Value("${nexabudget.market.price-cache-ttl:1d}") Duration marketPriceCacheTtl) {
                 ObjectMapper cacheObjectMapper = objectMapper.copy();
                 cacheObjectMapper.registerModule(new JavaTimeModule());
                 cacheObjectMapper.disable(SerializationFeature.WRITE_DATES_AS_TIMESTAMPS);
@@ -72,8 +77,8 @@ public class CacheConfig {
                                 .cacheDefaults(config)
                                 .withCacheConfiguration(CRYPTO_PRICES_CACHE, config.entryTtl(CRYPTO_CACHE_TTL))
                                 .withCacheConfiguration(PORTFOLIO_CACHE, config.entryTtl(CRYPTO_CACHE_TTL))
-                                .withCacheConfiguration(MARKET_PRICES_CACHE, config.entryTtl(MARKET_CACHE_TTL))
-                                .withCacheConfiguration(INVESTMENT_PORTFOLIO_CACHE, config.entryTtl(MARKET_CACHE_TTL))
+                                .withCacheConfiguration(MARKET_PRICES_CACHE, config.entryTtl(marketPriceCacheTtl))
+                                .withCacheConfiguration(INVESTMENT_PORTFOLIO_CACHE, config.entryTtl(INVESTMENT_PORTFOLIO_CACHE_TTL))
                                 .withCacheConfiguration(AI_REPORTS_RESULTS_CACHE, config.entryTtl(AI_REPORT_RESULTS_TTL))
                                 .withCacheConfiguration(BUDGET_TEMPLATE_RUNS_CACHE, config.entryTtl(BUDGET_TEMPLATE_RUNS_TTL))
                                 .withCacheConfiguration(BUDGET_TEMPLATE_RUN_LOCK_CACHE, config.entryTtl(BUDGET_TEMPLATE_RUN_LOCK_TTL))
