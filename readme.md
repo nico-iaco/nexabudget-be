@@ -1,6 +1,6 @@
 # NexaBudget - Backend
 
-This is the backend service for **NexaBudget**, a personal finance management application. It provides a robust, highly scalable RESTful API built on **Java 25** and **Spring Boot 4.x**, featuring integrations with Open Banking (GoCardless, Enable Banking), cryptocurrency exchanges (Binance, Coinbase), and Google Gemini AI.
+This is the backend service for **NexaBudget**, a personal finance management application. It provides a robust, highly scalable RESTful API built on **Java 25** and **Spring Boot 4.x**, featuring integrations with Open Banking (GoCardless, Enable Banking), cryptocurrency exchanges (Binance, Coinbase), investment tracking (ETF, stocks, bonds with market prices) with a unified net worth, and Google Gemini AI.
 
 ## 📚 Documentation Index
 
@@ -10,7 +10,7 @@ We have organized the technical documentation into specialized modules within th
 | :--- | :--- |
 | **[Architecture Guide](./docs/ARCHITECTURE.md)** | Layered design, Virtual Threads, async processing, and system diagrams. |
 | **[Data Model](./docs/DATA_MODEL.md)** | PostgreSQL relational schema, MongoDB vector store, and ER diagrams. |
-| **[API & Features Guide](./docs/API_GUIDE.md)** | Breakdown of core features (GoCardless, Enable Banking, Binance, Coinbase, AI Reports) and controller list. |
+| **[API & Features Guide](./docs/API_GUIDE.md)** | Breakdown of core features (GoCardless, Enable Banking, Binance, Coinbase, investments & net worth, AI Reports) and controller list. |
 | **[Enable Banking Setup Guide](./docs/ENABLE_BANKING_SETUP.md)** | Registering an Enable Banking application, generating the RSA key pair, env vars, and troubleshooting. |
 | **[Security Architecture](./docs/SECURITY.md)** | JWT, M2M API Keys, cryptography, and rate limiting details. |
 | **[Deployment Guide](./docs/DEPLOYMENT.md)** | Docker, GraalVM Native Image, and Kubernetes Kustomize instructions. |

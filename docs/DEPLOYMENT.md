@@ -73,6 +73,9 @@ Kubernetes manifests are managed using **Kustomize**, structured in the `k8s/` d
 | `ENABLEBANKING_REDIRECT_URL` | Enable Banking consent callback | Required only once the two vars above are set. **Must be an absolute URL**, registered verbatim in the control panel — relative paths are rejected by Enable Banking (422). |
 | `ENABLEBANKING_BASE_URL`, `ENABLEBANKING_CONSENT_VALID_DAYS` | Enable Banking optional overrides | default `https://api.enablebanking.com`, `90` days |
 | `VIRTUAL_THREADS_ENABLED` | Toggle Loom virtual threads | default `true` |
+| `NEXABUDGET_MARKET_YAHOO_ENABLED` | Yahoo Finance as primary price source of the investment portfolio | default `true`. Yahoo is unofficial and answers 429 under load: the app pauses calls for 2 minutes and falls back to the last known/manual price |
+| `TWELVEDATA_API_KEY` | Optional price fallback for investments | The free tier covers US listings only; if unset the provider is simply off |
+| `OPENFIGI_API_KEY` | Optional: raises the OpenFIGI rate limit (ISIN → ticker search) | 25 req/min without a key |
 | `GEMINI_MODEL`, `NEXABUDGET_CHAT_MODEL`, `NEXABUDGET_REPORT_MODEL` | AI model overrides | — |
 | `NEXABUDGET_REPORT_FALLBACK_MODEL` | Model retried when the AI report primary model fails or replies empty | default `gemini-flash-lite-latest`; empty = no fallback |
 | `NEXABUDGET_AI_HTTP_TIMEOUT_SECONDS` | Timeout per single Gemini HTTP attempt (chat, AI report, categorization); the SDK retries up to 5 times with backoff | default `120`; without it the SDK waits forever and a hung call leaves the AI report job `PENDING` with no logs |

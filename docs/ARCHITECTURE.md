@@ -9,12 +9,13 @@ NexaBudget is a comprehensive personal finance management application. The backe
 * **Core Framework:** Java 25, Spring Boot 4.0.5
 * **Relational Database:** PostgreSQL (Primary storage for Users, Accounts, Transactions, Budgets, etc.)
 * **Vector Database:** MongoDB Atlas (Utilized for AI semantic caching and vector embeddings)
-* **Caching:** Valkey / Redis via Spring Data Redis (Lettuce client) and Spring Cache abstraction (used for exchange rates, crypto pricing, GoCardless metadata, async-job status)
+* **Caching:** Valkey / Redis via Spring Data Redis (Lettuce client) and Spring Cache abstraction (used for exchange rates, crypto pricing, market prices and investment portfolio, GoCardless metadata, async-job status)
 * **AI Integration:** Google Gemini via Spring AI (Handles transaction categorization, financial analysis, and chatbot functionalities)
 * **Security:** Spring Security (stateless JWT via `jjwt 0.13`, API Keys for M2M, BCrypt for passwords, Bucket4j-based per-IP rate limiting on auth endpoints). `jjwt` is also used server-side to sign the RS256 application JWTs required by the Enable Banking Cloud API — a separate concern from user session auth.
 * **PDF Generation:** OpenPDF 1.3.32 for AI report rendering
 * **CSV Parsing:** Apache Commons CSV 1.12 for transaction import
 * **Crypto Integrations:** Binance Spot API, Coinbase Advanced Trade API
+* **Market Data (investments):** Yahoo Finance (unofficial, no key, primary), Twelve Data (optional fallback), OpenFIGI (ISIN → ticker)
 * **Build, Deployment & Containerization:** Maven, Docker, GraalVM Native Image, Kubernetes (Kustomize)
 
 ## 3. Core Architectural Patterns
@@ -59,6 +60,7 @@ graph TD
     BankStrategy -.-> |External API, direct JWT auth| EB[Enable Banking Open Banking]
     Services -.-> |External API| Binance[Binance API]
    Services -.-> |External API| Coinbase[Coinbase Advanced Trade API]
+    Services -.-> |External API, unofficial| Yahoo[Yahoo Finance\nTwelve Data / OpenFIGI]
     Services -.-> |External API| Gemini[Google Gemini\nSpring AI]
     Services -.-> |SMTP| Mail[Mailhog / Gmail]
 ```

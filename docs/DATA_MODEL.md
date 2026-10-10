@@ -12,6 +12,7 @@ NexaBudget uses **PostgreSQL** as its primary relational data store. The schema 
 * **Auditing:** `AuditAspect` writes one `audit_logs` row per intercepted service write (user resolved from `SecurityContextHolder`, IP from `RequestContextHolder`).
 * **Multi-currency:** `transactions.exchange_rate`, `original_currency`, `original_amount` capture the FX conversion applied when source/destination accounts differ in currency.
 * **Import dedup:** `transactions.import_hash` stores SHA-256 of `(accountId|date|amount|description)` (plus an occurrence suffix for repeated identical rows in the same file); combined with `external_id` (FITID, per account) it prevents duplicate ingestion of CSV/OFX rows.
+* **Investments are separate from transactions:** `investment_assets` + `investment_operations` (BUY/SELL/DIVIDEND/COUPON) never create `transactions` rows or touch accounts, so income/expense reports are unaffected. Position quantity, average cost and P/L are **derived** by replaying the operations (`PositionCalculator`), not stored. For bonds `quantity` is the face value and `price` the quotation in % of face value. `investment_portfolio_snapshots` and `crypto_portfolio_snapshots` store one value per user per day (history of the net worth; no backfill is possible).
 * **Indexes:** `transactions(user_id, transaction_date)`, `transactions(account_id, transaction_date)`, `transactions(category_id)`, `budgets(user_id, start_date, end_date)`, `api_keys(key_hash)`, `api_keys(user_id)`.
 
 ## Entity Relationship Diagram
@@ -26,6 +27,11 @@ erDiagram
     USER ||--o{ API_KEY : generates
     USER ||--o{ AUDIT_LOG : produces
     USER ||--o{ CRYPTO_HOLDING : holds
+    USER ||--o{ INVESTMENT_ASSET : tracks
+    USER ||--o{ INVESTMENT_OPERATION : records
+    INVESTMENT_ASSET ||--o{ INVESTMENT_OPERATION : has
+    USER ||--o{ INVESTMENT_PORTFOLIO_SNAPSHOT : "daily value"
+    USER ||--o{ CRYPTO_PORTFOLIO_SNAPSHOT : "daily value"
     USER ||--o| USER_BINANCE_KEYS : configures
     USER ||--o| USER_COINBASE_KEYS : configures
 
@@ -128,6 +134,51 @@ erDiagram
         enum source "MANUAL|BINANCE|COINBASE"
     }
 
+    INVESTMENT_ASSET {
+        UUID id PK
+        UUID user_id FK
+        enum asset_type "ETF|STOCK|BOND|FUND|OTHER"
+        string name
+        string isin "nullable, unique per user"
+        string symbol "provider ticker (Yahoo), nullable, unique per user"
+        string currency
+        enum price_source "YAHOO|TWELVE_DATA|MANUAL"
+        decimal manual_price
+        decimal last_price "last live price, fallback"
+        decimal coupon_rate "bonds only, % per year"
+        enum coupon_frequency "ANNUAL|SEMIANNUAL|QUARTERLY"
+        date maturity_date
+    }
+
+    INVESTMENT_OPERATION {
+        UUID id PK
+        UUID asset_id FK
+        UUID user_id FK
+        enum type "BUY|SELL|DIVIDEND|COUPON"
+        date operation_date
+        decimal quantity "face value for bonds"
+        decimal price "% of face value for bonds"
+        decimal amount "net, DIVIDEND/COUPON"
+        decimal fees
+    }
+
+    INVESTMENT_PORTFOLIO_SNAPSHOT {
+        UUID id PK
+        UUID user_id FK
+        date snapshot_date "unique with user_id"
+        decimal market_value
+        decimal cost_basis
+        string currency
+    }
+
+    CRYPTO_PORTFOLIO_SNAPSHOT {
+        UUID id PK
+        UUID user_id FK
+        date snapshot_date "unique with user_id"
+        decimal total_value
+        string currency
+    }
+
     USER_BINANCE_KEYS {
         uuid id PK
         uuid user_id FK
@@ -192,6 +243,10 @@ erDiagram
 | `TransactionType` | `IN`, `OUT` (signed convention: net = OUT − IN) |
 | `HoldingSource` | `MANUAL`, `BINANCE`, `COINBASE` |
 | `RecurrenceType` | `MONTHLY`, `QUARTERLY`, `YEARLY` |
+| `InvestmentAssetType` | `ETF`, `STOCK`, `BOND`, `FUND`, `OTHER` — `BOND` prices are % of face value |
+| `InvestmentOperationType` | `BUY`, `SELL`, `DIVIDEND`, `COUPON` |
+| `PriceSource` | `YAHOO`, `TWELVE_DATA`, `MANUAL` — preferred price provider of an asset |
+| `CouponFrequency` | `ANNUAL`, `SEMIANNUAL`, `QUARTERLY` |
 
 ## Vector Store (MongoDB Atlas)
 
@@ -212,3 +267,5 @@ Because DDL mode is `validate`, the following schema changes must be applied man
 * **Net category accounting** — deduplicate `(user_id, name)` rows in `categories`, remap dependent `transactions.category_id` / `budgets.category_id`, then `DROP CONSTRAINT uk_category_user_name_type`, `DROP COLUMN transaction_type`, `ADD CONSTRAINT uk_category_user_name UNIQUE (user_id, name)`.
 * **Enable Banking integration** (`db/V12__add_bank_provider_to_accounts.sql`) — add `accounts.provider VARCHAR(32)` (nullable); backfill existing GoCardless-linked rows (`requisition_id`/`external_account_id` not null) to `'GOCARDLESS'`. See [ENABLE_BANKING_SETUP.md](ENABLE_BANKING_SETUP.md) for the provider setup itself.
 * **Expiring sync lock** (`db/V14__add_sync_started_at_to_accounts.sql`) — add `accounts.sync_started_at TIMESTAMP` (nullable).
+* **Investments** (`db/V15__add_investments.sql`) — create `investment_assets`, `investment_operations`, `investment_portfolio_snapshots` (FKs to `users`/`investment_assets` with `ON DELETE CASCADE`, CHECK constraints on the enum columns, partial unique indexes on `(user_id, isin)` and `(user_id, symbol)` where not null).
+* **Crypto history** (`db/V16__add_crypto_portfolio_snapshots.sql`) — create `crypto_portfolio_snapshots` (unique `(user_id, snapshot_date)`, FK to `users` with `ON DELETE CASCADE`).

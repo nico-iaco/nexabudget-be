@@ -1,7 +1,10 @@
 package it.iacovelli.nexabudgetbe.service;
 
 import it.iacovelli.nexabudgetbe.dto.BudgetDto;
+import it.iacovelli.nexabudgetbe.dto.InvestmentDto;
+import it.iacovelli.nexabudgetbe.dto.NetWorthDto;
 import it.iacovelli.nexabudgetbe.dto.ReportDto;
+import it.iacovelli.nexabudgetbe.model.InvestmentAssetType;
 import it.iacovelli.nexabudgetbe.model.TransactionType;
 import it.iacovelli.nexabudgetbe.model.User;
 import org.junit.jupiter.api.Test;
@@ -13,6 +16,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDate;
@@ -50,6 +54,12 @@ class AiReportSamplePdfGenerator {
             Il saldo complessivo dei conti è passato da 12.400,00 € a **16.649,40 €** (+34,3%). Cinque mesi su sei si sono \
             chiusi in positivo; l'unica eccezione è **agosto (−118,40 €)**, dovuto alle spese per le vacanze. \
             Luglio è stato il mese migliore (+1.573,85 €) grazie alla quattordicesima di 2.100,00 €.
+
+            **Patrimonio netto: 34.949,90 €**, di cui il 47,6% in liquidità (16.649,40 €), il 42,6% in investimenti \
+            (14.880,50 €) e il 9,8% in crypto (3.420,00 €). Gli investimenti valgono **1.045,50 € in più del costo di carico \
+            (+7,6%)**, trainati dall'ETF azionario globale (+13,0%); l'ETF obbligazionario è in lieve perdita (−2,2%). \
+            Nel semestre hai investito **3.000,00 €** (i versamenti sul conto titoli non compaiono tra le uscite) e incassato \
+            **61,25 €** tra cedole e dividendi: il guadagno complessivo sugli investimenti è di **+1.841,75 €**.
 
             Rispetto ad agosto, a settembre le uscite sono scese da 2.968,40 € a 2.031,20 € (**−31,6%**) e il netto mensile \
             è tornato positivo a **+818,80 €**, con un tasso di risparmio del 28,7%.
@@ -109,6 +119,12 @@ class AiReportSamplePdfGenerator {
 
     @Mock
     private BudgetService budgetService;
+
+    @Mock
+    private InvestmentPortfolioService investmentPortfolioService;
+
+    @Mock
+    private NetWorthService netWorthService;
 
     @InjectMocks
     private AiReportPdfService service;
@@ -181,12 +197,59 @@ class AiReportSamplePdfGenerator {
                 .currentMonthIncome(BigDecimal.ZERO).projectedMonthlyIncome(BigDecimal.valueOf(3238.33))
                 .currentMonthExpense(BigDecimal.valueOf(963.40)).projectedMonthlyExpense(BigDecimal.valueOf(2530.10))
                 .build());
+        stubInvestments(running);
         when(budgetService.getBudgetMonthlySummary(any(), any())).thenReturn(List.of(
                 budget("Spesa alimentare", 400, 362.80),
                 budget("Ristoranti e bar", 150, 178.40),
                 budget("Trasporti", 200, 164.50),
                 budget("Shopping", 150, 96.30),
                 budget("Tempo libero", 120, 58.00)));
+    }
+
+    /** Net worth and portfolio consistent with the story above: liquidity equals the closing balance of the period. */
+    private void stubInvestments(BigDecimal closingBalance) {
+        BigDecimal crypto = BigDecimal.valueOf(3420.00);
+        BigDecimal investments = BigDecimal.valueOf(14880.50);
+        BigDecimal total = closingBalance.add(crypto).add(investments);
+        when(netWorthService.getNetWorth(any(), any())).thenReturn(NetWorthDto.NetWorthResponse.builder()
+                .currency("EUR").total(total).liquidity(closingBalance).crypto(crypto).investments(investments)
+                .liquidityPercent(share(closingBalance, total)).cryptoPercent(share(crypto, total))
+                .investmentsPercent(share(investments, total))
+                .complete(true).warnings(List.of()).build());
+
+        List<InvestmentDto.PositionResponse> positions = List.of(
+                position("Vanguard FTSE All-World UCITS ETF", InvestmentAssetType.ETF, 8643.00, 7650.00),
+                position("BTP Italia 3,5% 01/09/2029", InvestmentAssetType.BOND, 3040.50, 2955.00),
+                position("iShares Core Euro Govt Bond UCITS ETF", InvestmentAssetType.ETF, 2737.50, 2800.00),
+                position("Enel S.p.A.", InvestmentAssetType.STOCK, 459.50, 430.00));
+        BigDecimal cost = BigDecimal.valueOf(13835.00);
+        BigDecimal unrealized = investments.subtract(cost);
+        when(investmentPortfolioService.getPortfolio(any(), any())).thenReturn(InvestmentDto.PortfolioResponse.builder()
+                .currency("EUR").totalValue(investments).totalCostBasis(cost).unrealizedPl(unrealized)
+                .unrealizedPlPercent(share(unrealized, cost)).realizedPl(BigDecimal.ZERO)
+                .income(BigDecimal.valueOf(61.25)).complete(true).positions(positions).build());
+
+        BigDecimal startValue = BigDecimal.valueOf(10100.00);
+        BigDecimal invested = BigDecimal.valueOf(3000.00);
+        BigDecimal income = BigDecimal.valueOf(61.25);
+        when(investmentPortfolioService.getPerformance(any(), any(), any())).thenReturn(InvestmentDto.PerformanceResponse.builder()
+                .currency("EUR").invested(invested).divested(BigDecimal.ZERO).realizedPl(BigDecimal.ZERO).income(income)
+                .startValue(startValue).endValue(investments)
+                // (end - start) - (invested - divested) + income
+                .totalGain(investments.subtract(startValue).subtract(invested).add(income)).build());
+    }
+
+    private InvestmentDto.PositionResponse position(String name, InvestmentAssetType type, double value, double cost) {
+        BigDecimal v = BigDecimal.valueOf(value);
+        BigDecimal pl = v.subtract(BigDecimal.valueOf(cost));
+        return InvestmentDto.PositionResponse.builder()
+                .assetId(UUID.randomUUID()).name(name).assetType(type).quantity(BigDecimal.TEN)
+                .marketValue(v).costBasis(BigDecimal.valueOf(cost)).unrealizedPl(pl)
+                .unrealizedPlPercent(share(pl, BigDecimal.valueOf(cost))).build();
+    }
+
+    private static BigDecimal share(BigDecimal part, BigDecimal whole) {
+        return part.multiply(BigDecimal.valueOf(100)).divide(whole, 2, RoundingMode.HALF_UP);
     }
 
     private ReportDto.CategoryBreakdownItem category(String name, double net, double pct, TransactionType type) {
