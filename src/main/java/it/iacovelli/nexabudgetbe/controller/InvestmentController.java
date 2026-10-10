@@ -1,6 +1,10 @@
 package it.iacovelli.nexabudgetbe.controller;
 
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.ArraySchema;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import it.iacovelli.nexabudgetbe.dto.InvestmentDto;
@@ -39,6 +43,9 @@ public class InvestmentController {
     // ─── Asset ──────────────────────────────────────────────────────────────────
 
     @PostMapping("/assets")
+    @ApiResponse(responseCode = "201", description = "Asset creato", content = @Content(schema = @Schema(implementation = InvestmentDto.AssetResponse.class)))
+    @ApiResponse(responseCode = "400", description = "Dati non validi, simbolo mancante con prezzo automatico o valuta non determinabile (indicarla esplicitamente)")
+    @ApiResponse(responseCode = "409", description = "ISIN o simbolo già presenti tra gli asset dell'utente")
     @Operation(summary = "Crea asset", description = "Aggiunge uno strumento da tracciare. Se manca la valuta viene ricavata dalla quotazione")
     public ResponseEntity<InvestmentDto.AssetResponse> createAsset(
             @AuthenticationPrincipal User currentUser,
@@ -60,6 +67,10 @@ public class InvestmentController {
     }
 
     @PutMapping("/assets/{id}")
+    @ApiResponse(responseCode = "200", description = "Asset aggiornato", content = @Content(schema = @Schema(implementation = InvestmentDto.AssetResponse.class)))
+    @ApiResponse(responseCode = "400", description = "Dati non validi (es. simbolo mancante con prezzo automatico)")
+    @ApiResponse(responseCode = "404", description = "Asset non trovato")
+    @ApiResponse(responseCode = "409", description = "ISIN/simbolo già in uso, oppure passaggio da/a BOND con operazioni già registrate")
     @Operation(summary = "Modifica asset", description = "La valuta non è modificabile")
     public ResponseEntity<InvestmentDto.AssetResponse> updateAsset(
             @AuthenticationPrincipal User currentUser,
@@ -69,6 +80,8 @@ public class InvestmentController {
     }
 
     @PutMapping("/assets/{id}/manual-price")
+    @ApiResponse(responseCode = "200", description = "Asset con il prezzo manuale aggiornato", content = @Content(schema = @Schema(implementation = InvestmentDto.AssetResponse.class)))
+    @ApiResponse(responseCode = "404", description = "Asset non trovato")
     @Operation(summary = "Imposta prezzo manuale",
             description = "È il prezzo usato se priceSource=MANUAL (tipico dei BTP: obbligazioni in % del nominale); negli altri casi è l'ultimo fallback")
     public ResponseEntity<InvestmentDto.AssetResponse> setManualPrice(
@@ -79,6 +92,8 @@ public class InvestmentController {
     }
 
     @DeleteMapping("/assets/{id}")
+    @ApiResponse(responseCode = "204", description = "Asset e relative operazioni eliminati")
+    @ApiResponse(responseCode = "404", description = "Asset non trovato")
     @Operation(summary = "Elimina asset", description = "Elimina anche tutte le sue operazioni")
     public ResponseEntity<Void> deleteAsset(@AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
         investmentService.deleteAsset(currentUser, id);
@@ -88,6 +103,10 @@ public class InvestmentController {
     // ─── Operazioni ─────────────────────────────────────────────────────────────
 
     @PostMapping("/assets/{id}/operations")
+    @ApiResponse(responseCode = "201", description = "Operazione registrata", content = @Content(schema = @Schema(implementation = InvestmentDto.OperationResponse.class)))
+    @ApiResponse(responseCode = "400", description = "Dati non validi: campi obbligatori mancanti per il tipo, importi non positivi, data futura")
+    @ApiResponse(responseCode = "404", description = "Asset non trovato")
+    @ApiResponse(responseCode = "409", description = "La vendita supera la quantità detenuta alla sua data")
     @Operation(summary = "Registra operazione",
             description = "BUY/SELL (quantità e prezzo, commissioni opzionali) o DIVIDEND/COUPON (importo netto). Una vendita oltre la quantità detenuta risponde 409")
     public ResponseEntity<InvestmentDto.OperationResponse> addOperation(
@@ -98,6 +117,8 @@ public class InvestmentController {
     }
 
     @GetMapping("/assets/{id}/operations")
+    @ApiResponse(responseCode = "200", description = "Operazioni dell'asset, dalla più recente", content = @Content(array = @ArraySchema(schema = @Schema(implementation = InvestmentDto.OperationResponse.class))))
+    @ApiResponse(responseCode = "404", description = "Asset non trovato")
     @Operation(summary = "Operazioni di un asset", description = "Dalla più recente")
     public ResponseEntity<List<InvestmentDto.OperationResponse>> getOperations(
             @AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
@@ -105,6 +126,10 @@ public class InvestmentController {
     }
 
     @PutMapping("/operations/{id}")
+    @ApiResponse(responseCode = "200", description = "Operazione aggiornata", content = @Content(schema = @Schema(implementation = InvestmentDto.OperationResponse.class)))
+    @ApiResponse(responseCode = "400", description = "Dati non validi")
+    @ApiResponse(responseCode = "404", description = "Operazione non trovata")
+    @ApiResponse(responseCode = "409", description = "La modifica rende incoerente lo storico (vendita oltre la quantità detenuta)")
     @Operation(summary = "Modifica operazione", description = "Lo storico viene ricontrollato: se una vendita risulta oltre la quantità detenuta risponde 409")
     public ResponseEntity<InvestmentDto.OperationResponse> updateOperation(
             @AuthenticationPrincipal User currentUser,
@@ -114,6 +139,9 @@ public class InvestmentController {
     }
 
     @DeleteMapping("/operations/{id}")
+    @ApiResponse(responseCode = "204", description = "Operazione eliminata")
+    @ApiResponse(responseCode = "404", description = "Operazione non trovata")
+    @ApiResponse(responseCode = "409", description = "L'eliminazione rende incoerente lo storico (es. un acquisto già venduto)")
     @Operation(summary = "Elimina operazione", description = "Risponde 409 se l'eliminazione rende incoerente lo storico (es. un acquisto già venduto)")
     public ResponseEntity<Void> deleteOperation(@AuthenticationPrincipal User currentUser, @PathVariable UUID id) {
         investmentService.deleteOperation(currentUser, id);
@@ -141,6 +169,9 @@ public class InvestmentController {
     }
 
     @GetMapping("/performance")
+    @ApiResponse(responseCode = "200", description = "Performance del periodo", content = @Content(schema = @Schema(implementation = InvestmentDto.PerformanceResponse.class)))
+    @ApiResponse(responseCode = "400", description = "endDate precedente a startDate")
+    @ApiResponse(responseCode = "409", description = "Tasso di cambio non disponibile per un asset in valuta diversa")
     @Operation(summary = "Performance di un periodo", description = "Investito, disinvestito, P/L realizzato, cedole/dividendi e guadagno complessivo")
     public ResponseEntity<InvestmentDto.PerformanceResponse> getPerformance(
             @AuthenticationPrincipal User currentUser,
