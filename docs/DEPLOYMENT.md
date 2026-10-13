@@ -74,7 +74,8 @@ Kubernetes manifests are managed using **Kustomize**, structured in the `k8s/` d
 | `ENABLEBANKING_BASE_URL`, `ENABLEBANKING_CONSENT_VALID_DAYS` | Enable Banking optional overrides | default `https://api.enablebanking.com`, `90` days |
 | `VIRTUAL_THREADS_ENABLED` | Toggle Loom virtual threads | default `true` |
 | `NEXABUDGET_MARKET_YAHOO_ENABLED` | Yahoo Finance as primary price source of the investment portfolio | default `true`. Yahoo is unofficial and answers 429 under load: the app pauses calls for 2 minutes and falls back to the last known/manual price |
-| `NEXABUDGET_MARKET_PRICE_CACHE_TTL` | How long an investment quote stays in the Valkey cache (shared by pods and users) | default `1d`; accepts `1d`, `12h`, `PT30M`. Longer = fewer Yahoo requests (it blocks IPs after a few dozen), but older prices: rely on `priceAsOf`. The computed portfolio is cached 15 min regardless |
+| `NEXABUDGET_MARKET_YAHOO_PROXY` | Optional proxy used **only** for Yahoo Finance calls | `host:port`, `http://host:port` or `socks5://host:port`, **no credentials** (they are rejected and the proxy ignored: expose it only on a private network/VPN). Empty = direct. An invalid value is logged and ignored, it does not stop the app. See "Yahoo blocked on the cluster IP" below |
+| `NEXABUDGET_MARKET_PRICE_CACHE_TTL` | How long an investment quote stays in the Valkey cache (shared by pods and users) | default `1d`; accepts `1d`, `12h`, `PT30M`. Longer = fewer Yahoo requests, but older prices: rely on `priceAsOf`. The computed portfolio is cached 15 min regardless |
 | `TWELVEDATA_API_KEY` | Optional price fallback for investments | Yahoo symbols are mapped to Twelve Data exchanges (`VWCE.MI` → `VWCE` + `mic_code=XMIL`); whether a European listing is served depends on the key's plan — if not, the log says so (`Twelve Data non fornisce ...`) and the symbol is not retried for a day. If unset the provider is simply off |
 | `OPENFIGI_API_KEY` | Optional: raises the OpenFIGI rate limit (ISIN → ticker search) | 25 req/min without a key |
 | `GEMINI_MODEL`, `NEXABUDGET_CHAT_MODEL`, `NEXABUDGET_REPORT_MODEL` | AI model overrides | — |
@@ -100,3 +101,30 @@ Kubernetes manifests are managed using **Kustomize**, structured in the `k8s/` d
 * **Bouncy Castle** is registered at startup for EC key support (Coinbase Advanced Trade SDK).
 * **Hibernate enhancements** (lazy init, dirty tracking) are applied at build time via `hibernate-maven-plugin`.
 * **GraalVM reflection hints** are declared in `GoogleGenAiRuntimeHints.java` and `NativeRuntimeHints.java` so Spring AI and the Gemini/Coinbase SDKs work natively.
+
+## Yahoo answers 429
+
+Two **different** causes, check them in this order.
+
+**1. The User-Agent.** Yahoo answers `429` — always, not occasionally — to recognisable clients: `curl/*`, `Java-http-client/*`, no `User-Agent` at all, and also a long string imitating Chrome. It accepts `Mozilla/5.0` and `Mozilla/5.0 (compatible; nexaBudget/1.0)` (the default, `NEXABUDGET_MARKET_YAHOO_USER_AGENT`). A wrong User-Agent looks exactly like rate limiting but is not: 40 requests in 20 seconds from one IP all returned 200 with an accepted one. Always test with the same header the app sends, otherwise the result is misleading.
+
+**2. The egress IP.** Yahoo can also block the IP range of a cloud provider: the symptom is a `429` already on the **first** request from a pod *with an accepted User-Agent*, while the same request from another network answers `200`. Test from a pod of the same namespace:
+
+```bash
+kubectl run yf-test --rm -it --restart=Never --image=curlimages/curl -- \
+  curl -s -o /dev/null -w "%{http_code}\n" -A "Mozilla/5.0 (compatible; nexaBudget/1.0)" \
+  "https://query1.finance.yahoo.com/v8/finance/chart/VWCE.MI?range=1d&interval=1d"
+```
+
+A new NAT gateway or a proxy VM *inside the same cloud* will not help if the whole provider range is blocked. The fix is an egress from a different network: set `NEXABUDGET_MARKET_YAHOO_PROXY` to a forward proxy running elsewhere (e.g. at home, reached through a VPN such as WireGuard/Tailscale). Only Yahoo traffic uses it; Gemini, banks and exchanges keep their direct egress (and any IP allow-list on them).
+
+Minimal `tinyproxy` configuration for the proxy host (listen only on the VPN address, allow only the cluster's VPN range, tunnel only HTTPS to port 443):
+
+```
+Port 3128
+Listen <vpn-address-of-the-proxy>
+Allow <vpn-range-of-the-cluster>
+ConnectPort 443
+```
+
+The proxy has no authentication on purpose (the JDK would need a global `Authenticator`): keep it unreachable from the internet. After a `429` the app pauses Yahoo calls for 2 minutes and falls back to the last known/manual price; prices can always be set by hand with `PUT /api/investments/assets/{id}/manual-price`.

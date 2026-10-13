@@ -9,7 +9,15 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.web.client.RestClient;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
 import java.math.BigDecimal;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
+import java.net.ServerSocket;
+import java.net.Socket;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
@@ -122,6 +130,94 @@ class YahooFinanceServiceTest {
         assertTrue(yahoo.getQuote("NOPE").isEmpty());
         assertTrue(yahoo.getQuote("AAPL").isPresent(), "un simbolo sconosciuto non è un rate limit");
         server.verify();
+    }
+
+    @Test
+    void parseProxy_acceptsHostPortAndSchemes() {
+        Proxy plain = YahooFinanceService.parseProxy("proxy.interno:3128").orElseThrow();
+        assertEquals(Proxy.Type.HTTP, plain.type());
+        InetSocketAddress addr = (InetSocketAddress) plain.address();
+        assertEquals("proxy.interno", addr.getHostString());
+        assertEquals(3128, addr.getPort());
+        assertTrue(addr.isUnresolved(), "il nome si risolve alla connessione, non all'avvio");
+
+        assertEquals(Proxy.Type.HTTP, YahooFinanceService.parseProxy(" http://10.0.0.5:8080/ ").orElseThrow().type());
+        Proxy socks = YahooFinanceService.parseProxy("socks5://10.0.0.5:1080").orElseThrow();
+        assertEquals(Proxy.Type.SOCKS, socks.type());
+        assertEquals(1080, ((InetSocketAddress) socks.address()).getPort());
+    }
+
+    @Test
+    void parseProxy_blankMeansNoProxy_andInvalidValuesAreIgnoredNotFatal() {
+        assertTrue(YahooFinanceService.parseProxy(null).isEmpty());
+        assertTrue(YahooFinanceService.parseProxy("  ").isEmpty());
+        assertTrue(YahooFinanceService.parseProxy("senza-porta").isEmpty());
+        assertTrue(YahooFinanceService.parseProxy("host:abc").isEmpty());
+        assertTrue(YahooFinanceService.parseProxy("host:99999").isEmpty());
+        assertTrue(YahooFinanceService.parseProxy(":3128").isEmpty());
+        // Credenziali non supportate (richiederebbero un Authenticator globale): meglio ignorare che mandarle in chiaro
+        assertTrue(YahooFinanceService.parseProxy("http://user:pass@host:3128").isEmpty());
+    }
+
+    @Test
+    void withProxy_requestsToYahooGoThroughIt() throws Exception {
+        // Proxy finto: registra la richiesta CONNECT che HttpURLConnection invia per un URL https e risponde 502
+        try (ServerSocket proxySocket = new ServerSocket(0, 1, java.net.InetAddress.getLoopbackAddress())) {
+            CompletableFuture<String> connectLine = CompletableFuture.supplyAsync(() -> {
+                try (Socket client = proxySocket.accept()) {
+                    String line = new BufferedReader(new InputStreamReader(client.getInputStream())).readLine();
+                    client.getOutputStream().write("HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n".getBytes());
+                    client.getOutputStream().flush();
+                    return line;
+                } catch (Exception e) {
+                    return "errore: " + e;
+                }
+            });
+            YahooFinanceService viaProxy = new YahooFinanceService(true, "127.0.0.1:" + proxySocket.getLocalPort(), "Mozilla/5.0");
+
+            // Il tunnel fallisce (502): l'importante è che la richiesta sia arrivata al proxy e non direttamente a Yahoo
+            assertThrows(org.springframework.web.client.RestClientException.class, () -> viaProxy.getQuote("AAPL"));
+
+            assertEquals("CONNECT query1.finance.yahoo.com:443 HTTP/1.1", connectLine.get(5, TimeUnit.SECONDS));
+        }
+    }
+
+    @Test
+    void invalidProxyConfiguration_doesNotPreventStartup() {
+        assertDoesNotThrow(() -> new YahooFinanceService(true, "host:abc", ""));
+        assertDoesNotThrow(() -> new YahooFinanceService(true, "", null));
+    }
+
+    @Test
+    void requestsCarryAnAcceptedUserAgent_notOneYahooAnswers429To() throws Exception {
+        // Regressione reale: con curl/*, Java-http-client/*, nessun User-Agent o una stringa lunga che imita Chrome Yahoo risponde
+        // sempre 429 (sembra un rate limit ma non lo è), e i test con MockRestServiceServer non vedono le intestazioni reali.
+        // Qui si legge cosa parte davvero dal client costruito dal servizio.
+        java.util.concurrent.atomic.AtomicReference<com.sun.net.httpserver.Headers> seen = new java.util.concurrent.atomic.AtomicReference<>();
+        com.sun.net.httpserver.HttpServer http = com.sun.net.httpserver.HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
+        http.createContext("/", exchange -> {
+            seen.set(exchange.getRequestHeaders());
+            byte[] body = "{}".getBytes();
+            exchange.sendResponseHeaders(200, body.length);
+            exchange.getResponseBody().write(body);
+            exchange.close();
+        });
+        http.start();
+        try {
+            String base = "http://127.0.0.1:" + http.getAddress().getPort();
+            YahooFinanceService.buildRestClient(null, null, base).get().uri("/x").retrieve().body(String.class);
+            String defaultUa = seen.get().getFirst("User-Agent");
+            assertEquals(YahooFinanceService.DEFAULT_USER_AGENT, defaultUa);
+            assertTrue(defaultUa.startsWith("Mozilla/5.0"), defaultUa);
+            assertFalse(defaultUa.toLowerCase().contains("java") || defaultUa.toLowerCase().contains("curl"), defaultUa);
+            assertFalse(defaultUa.contains("Chrome"), "la stringa che imita Chrome viene rifiutata con 429");
+            assertNull(seen.get().getFirst("Accept-Language"));
+
+            YahooFinanceService.buildRestClient(null, " nexaBudget/1.0 ", base).get().uri("/x").retrieve().body(String.class);
+            assertEquals("nexaBudget/1.0", seen.get().getFirst("User-Agent"), "lo User-Agent è configurabile");
+        } finally {
+            http.stop(0);
+        }
     }
 
     @Test

@@ -50,9 +50,9 @@ public class CacheConfig {
 
         @Bean
         public CacheManager cacheManager(RedisConnectionFactory connectionFactory, ObjectMapper objectMapper,
-                        // Quotazioni di mercato (Yahoo/Twelve Data): Yahoo blocca l'IP dopo poche decine di richieste, quindi
-                        // ogni simbolo si interroga al massimo una volta per TTL (cache condivisa tra i pod, simboli condivisi
-                        // tra utenti). Default 1 giorno; accetta "1d", "12h", "PT30M"
+                        // Quotazioni di mercato (Yahoo/Twelve Data): Yahoo non è ufficiale e può bloccare o limitare, quindi ogni
+                        // simbolo si interroga al massimo una volta per TTL (cache condivisa tra i pod e tra gli utenti).
+                        // Default 1 giorno; accetta "1d", "12h", "PT30M"
                         @Value("${nexabudget.market.price-cache-ttl:1d}") Duration marketPriceCacheTtl) {
                 ObjectMapper cacheObjectMapper = objectMapper.copy();
                 cacheObjectMapper.registerModule(new JavaTimeModule());

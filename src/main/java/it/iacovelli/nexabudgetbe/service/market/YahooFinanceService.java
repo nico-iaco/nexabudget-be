@@ -21,6 +21,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.math.BigDecimal;
+import java.net.InetSocketAddress;
+import java.net.Proxy;
 import java.math.RoundingMode;
 import java.time.Duration;
 import java.time.Instant;
@@ -44,14 +46,16 @@ public class YahooFinanceService implements MarketPriceProvider {
     private static final Logger logger = LoggerFactory.getLogger(YahooFinanceService.class);
 
     private static final String YAHOO_BASE_URL = "https://query1.finance.yahoo.com";
-    // Yahoo risponde 429 a molti User-Agent non da browser
-    private static final String USER_AGENT = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 "
-            + "(KHTML, like Gecko) Chrome/124.0 Safari/537.36";
+    // Yahoo risponde 429 (sempre, non a campione) ai client riconoscibili: curl/*, Java-http-client/*, nessuno User-Agent e anche
+    // a una stringa lunga che imita Chrome senza il resto delle intestazioni di un browser. Accettati (verificato): "Mozilla/5.0",
+    // "Mozilla/5.0 (compatible; nexaBudget/1.0)", "nexaBudget/1.0". Configurabile per poterlo cambiare senza rilasciare
+    static final String DEFAULT_USER_AGENT = "Mozilla/5.0 (compatible; nexaBudget/1.0)";
     // Il simbolo finisce in un path: vietato qualunque carattere (es. '/') che possa alterarlo
     private static final Pattern VALID_SYMBOL = Pattern.compile("[A-Za-z0-9.^=_\\-]{1,32}");
 
-    // Yahoo blocca l'IP per qualche minuto dopo un burst di richieste (osservato: ~30 chiamate in pochi minuti, poi 429
-    // su ogni richiesta). Continuare a chiamare durante il blocco lo prolunga: dopo un 429 si smette per questo periodo
+    // Dopo un 429 si smette di chiamare per questo periodo invece di insistere: se il 429 dipende dall'IP (osservato su un
+    // cluster OCI: 429 già alla prima richiesta con uno User-Agent accettato) ogni chiamata in più è inutile. Un volume
+    // normale (40 richieste in 20 secondi dallo stesso IP) NON dà 429: non è un limite di frequenza ma un blocco a priori
     private static final Duration DEFAULT_RATE_LIMIT_COOLDOWN = Duration.ofMinutes(2);
 
     private final RestClient restClient;
@@ -61,9 +65,20 @@ public class YahooFinanceService implements MarketPriceProvider {
     // Per pod: ogni istanza scopre da sola il blocco
     private volatile Instant blockedUntil = Instant.EPOCH;
 
+    /**
+     * @param proxy proxy opzionale per le sole chiamate a Yahoo ({@code host:port}, {@code http://host:port} o
+     *              {@code socks5://host:port}, senza credenziali): serve quando Yahoo blocca l'IP di uscita del cluster
+     */
     @Autowired
-    public YahooFinanceService(@Value("${nexabudget.market.yahoo.enabled:true}") boolean enabled) {
-        this(buildRestClient(), enabled, DEFAULT_RATE_LIMIT_COOLDOWN);
+    public YahooFinanceService(@Value("${nexabudget.market.yahoo.enabled:true}") boolean enabled,
+                               @Value("${nexabudget.market.yahoo.proxy:}") String proxy,
+                               @Value("${nexabudget.market.yahoo.user-agent:" + DEFAULT_USER_AGENT + "}") String userAgent) {
+        this(enabled, parseProxy(proxy), userAgent);
+    }
+
+    private YahooFinanceService(boolean enabled, Optional<Proxy> proxy, String userAgent) {
+        this(buildRestClient(proxy.orElse(null), userAgent, YAHOO_BASE_URL), enabled, DEFAULT_RATE_LIMIT_COOLDOWN);
+        proxy.ifPresent(p -> logger.info("Le chiamate a Yahoo passano dal proxy {} ({})", p.address(), p.type()));
     }
 
     // Per i test: permette di iniettare un RestClient legato a MockRestServiceServer
@@ -88,15 +103,58 @@ public class YahooFinanceService implements MarketPriceProvider {
         blockedUntil = Instant.now().plus(rateLimitCooldown);
     }
 
-    private static RestClient buildRestClient() {
+    /**
+     * Interpreta la configurazione del proxy. Un valore non valido non fa fallire l'avvio (il provider è opzionale):
+     * si logga l'errore e si va senza proxy.
+     */
+    static Optional<Proxy> parseProxy(String value) {
+        if (value == null || value.isBlank()) {
+            return Optional.empty();
+        }
+        try {
+            String v = value.trim();
+            Proxy.Type type = Proxy.Type.HTTP;
+            String lower = v.toLowerCase();
+            if (lower.startsWith("socks5://") || lower.startsWith("socks://")) {
+                type = Proxy.Type.SOCKS;
+                v = v.substring(v.indexOf("://") + 3);
+            } else if (lower.startsWith("http://")) {
+                v = v.substring("http://".length());
+            }
+            if (v.endsWith("/")) {
+                v = v.substring(0, v.length() - 1);
+            }
+            if (v.contains("@")) {
+                throw new IllegalArgumentException("le credenziali nel proxy non sono supportate: usa un proxy raggiungibile solo dalla rete privata");
+            }
+            int colon = v.lastIndexOf(':');
+            if (colon <= 0 || colon == v.length() - 1) {
+                throw new IllegalArgumentException("formato atteso host:port");
+            }
+            int port = Integer.parseInt(v.substring(colon + 1));
+            if (port < 1 || port > 65535) {
+                throw new IllegalArgumentException("porta non valida");
+            }
+            // createUnresolved: il nome si risolve alla connessione, non all'avvio (il proxy può non essere ancora raggiungibile)
+            return Optional.of(new Proxy(type, InetSocketAddress.createUnresolved(v.substring(0, colon), port)));
+        } catch (RuntimeException e) {
+            logger.error("Proxy Yahoo non valido ('{}'), lo ignoro e vado senza proxy: {}", value.replaceAll("//.*@", "//***@"), e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    static RestClient buildRestClient(Proxy proxy, String userAgent, String baseUrl) {
         SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(Duration.ofSeconds(5));
         factory.setReadTimeout(Duration.ofSeconds(10));
+        if (proxy != null) {
+            factory.setProxy(proxy);
+        }
+        // Nessun "Accept: application/json": non serve e con certi User-Agent ha dato 400 sporadici
         return RestClient.builder()
-                .baseUrl(YAHOO_BASE_URL)
+                .baseUrl(baseUrl)
                 .requestFactory(factory)
-                .defaultHeader(HttpHeaders.USER_AGENT, USER_AGENT)
-                .defaultHeader(HttpHeaders.ACCEPT, "application/json")
+                .defaultHeader(HttpHeaders.USER_AGENT, userAgent == null || userAgent.isBlank() ? DEFAULT_USER_AGENT : userAgent.trim())
                 .build();
     }
 
