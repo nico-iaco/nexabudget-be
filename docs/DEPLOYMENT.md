@@ -75,7 +75,7 @@ Kubernetes manifests are managed using **Kustomize**, structured in the `k8s/` d
 | `VIRTUAL_THREADS_ENABLED` | Toggle Loom virtual threads | default `true` |
 | `NEXABUDGET_MARKET_YAHOO_ENABLED` | Yahoo Finance as primary price source of the investment portfolio | default `true`. Yahoo is unofficial and answers 429 under load: the app pauses calls for 2 minutes and falls back to the last known/manual price |
 | `NEXABUDGET_MARKET_PRICE_CACHE_TTL` | How long an investment quote stays in the Valkey cache (shared by pods and users) | default `1d`; accepts `1d`, `12h`, `PT30M`. Longer = fewer Yahoo requests (it blocks IPs after a few dozen), but older prices: rely on `priceAsOf`. The computed portfolio is cached 15 min regardless |
-| `TWELVEDATA_API_KEY` | Optional price fallback for investments | The free tier covers US listings only; if unset the provider is simply off |
+| `TWELVEDATA_API_KEY` | Optional price fallback for investments | Yahoo symbols are mapped to Twelve Data exchanges (`VWCE.MI` → `VWCE` + `mic_code=XMIL`); whether a European listing is served depends on the key's plan — if not, the log says so (`Twelve Data non fornisce ...`) and the symbol is not retried for a day. If unset the provider is simply off |
 | `OPENFIGI_API_KEY` | Optional: raises the OpenFIGI rate limit (ISIN → ticker search) | 25 req/min without a key |
 | `GEMINI_MODEL`, `NEXABUDGET_CHAT_MODEL`, `NEXABUDGET_REPORT_MODEL` | AI model overrides | — |
 | `NEXABUDGET_REPORT_FALLBACK_MODEL` | Model retried when the AI report primary model fails or replies empty | default `gemini-flash-lite-latest`; empty = no fallback |
