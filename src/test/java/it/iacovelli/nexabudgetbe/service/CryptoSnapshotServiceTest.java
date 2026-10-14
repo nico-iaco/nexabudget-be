@@ -99,8 +99,17 @@ class CryptoSnapshotServiceTest {
     }
 
     @Test
-    void snapshot_skippedWhenAnAssetHasNoPrice() {
+    void snapshot_savedWithPricedAssetsWhenAnAssetHasNoPrice() {
         portfolio("EUR", "1000", asset("1000"), asset(null));
+
+        service.takeSnapshot(user, today);
+
+        assertEquals(1, service.getHistory(user, 12, "EUR").size());
+    }
+
+    @Test
+    void snapshot_skippedWhenTotalIsZero() {
+        portfolio("EUR", "0", asset(null));
 
         service.takeSnapshot(user, today);
 

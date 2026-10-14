@@ -71,11 +71,20 @@ public class CryptoSnapshotService {
         String currency = user.getDefaultCurrency() != null ? user.getDefaultCurrency() : "EUR";
         // Calcolo fuori dalla transazione: chiama Binance
         CryptoDto.PortfolioValueResponse portfolio = cryptoPortfolioService.getPortfolioValue(user, currency);
-        // Valuta diversa = cambio non disponibile (il servizio degrada a USD); asset senza prezzo = valore parziale:
-        // in entrambi i casi uno snapshot sarebbe un falso crollo
-        if (portfolio.getCurrency() == null || !portfolio.getCurrency().equalsIgnoreCase(currency)
-                || portfolio.getAssets().stream().anyMatch(a -> a.getValue() == null)) {
-            logger.warn("[CryptoSnapshot] Portafoglio dell'utente {} incompleto: snapshot saltato", user.getId());
+        // Valuta diversa = cambio non disponibile (il servizio degrada a USD): uno snapshot sarebbe un falso crollo
+        if (portfolio.getCurrency() == null || !portfolio.getCurrency().equalsIgnoreCase(currency)) {
+            logger.warn("[CryptoSnapshot] Valore dell'utente {} in {} invece di {}: snapshot saltato",
+                    user.getId(), portfolio.getCurrency(), currency);
+            return;
+        }
+        // Token senza prezzo (polvere, delistati, simboli senza coppia USDT) restano fuori dal totale, come nel
+        // patrimonio netto: saltare lo snapshot per ognuno di essi lo bloccherebbe per sempre
+        long unpriced = portfolio.getAssets().stream().filter(a -> a.getValue() == null).count();
+        if (unpriced > 0) {
+            logger.warn("[CryptoSnapshot] Utente {}: {} asset senza prezzo esclusi dallo snapshot", user.getId(), unpriced);
+        }
+        if (portfolio.getTotalValue() == null || portfolio.getTotalValue().signum() <= 0) {
+            logger.warn("[CryptoSnapshot] Utente {}: valore del portafoglio nullo, snapshot saltato", user.getId());
             return;
         }
         transactionTemplate.executeWithoutResult(status -> {
