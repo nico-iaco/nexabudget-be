@@ -242,7 +242,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
                      "COALESCE(SUM(CASE WHEN t.type = 'IN' THEN t.amount ELSE -t.amount END), 0) " +
                      "FROM Transaction t WHERE t.user = :user " +
                      "AND t.date BETWEEN :start AND :end " +
-                     "AND t.transferId IS NULL " +
                      "GROUP BY YEAR(t.date), MONTH(t.date), t.account.currency " +
                      "ORDER BY YEAR(t.date), MONTH(t.date)")
        List<Object[]> findMonthlyNetTotals(@Param("user") User user,
@@ -250,7 +249,6 @@ public interface TransactionRepository extends JpaRepository<Transaction, UUID>,
 
        @Query("SELECT t.account.currency, COALESCE(SUM(CASE WHEN t.type = 'IN' THEN t.amount ELSE -t.amount END), 0) " +
                      "FROM Transaction t WHERE t.user = :user AND t.date < :date " +
-                     "AND t.transferId IS NULL " +
                      "GROUP BY t.account.currency")
        List<Object[]> sumNetByUserBeforePerCurrency(@Param("user") User user, @Param("date") LocalDate date);
 
