@@ -8,8 +8,11 @@ import java.math.BigDecimal;
 import java.math.MathContext;
 import java.math.RoundingMode;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 
 /**
  * Calcolo della posizione di un asset a partire dalle sue operazioni, con il metodo del costo medio ponderato.
@@ -104,6 +107,35 @@ public final class PositionCalculator {
                 ? BigDecimal.ZERO
                 : costBasis.divide(quantity, MC).divide(multiplier, MC).setScale(6, RoundingMode.HALF_UP);
         return new Position(quantity, costBasis, avgPrice, realized, income, invested, proceeds);
+    }
+
+    /**
+     * Copia delle operazioni con prezzo, importo e commissioni moltiplicati per il cambio del giorno dell'operazione
+     * ({@code rateFor}): {@link #calculate} sulle copie dà costo, P/L realizzato e incassi nella valuta di destinazione,
+     * con il costo di ogni acquisto fissato al cambio di allora. Le quantità non cambiano.
+     *
+     * @return empty se manca il cambio di almeno un'operazione (un costo parziale sarebbe sbagliato)
+     */
+    public static Optional<List<InvestmentOperation>> convertOperations(List<InvestmentOperation> operations,
+                                                                        Function<InvestmentOperation, Optional<BigDecimal>> rateFor) {
+        List<InvestmentOperation> converted = new ArrayList<>(operations.size());
+        for (InvestmentOperation op : operations) {
+            Optional<BigDecimal> rate = rateFor.apply(op);
+            if (rate.isEmpty()) {
+                return Optional.empty();
+            }
+            BigDecimal r = rate.get();
+            converted.add(InvestmentOperation.builder()
+                    .id(op.getId())
+                    .type(op.getType())
+                    .operationDate(op.getOperationDate())
+                    .quantity(op.getQuantity())
+                    .price(op.getPrice() != null ? op.getPrice().multiply(r) : null)
+                    .amount(op.getAmount() != null ? op.getAmount().multiply(r) : null)
+                    .fees(op.getFees() != null ? op.getFees().multiply(r) : BigDecimal.ZERO)
+                    .build());
+        }
+        return Optional.of(converted);
     }
 
     /** Valore di mercato della posizione al prezzo indicato (null se il prezzo non è noto). */

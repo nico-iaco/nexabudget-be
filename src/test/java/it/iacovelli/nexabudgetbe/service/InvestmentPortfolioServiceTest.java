@@ -75,6 +75,14 @@ class InvestmentPortfolioServiceTest {
             }
             return Optional.empty();
         });
+        // Cambio storico: USD→EUR 0,8 per le operazioni di oltre 10 giorni fa, 0,9 dopo
+        when(exchangeRateService.getHistoricalRate(anyString(), anyString(), any(LocalDate.class))).thenAnswer(inv -> {
+            if ("USD".equals(inv.getArgument(0)) && "EUR".equals(inv.getArgument(1))) {
+                return inv.<LocalDate>getArgument(2).isBefore(today.minusDays(10))
+                        ? new BigDecimal("0.8") : new BigDecimal("0.9");
+            }
+            return null;
+        });
     }
 
     private User newUser(String name) {
@@ -312,18 +320,18 @@ class InvestmentPortfolioServiceTest {
     }
 
     @Test
-    void portfolio_foreignCurrencyAsset_isConvertedAtCurrentRate() {
+    void portfolio_foreignCurrencyAsset_costUsesRateOfOperationDay() {
         InvestmentDto.AssetResponse asset = etf("SPY", "USD");
         buy(asset.getId(), today.minusDays(30), "10", "100", "0");
         price("SPY", "120", "USD");
 
         InvestmentDto.PositionResponse pos = service.getPortfolio(user, "EUR").getPositions().get(0);
 
-        // 10 × 120 USD × 0,9 = 1080 EUR; costo 1000 USD × 0,9 = 900 EUR
+        // Valore: 10 × 120 USD × 0,9 (cambio corrente) = 1080 EUR; costo: 1000 USD × 0,8 (cambio del giorno dell'acquisto) = 800 EUR
         assertDecimal("1080", pos.getMarketValue());
-        assertDecimal("900", pos.getCostBasis());
-        assertDecimal("180", pos.getUnrealizedPl());
-        assertDecimal("20", pos.getUnrealizedPlPercent());
+        assertDecimal("800", pos.getCostBasis());
+        assertDecimal("280", pos.getUnrealizedPl());
+        assertDecimal("35", pos.getUnrealizedPlPercent());
         // Il prezzo resta nella valuta dell'asset
         assertDecimal("120", pos.getPrice());
         assertEquals("USD", pos.getPriceCurrency());

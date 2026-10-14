@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.LocalDate;
 import java.util.Optional;
 
 /**
@@ -52,6 +53,18 @@ public class CurrencyConversionService {
             return Optional.of(BigDecimal.ONE);
         }
         return exchangeRateService.getRate(sourceCurrency.toUpperCase(), targetCurrency.toUpperCase());
+    }
+
+    /** Come {@link #getRate} ma al cambio del giorno indicato (ultimo giorno utile se non lavorativo). */
+    public Optional<BigDecimal> getHistoricalRate(String sourceCurrency, String targetCurrency, LocalDate date) {
+        if (sourceCurrency == null || targetCurrency == null || sourceCurrency.isBlank() || targetCurrency.isBlank()) {
+            return Optional.empty();
+        }
+        if (sourceCurrency.equalsIgnoreCase(targetCurrency)) {
+            return Optional.of(BigDecimal.ONE);
+        }
+        return Optional.ofNullable(exchangeRateService.getHistoricalRate(
+                sourceCurrency.toUpperCase(), targetCurrency.toUpperCase(), date));
     }
 
     /**

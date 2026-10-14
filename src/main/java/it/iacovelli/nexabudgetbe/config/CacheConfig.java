@@ -30,6 +30,7 @@ public class CacheConfig {
         public static final String ENABLE_BANKING_TRANSACTIONS_CACHE = "enableBankingTransactions";
         public static final String CRYPTO_PRICES_CACHE = "cryptoPrices";
         public static final String EXCHANGE_RATES_CACHE = "exchangeRates";
+        public static final String HISTORICAL_EXCHANGE_RATES_CACHE = "historicalExchangeRates";
         public static final String PORTFOLIO_CACHE = "portfolio";
         public static final String MARKET_PRICES_CACHE = "marketPrices";
         public static final String MARKET_SEARCH_CACHE = "marketSearch";
@@ -43,6 +44,8 @@ public class CacheConfig {
         public static final Duration CRYPTO_CACHE_TTL = Duration.ofMinutes(5);
         // Il portafoglio calcolato è economico da rifare (le quotazioni sono già in cache): TTL breve
         public static final Duration INVESTMENT_PORTFOLIO_CACHE_TTL = Duration.ofMinutes(15);
+        // Un tasso di un giorno passato non cambia: il TTL serve solo a non tenere chiavi per sempre
+        public static final Duration HISTORICAL_EXCHANGE_RATES_TTL = Duration.ofDays(90);
         public static final Duration CACHE_TTL = Duration.ofHours(6);
         public static final Duration AI_REPORT_RESULTS_TTL = Duration.ofDays(7);
         public static final Duration BUDGET_TEMPLATE_RUNS_TTL = Duration.ofDays(400);
@@ -77,6 +80,7 @@ public class CacheConfig {
                                 .cacheDefaults(config)
                                 .withCacheConfiguration(CRYPTO_PRICES_CACHE, config.entryTtl(CRYPTO_CACHE_TTL))
                                 .withCacheConfiguration(PORTFOLIO_CACHE, config.entryTtl(CRYPTO_CACHE_TTL))
+                                .withCacheConfiguration(HISTORICAL_EXCHANGE_RATES_CACHE, config.entryTtl(HISTORICAL_EXCHANGE_RATES_TTL))
                                 .withCacheConfiguration(MARKET_PRICES_CACHE, config.entryTtl(marketPriceCacheTtl))
                                 .withCacheConfiguration(INVESTMENT_PORTFOLIO_CACHE, config.entryTtl(INVESTMENT_PORTFOLIO_CACHE_TTL))
                                 .withCacheConfiguration(AI_REPORTS_RESULTS_CACHE, config.entryTtl(AI_REPORT_RESULTS_TTL))

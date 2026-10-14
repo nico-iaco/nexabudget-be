@@ -274,6 +274,7 @@ public class InvestmentPortfolioService {
         Map<UUID, ResolvedPrice> prices = marketPriceService.resolveAll(open);
 
         Map<String, Optional<BigDecimal>> rates = new HashMap<>();
+        Map<String, Optional<BigDecimal>> historicalRates = new HashMap<>();
         List<InvestmentDto.PositionResponse> positionResponses = new ArrayList<>();
         BigDecimal totalValue = BigDecimal.ZERO;
         BigDecimal totalCost = BigDecimal.ZERO;
@@ -289,12 +290,13 @@ public class InvestmentPortfolioService {
                 continue;
             }
             boolean isOpen = pos.quantity().signum() > 0;
-            Optional<BigDecimal> costRate = rate(rates, asset.getCurrency(), currency);
-
-            BigDecimal costBasis = costRate.map(r -> money(pos.costBasis().multiply(r))).orElse(null);
-            BigDecimal realized = costRate.map(r -> money(pos.realizedPl().multiply(r))).orElse(null);
-            BigDecimal income = costRate.map(r -> money(pos.income().multiply(r))).orElse(null);
-            if (costRate.isEmpty()) {
+            // Costo, P/L realizzato e incassi al cambio del giorno di ogni operazione: il costo non deve muoversi con il cambio
+            Optional<Position> converted = convertedPosition(asset, operationsByAsset.getOrDefault(asset.getId(), List.of()),
+                    currency, null, historicalRates);
+            BigDecimal costBasis = converted.map(c -> money(c.costBasis())).orElse(null);
+            BigDecimal realized = converted.map(c -> money(c.realizedPl())).orElse(null);
+            BigDecimal income = converted.map(c -> money(c.income())).orElse(null);
+            if (converted.isEmpty()) {
                 complete = false;
             }
 
@@ -395,6 +397,7 @@ public class InvestmentPortfolioService {
                 .collect(Collectors.groupingBy(o -> o.getAsset().getId()));
 
         Map<String, Optional<BigDecimal>> rates = new HashMap<>();
+        Map<String, Optional<BigDecimal>> historicalRates = new HashMap<>();
         BigDecimal invested = BigDecimal.ZERO;
         BigDecimal divested = BigDecimal.ZERO;
         BigDecimal realized = BigDecimal.ZERO;
@@ -407,14 +410,17 @@ public class InvestmentPortfolioService {
                 continue;
             }
             anyOperationBefore |= operations.stream().anyMatch(o -> !o.getOperationDate().isAfter(before));
-            Position atEnd = PositionCalculator.calculate(asset.getAssetType(), operations, end);
-            Position atStart = PositionCalculator.calculate(asset.getAssetType(), operations, before);
-            BigDecimal rate = rate(rates, asset.getCurrency(), currency).orElseThrow(() -> new IllegalStateException(
-                    "Tasso di cambio " + asset.getCurrency() + "→" + currency + " non disponibile"));
-            invested = invested.add(atEnd.totalInvested().subtract(atStart.totalInvested()).multiply(rate));
-            divested = divested.add(atEnd.totalProceeds().subtract(atStart.totalProceeds()).multiply(rate));
-            realized = realized.add(atEnd.realizedPl().subtract(atStart.realizedPl()).multiply(rate));
-            income = income.add(atEnd.income().subtract(atStart.income()).multiply(rate));
+            // Importi al cambio del giorno di ogni operazione
+            List<InvestmentOperation> converted = PositionCalculator.convertOperations(operations,
+                            op -> historicalRate(historicalRates, asset.getCurrency(), currency, op.getOperationDate()))
+                    .orElseThrow(() -> new IllegalStateException(
+                            "Tasso di cambio " + asset.getCurrency() + "→" + currency + " non disponibile"));
+            Position atEnd = PositionCalculator.calculate(asset.getAssetType(), converted, end);
+            Position atStart = PositionCalculator.calculate(asset.getAssetType(), converted, before);
+            invested = invested.add(atEnd.totalInvested().subtract(atStart.totalInvested()));
+            divested = divested.add(atEnd.totalProceeds().subtract(atStart.totalProceeds()));
+            realized = realized.add(atEnd.realizedPl().subtract(atStart.realizedPl()));
+            income = income.add(atEnd.income().subtract(atStart.income()));
         }
 
         BigDecimal startValue = snapshotValue(user, before, currency, rates);
@@ -596,6 +602,19 @@ public class InvestmentPortfolioService {
 
     private Optional<BigDecimal> rate(Map<String, Optional<BigDecimal>> cache, String from, String to) {
         return cache.computeIfAbsent(from.toUpperCase(), f -> currencyConversionService.getRate(f, to));
+    }
+
+    private Optional<BigDecimal> historicalRate(Map<String, Optional<BigDecimal>> cache, String from, String to, LocalDate date) {
+        return cache.computeIfAbsent(from.toUpperCase() + "|" + date,
+                k -> currencyConversionService.getHistoricalRate(from, to, date));
+    }
+
+    /** Posizione con costo, P/L realizzato e incassi convertiti al cambio del giorno di ogni operazione; empty se manca un cambio. */
+    private Optional<Position> convertedPosition(InvestmentAsset asset, List<InvestmentOperation> operations, String currency,
+                                                 LocalDate asOf, Map<String, Optional<BigDecimal>> historicalRates) {
+        return PositionCalculator.convertOperations(operations,
+                        op -> historicalRate(historicalRates, asset.getCurrency(), currency, op.getOperationDate()))
+                .map(converted -> PositionCalculator.calculate(asset.getAssetType(), converted, asOf));
     }
 
     private static BigDecimal money(BigDecimal value) {

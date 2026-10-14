@@ -16,6 +16,7 @@ import org.springframework.web.client.RestClientException;
 
 import java.math.BigDecimal;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.Optional;
 
 /**
@@ -29,7 +30,11 @@ public class ExchangeRateService {
 
     private static final String EXCHANGE_RATE_API_URL = "https://api.exchangerate-api.com/v4/latest/";
 
+    // Tassi storici BCE (gratuito, senza chiave): per un giorno non lavorativo restituisce l'ultimo giorno utile precedente
+    private static final String HISTORICAL_RATE_API_URL = "https://api.frankfurter.dev/v1/";
+
     private final RestClient restClient;
+    private final RestClient historicalRestClient;
     private final ObjectMapper objectMapper;
 
     public ExchangeRateService() {
@@ -40,7 +45,49 @@ public class ExchangeRateService {
                     setReadTimeout(Duration.ofSeconds(5));
                 }})
                 .build();
+        this.historicalRestClient = RestClient.builder()
+                .baseUrl(HISTORICAL_RATE_API_URL)
+                .requestFactory(new SimpleClientHttpRequestFactory() {{
+                    setConnectTimeout(Duration.ofSeconds(5));
+                    setReadTimeout(Duration.ofSeconds(5));
+                }})
+                .build();
         this.objectMapper = new ObjectMapper();
+    }
+
+    /**
+     * Tasso source->target del giorno indicato (null se non disponibile). Un tasso storico non cambia, quindi sta in
+     * cache a lungo; il risultato nullo non viene cachato. Restituisce un BigDecimal e non un Optional per poter
+     * usare {@code unless = "#result == null"} anche nella build native.
+     */
+    @Cacheable(value = CacheConfig.HISTORICAL_EXCHANGE_RATES_CACHE,
+               key = "#sourceCurrency + '|' + #targetCurrency + '|' + #date", unless = "#result == null")
+    @Retryable(retryFor = RestClientException.class, maxAttempts = 3, backoff = @Backoff(delay = 1000, multiplier = 2))
+    public BigDecimal getHistoricalRate(String sourceCurrency, String targetCurrency, LocalDate date) {
+        String jsonResponse = historicalRestClient.get()
+                .uri(uriBuilder -> uriBuilder.path(date.toString())
+                        .queryParam("base", sourceCurrency.toUpperCase())
+                        .queryParam("symbols", targetCurrency.toUpperCase())
+                        .build())
+                .retrieve()
+                .body(String.class);
+        try {
+            JsonNode rate = objectMapper.readTree(jsonResponse).path("rates").path(targetCurrency.toUpperCase());
+            if (rate.isMissingNode() || rate.isNull()) {
+                logger.warn("Tasso storico {}->{} del {} non trovato", sourceCurrency, targetCurrency, date);
+                return null;
+            }
+            return new BigDecimal(rate.asText());
+        } catch (Exception e) {
+            logger.error("Errore parsing tasso storico {}->{} del {}: {}", sourceCurrency, targetCurrency, date, e.getMessage());
+            return null;
+        }
+    }
+
+    @Recover
+    public BigDecimal recoverGetHistoricalRate(RestClientException e, String sourceCurrency, String targetCurrency, LocalDate date) {
+        logger.error("Tasso storico {}->{} del {} non disponibile dopo i retry: {}", sourceCurrency, targetCurrency, date, e.getMessage());
+        return null;
     }
 
     /**
