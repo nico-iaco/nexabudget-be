@@ -77,7 +77,9 @@ public class AiCategorizationService {
                 log.debug("Cache hit per '{}': '{}'", description, cachedMatch.get().getName());
                 return cachedMatch;
             }
-            log.debug("Cache hit per '{}' ma categoria '{}' non trovata, fallback AI", description, hit.categoryName());
+            log.debug("Cache hit per '{}' ma categoria '{}' (id={}) non trovata, fallback AI",
+                    description, hit.categoryName(), hit.categoryId());
+            semanticCacheService.evictExactMatch(description, user.getId());
         }
 
         String prompt = buildPrompt(description, availableCategories, type);

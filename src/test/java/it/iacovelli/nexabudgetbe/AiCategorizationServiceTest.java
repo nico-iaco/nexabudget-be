@@ -126,6 +126,7 @@ class AiCategorizationServiceTest {
         assertTrue(result.isPresent());
         assertSame(renamed, result.get());
         verifyNoInteractions(genaiModels);
+        verify(semanticCacheService, never()).evictExactMatch(any(), any());
     }
 
     @Test
@@ -157,6 +158,7 @@ class AiCategorizationServiceTest {
 
         assertTrue(result.isEmpty());
         verify(genaiModels).generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class));
+        verify(semanticCacheService).evictExactMatch("Esselunga", user.getId());
     }
 
     @Test
@@ -172,6 +174,7 @@ class AiCategorizationServiceTest {
 
         assertTrue(result.isEmpty());
         verify(genaiModels).generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class));
+        verify(semanticCacheService).evictExactMatch("Esselunga", user.getId());
     }
 
     // ─── AI: risposta esatta ─────────────────────────────────────────────────────

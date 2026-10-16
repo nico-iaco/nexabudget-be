@@ -41,6 +41,9 @@ public class CacheConfig {
         public static final String BUDGET_TEMPLATE_RUNS_CACHE = "budgetTemplateRuns";
         // Claim breve tra pod sullo stesso periodo; scade da solo se il pod muore a metà run
         public static final String BUDGET_TEMPLATE_RUN_LOCK_CACHE = "budgetTemplateRunLock";
+        // Match esatto descrizione normalizzata → categoryId, controllato prima della ricerca vettoriale
+        // (evita embedding + query Atlas per le descrizioni già viste)
+        public static final String SEMANTIC_EXACT_CACHE = "semanticExactCategory";
         public static final Duration CRYPTO_CACHE_TTL = Duration.ofMinutes(5);
         // Il portafoglio calcolato è economico da rifare (le quotazioni sono già in cache): TTL breve
         public static final Duration INVESTMENT_PORTFOLIO_CACHE_TTL = Duration.ofMinutes(15);
@@ -50,6 +53,8 @@ public class CacheConfig {
         public static final Duration AI_REPORT_RESULTS_TTL = Duration.ofDays(7);
         public static final Duration BUDGET_TEMPLATE_RUNS_TTL = Duration.ofDays(400);
         public static final Duration BUDGET_TEMPLATE_RUN_LOCK_TTL = Duration.ofMinutes(10);
+        // Limita anche quanto a lungo una voce derivata da un hit vettoriale ignora le correzioni fatte su descrizioni simili
+        public static final Duration SEMANTIC_EXACT_TTL = Duration.ofDays(30);
 
         @Bean
         public CacheManager cacheManager(RedisConnectionFactory connectionFactory, ObjectMapper objectMapper,
@@ -86,6 +91,7 @@ public class CacheConfig {
                                 .withCacheConfiguration(AI_REPORTS_RESULTS_CACHE, config.entryTtl(AI_REPORT_RESULTS_TTL))
                                 .withCacheConfiguration(BUDGET_TEMPLATE_RUNS_CACHE, config.entryTtl(BUDGET_TEMPLATE_RUNS_TTL))
                                 .withCacheConfiguration(BUDGET_TEMPLATE_RUN_LOCK_CACHE, config.entryTtl(BUDGET_TEMPLATE_RUN_LOCK_TTL))
+                                .withCacheConfiguration(SEMANTIC_EXACT_CACHE, config.entryTtl(SEMANTIC_EXACT_TTL))
                                 .build();
         }
 }

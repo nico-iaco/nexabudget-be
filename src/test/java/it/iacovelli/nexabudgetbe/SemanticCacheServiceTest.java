@@ -11,6 +11,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.ai.document.Document;
 import org.springframework.ai.vectorstore.SearchRequest;
 import org.springframework.ai.vectorstore.VectorStore;
+import org.springframework.cache.CacheManager;
+import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
 
 import java.util.List;
 import java.util.Map;
@@ -20,6 +22,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -35,7 +38,7 @@ class SemanticCacheServiceTest {
 
     @BeforeEach
     void setUp() {
-        service = new SemanticCacheService(vectorStore);
+        service = new SemanticCacheService(vectorStore, new ConcurrentMapCacheManager());
     }
 
     // ─── findSimilar ─────────────────────────────────────────────────────────────
@@ -133,6 +136,89 @@ class SemanticCacheServiceTest {
         assertNotEquals(filter1, filter2);
     }
 
+    // ─── match esatto (Valkey) ───────────────────────────────────────────────────
+
+    @Test
+    void findSimilar_afterSave_isServedByExactMatchWithoutVectorSearch() {
+        service.saveToCache("Esselunga SPA", alimentari, userId);
+
+        Optional<SemanticCacheService.CacheHit> result = service.findSimilar("  esselunga   spa ", userId);
+
+        assertTrue(result.isPresent());
+        assertEquals(alimentari.getId(), result.get().categoryId());
+        verify(vectorStore, never()).similaritySearch(any(SearchRequest.class));
+    }
+
+    @Test
+    void findSimilar_exactMatchIsScopedToUser() {
+        service.saveToCache("Esselunga", alimentari, userId);
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+
+        Optional<SemanticCacheService.CacheHit> result = service.findSimilar("Esselunga", UUID.randomUUID());
+
+        assertTrue(result.isEmpty());
+        verify(vectorStore).similaritySearch(any(SearchRequest.class));
+    }
+
+    @Test
+    void findSimilar_vectorHitWithId_isMemoizedAsExactMatch() {
+        Document doc = Document.builder()
+                .text("Esselunga")
+                .metadata(Map.of("category", "Alimentari e Supermercati", "categoryId", alimentari.getId().toString()))
+                .build();
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(doc));
+
+        service.findSimilar("ESSELUNGA MILANO", userId);
+        Optional<SemanticCacheService.CacheHit> second = service.findSimilar("ESSELUNGA MILANO", userId);
+
+        assertTrue(second.isPresent());
+        assertEquals(alimentari.getId(), second.get().categoryId());
+        verify(vectorStore, times(1)).similaritySearch(any(SearchRequest.class));
+    }
+
+    @Test
+    void findSimilar_legacyVectorHitWithoutId_isNotMemoized() {
+        Document doc = Document.builder()
+                .text("Esselunga")
+                .metadata(Map.of("category", "Alimentari e Supermercati"))
+                .build();
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(doc));
+
+        service.findSimilar("Esselunga", userId);
+        service.findSimilar("Esselunga", userId);
+
+        verify(vectorStore, times(2)).similaritySearch(any(SearchRequest.class));
+    }
+
+    @Test
+    void evictExactMatch_forcesVectorSearchAgain() {
+        service.saveToCache("Esselunga", alimentari, userId);
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of());
+
+        service.evictExactMatch("Esselunga", userId);
+        service.findSimilar("Esselunga", userId);
+
+        verify(vectorStore).similaritySearch(any(SearchRequest.class));
+    }
+
+    @Test
+    void exactCacheUnavailable_fallsBackToVectorSearch() {
+        CacheManager broken = mock(CacheManager.class);
+        when(broken.getCache(anyString())).thenThrow(new RuntimeException("Valkey unavailable"));
+        SemanticCacheService withBrokenCache = new SemanticCacheService(vectorStore, broken);
+        Document doc = Document.builder()
+                .text("Esselunga")
+                .metadata(Map.of("category", "Alimentari e Supermercati", "categoryId", alimentari.getId().toString()))
+                .build();
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(doc));
+
+        Optional<SemanticCacheService.CacheHit> result = withBrokenCache.findSimilar("Esselunga", userId);
+
+        assertTrue(result.isPresent());
+        assertEquals(alimentari.getId(), result.get().categoryId());
+        assertDoesNotThrow(() -> withBrokenCache.saveToCache("Esselunga", alimentari, userId));
+    }
+
     // ─── saveToCache ─────────────────────────────────────────────────────────────
 
     @Test
@@ -221,6 +307,28 @@ class SemanticCacheServiceTest {
 
         verify(vectorStore, never()).delete(anyList());
         verify(vectorStore, times(2)).add(any());
+    }
+
+    @Test
+    void replaceInCache_evictsExactMatchOfDeletedNearDuplicates() {
+        service.saveToCache("Esselunga SPA", alimentari, userId);
+        ArgumentCaptor<List<Document>> captor = ArgumentCaptor.forClass(List.class);
+        verify(vectorStore).add(captor.capture());
+        Document nearDuplicate = captor.getValue().getFirst();
+        when(vectorStore.similaritySearch(any(SearchRequest.class))).thenReturn(List.of(nearDuplicate), List.of());
+
+        Category trasporti = Category.builder().id(UUID.randomUUID()).name("Trasporti").build();
+        service.replaceInCache("Esselunga", trasporti, userId);
+
+        // La voce eliminata dal vector store non deve sopravvivere come match esatto con la vecchia categoria
+        Optional<SemanticCacheService.CacheHit> result = service.findSimilar("Esselunga SPA", userId);
+        assertTrue(result.isEmpty());
+        verify(vectorStore, times(2)).similaritySearch(any(SearchRequest.class));
+
+        // La correzione invece è servita dal match esatto
+        Optional<SemanticCacheService.CacheHit> corrected = service.findSimilar("Esselunga", userId);
+        assertTrue(corrected.isPresent());
+        assertEquals(trasporti.getId(), corrected.get().categoryId());
     }
 
     @Test
