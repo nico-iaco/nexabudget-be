@@ -104,7 +104,7 @@ class AiCategorizationServiceTest {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(alimentari, trasporti));
         when(semanticCacheService.findSimilar("Esselunga", user.getId()))
-                .thenReturn(Optional.of("Alimentari e Supermercati"));
+                .thenReturn(Optional.of(new SemanticCacheService.CacheHit(alimentari.getId(), "Alimentari e Supermercati")));
 
         Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
 
@@ -114,11 +114,57 @@ class AiCategorizationServiceTest {
     }
 
     @Test
+    void cacheHit_resolvesByIdAfterCategoryRename() {
+        Category renamed = Category.builder().id(alimentari.getId()).name("Spesa").build();
+        when(categoryService.getAllAvailableCategoriesForUser(user))
+                .thenReturn(List.of(renamed, trasporti));
+        when(semanticCacheService.findSimilar("Esselunga", user.getId()))
+                .thenReturn(Optional.of(new SemanticCacheService.CacheHit(alimentari.getId(), "Alimentari e Supermercati")));
+
+        Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
+
+        assertTrue(result.isPresent());
+        assertSame(renamed, result.get());
+        verifyNoInteractions(genaiModels);
+    }
+
+    @Test
+    void cacheHit_legacyEntryWithoutId_resolvesByName() {
+        when(categoryService.getAllAvailableCategoriesForUser(user))
+                .thenReturn(List.of(alimentari, trasporti));
+        when(semanticCacheService.findSimilar("Esselunga", user.getId()))
+                .thenReturn(Optional.of(new SemanticCacheService.CacheHit(null, "alimentari e supermercati")));
+
+        Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
+
+        assertTrue(result.isPresent());
+        assertSame(alimentari, result.get());
+        verifyNoInteractions(genaiModels);
+    }
+
+    @Test
+    void cacheHit_withIdOfDeletedCategory_doesNotFallBackToName() throws Exception {
+        // Stesso nome ma id diverso: la categoria originale non esiste più, la voce non va riusata
+        Category sameNameOtherId = Category.builder().id(UUID.randomUUID()).name("Alimentari e Supermercati").build();
+        when(categoryService.getAllAvailableCategoriesForUser(user))
+                .thenReturn(List.of(sameNameOtherId));
+        when(semanticCacheService.findSimilar("Esselunga", user.getId()))
+                .thenReturn(Optional.of(new SemanticCacheService.CacheHit(alimentari.getId(), "Alimentari e Supermercati")));
+        when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
+                .thenReturn(fakeResponse("NONE"));
+
+        Optional<Category> result = service.categorizeTransaction("Esselunga", user, TransactionType.OUT);
+
+        assertTrue(result.isEmpty());
+        verify(genaiModels).generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class));
+    }
+
+    @Test
     void cacheHit_butCategoryNotInUserList_fallsBackToAI() throws Exception {
         when(categoryService.getAllAvailableCategoriesForUser(user))
                 .thenReturn(List.of(trasporti));
         when(semanticCacheService.findSimilar("Esselunga", user.getId()))
-                .thenReturn(Optional.of("Alimentari e Supermercati"));
+                .thenReturn(Optional.of(new SemanticCacheService.CacheHit(alimentari.getId(), "Alimentari e Supermercati")));
         when(genaiModels.generateContent(nullable(String.class), any(com.google.genai.types.Content.class), any(GenerateContentConfig.class)))
                 .thenReturn(fakeResponse("NONE"));
 
@@ -142,7 +188,7 @@ class AiCategorizationServiceTest {
 
         assertTrue(result.isPresent());
         assertEquals("Alimentari e Supermercati", result.get().getName());
-        verify(semanticCacheService).saveToCache("ESSELUNGA SPA", "Alimentari e Supermercati", user.getId());
+        verify(semanticCacheService).saveToCache("ESSELUNGA SPA", alimentari, user.getId());
     }
 
     @Test
@@ -315,12 +361,12 @@ class AiCategorizationServiceTest {
     // ─── updateSemanticCache ─────────────────────────────────────────────────────
 
     @Test
-    void updateSemanticCache_delegatesToSemanticCacheService() {
+    void updateSemanticCache_replacesEntryInSemanticCache() {
         Category oldCat = Category.builder().id(UUID.randomUUID()).name("Vecchia").build();
         Category newCat = Category.builder().id(UUID.randomUUID()).name("Nuova").build();
 
         service.updateSemanticCache("Esselunga", oldCat, newCat, user, TransactionType.OUT);
 
-        verify(semanticCacheService).saveToCache("Esselunga", "Nuova", user.getId());
+        verify(semanticCacheService).replaceInCache("Esselunga", newCat, user.getId());
     }
 }

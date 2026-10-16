@@ -69,17 +69,15 @@ public class AiCategorizationService {
             return Optional.empty();
         }
 
-        Optional<String> cached = semanticCacheService.findSimilar(description, user.getId());
+        Optional<SemanticCacheService.CacheHit> cached = semanticCacheService.findSimilar(description, user.getId());
         if (cached.isPresent()) {
-            String cachedName = cached.get();
-            Optional<Category> cachedMatch = availableCategories.stream()
-                    .filter(c -> c.getName().equalsIgnoreCase(cachedName))
-                    .findFirst();
+            SemanticCacheService.CacheHit hit = cached.get();
+            Optional<Category> cachedMatch = resolveCachedCategory(hit, availableCategories);
             if (cachedMatch.isPresent()) {
-                log.debug("Cache hit per '{}': '{}'", description, cachedName);
+                log.debug("Cache hit per '{}': '{}'", description, cachedMatch.get().getName());
                 return cachedMatch;
             }
-            log.debug("Cache hit per '{}' ma categoria '{}' non trovata, fallback AI", description, cachedName);
+            log.debug("Cache hit per '{}' ma categoria '{}' non trovata, fallback AI", description, hit.categoryName());
         }
 
         String prompt = buildPrompt(description, availableCategories, type);
@@ -115,7 +113,7 @@ public class AiCategorizationService {
                     .findFirst();
 
             if (matched.isPresent()) {
-                semanticCacheService.saveToCache(description, matched.get().getName(), user.getId());
+                semanticCacheService.saveToCache(description, matched.get(), user.getId());
                 log.info("Transazione '{}' categorizzata come '{}' (AI)", description, matched.get().getName());
             } else {
                 log.warn("Risposta AI '{}' non corrisponde a nessuna categoria per '{}'", aiResponse, description);
@@ -137,7 +135,21 @@ public class AiCategorizationService {
     }
 
     public void updateSemanticCache(String description, Category oldCategory, Category newCategory, User user, TransactionType type) {
-        semanticCacheService.saveToCache(description, newCategory.getName(), user.getId());
+        semanticCacheService.replaceInCache(description, newCategory, user.getId());
+    }
+
+    /**
+     * Risolve per id (resiste alle rinomine); per nome solo le voci salvate prima che l'id venisse memorizzato.
+     */
+    private Optional<Category> resolveCachedCategory(SemanticCacheService.CacheHit hit, List<Category> categories) {
+        if (hit.categoryId() != null) {
+            return categories.stream()
+                    .filter(c -> hit.categoryId().equals(c.getId()))
+                    .findFirst();
+        }
+        return categories.stream()
+                .filter(c -> c.getName().equalsIgnoreCase(hit.categoryName()))
+                .findFirst();
     }
 
     private String parseAiResponse(String raw) {

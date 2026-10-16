@@ -75,7 +75,7 @@ public class TestConfig {
     public SemanticCacheService semanticCacheService() {
         SemanticCacheService mockService = Mockito.mock(SemanticCacheService.class);
 
-        doNothing().when(mockService).saveToCache(anyString(), anyString(), any(UUID.class));
+        doNothing().when(mockService).saveToCache(anyString(), any(), any(UUID.class));
         when(mockService.findSimilar(anyString(), any(UUID.class))).thenReturn(Optional.empty());
 
         return mockService;
